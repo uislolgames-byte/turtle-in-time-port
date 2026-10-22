@@ -21,6 +21,25 @@ def program():
     return bytes(data)
 
 
+def branches():
+    data = bytearray()
+    for index, op in enumerate((0x10, 0x30, 0x50, 0x70, 0x90, 0xB0, 0xD0, 0xF0)):
+        # If taken, skip a distinct observable RAM write.
+        data.extend((op, 3, 0x8D, index, 0))
+    data.extend(bytes.fromhex('8003 8d0001 a203 ca d0fd 8000 db'))
+    return bytes(data)
+
+
+def boundaries():
+    # BNE -128 returns to DEX; BRA +127 skips the entire NOP region.
+    return bytes.fromhex('a202 ca') + b'\xea' * 125 + bytes.fromhex('d080 807f') + b'\xea' * 127 + b'\xdb'
+
+
+PROGRAMS = {'synthetic': program, 'branches': branches,
+            'loop': lambda: bytes.fromhex('80fe db'), 'boundaries': boundaries}
+
+
 if __name__ == '__main__':
-    Path(sys.argv[1]).write_bytes(program())
-    Path(sys.argv[2]).write_text(generate(program()), encoding='utf-8')
+    data = PROGRAMS[sys.argv[3] if len(sys.argv) > 3 else 'synthetic']()
+    Path(sys.argv[1]).write_bytes(data)
+    Path(sys.argv[2]).write_text(generate(data), encoding='utf-8')

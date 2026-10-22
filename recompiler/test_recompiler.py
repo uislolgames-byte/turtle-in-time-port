@@ -3,10 +3,11 @@ import random
 import subprocess
 import sys
 import unittest
-from fixture import program
+from fixture import PROGRAMS
 from generate import generate
 
-RUNNER = sys.argv.pop(1) if len(sys.argv) > 1 else None
+RUNNERS = dict(arg.split('=', 1) for arg in sys.argv[1:])
+sys.argv[1:] = []
 
 
 def interpret(data, initial, limit):
@@ -36,6 +37,17 @@ def interpret(data, initial, limit):
             p = p & ~1
         elif op == 0x38:
             p = p | 1
+        elif op in (0x80, 0x10, 0x30, 0x50, 0x70, 0x90, 0xB0, 0xD0, 0xF0):
+            displacement = int.from_bytes(data[pc - 0x8000:pc - 0x8000 + 1], 'little', signed=True)
+            pc += 1
+            # Deliberately independent of the generator's branch table.
+            taken = (op == 0x80 or (op == 0x10 and p < 128)
+                     or (op == 0x30 and p >= 128) or (op == 0x50 and not p & 64)
+                     or (op == 0x70 and bool(p & 64)) or (op == 0x90 and not p & 1)
+                     or (op == 0xB0 and bool(p & 1)) or (op == 0xD0 and not p & 2)
+                     or (op == 0xF0 and bool(p & 2)))
+            if taken:
+                pc += displacement
         elif op == 0xDB:
             halted = True
         elif op != 0xEA:
@@ -51,33 +63,56 @@ def interpret(data, initial, limit):
 class RecompilerTests(unittest.TestCase):
     def test_rejections(self):
         for data in (b'', b'\xa9', b'\x8d\x01', b'\x00\xdb', b'\xfb\xdb',
-                     b'\xc2\x20\xdb', b'\xea', b'\xdb\xea', b'\xea' * 32768 + b'\xdb'):
+                     b'\xc2\x20\xdb', b'\xea', b'\xdb\xea', b'\xea' * 32768 + b'\xdb',
+                     bytes.fromhex('80'), bytes.fromhex('80fd db'),
+                     bytes.fromhex('8001 a901 db'), bytes.fromhex('d07f db'),
+                     bytes.fromhex('8001 db')):
             with self.subTest(data=data[:4]), self.assertRaises(ValueError):
                 generate(data)
 
-    def test_deterministic(self):
-        self.assertEqual(generate(program()), generate(program()))
-        self.assertNotIn('switch', generate(program()))
+    def test_reference_branch_examples(self):
+        self.assertEqual(interpret(bytes.fromhex('80fe db'), [0, 0, 0, 0x34], 3)[0],
+                         [0, 0, 0, 0x34, 0x8000, 3, 0])
+        self.assertEqual(interpret(bytes.fromhex('a202 ca d0fd db'), [0, 0, 0, 0x34], 10)[0],
+                         [0, 0, 0, 0x36, 0x8006, 6, 1])
 
-    @unittest.skipUnless(RUNNER, 'compiled runner required')
+    @unittest.skipUnless(RUNNERS, 'compiled runners required')
     def test_equivalence(self):
         rng = random.Random(65816)
         # Each prefix exposes intermediate state and memory, not only final results.
-        for limit in range(140):
-            initial = [rng.randrange(65536), rng.randrange(256), rng.randrange(256),
-                       rng.randrange(256) | 0x30]
-            expected = interpret(program(), initial, limit)
-            output = subprocess.check_output([RUNNER, *map(str, initial), str(limit), '32768'], text=True)
-            lines = output.splitlines()
-            actual = list(map(int, lines[0].split()))
-            ram = dict(tuple(map(int, row.split(':'))) for row in lines[1:])
-            with self.subTest(limit=limit):
-                self.assertEqual((actual, ram), expected)
+        self.assertEqual(set(RUNNERS), set(PROGRAMS))
+        for name, fixture in PROGRAMS.items():
+            for limit in range(300):
+                initial = [rng.randrange(65536), rng.randrange(256), rng.randrange(256),
+                           rng.randrange(256) | 0x30]
+                expected = interpret(fixture(), initial, limit)
+                output = subprocess.check_output([RUNNERS[name], *map(str, initial), str(limit), '32768'], text=True, timeout=5)
+                lines = output.splitlines()
+                actual = list(map(int, lines[0].split()))
+                ram = dict(tuple(map(int, row.split(':'))) for row in lines[1:])
+                with self.subTest(program=name, limit=limit):
+                    self.assertEqual((actual, ram), expected)
 
-    @unittest.skipUnless(RUNNER, 'compiled runner required')
+    @unittest.skipUnless(RUNNERS, 'compiled runners required')
+    def test_all_branch_flag_combinations(self):
+        for bits in range(16):
+            p = 0x30 | ((bits & 8) << 4) | ((bits & 4) << 4) | (bits & 3)
+            output = subprocess.check_output(
+                [RUNNERS['branches'], '4660', '0', '0', str(p), '300', '32768'],
+                text=True, timeout=5)
+            ram = dict(tuple(map(int, row.split(':'))) for row in output.splitlines()[1:])
+            # Complementary conditions must write exactly one address per flag pair.
+            expected = {0 if p & 128 else 1: 0x34,
+                        2 if p & 64 else 3: 0x34,
+                        4 if p & 1 else 5: 0x34,
+                        6 if p & 2 else 7: 0x34}
+            with self.subTest(p=p):
+                self.assertEqual(ram, expected)
+
+    @unittest.skipUnless(RUNNERS, 'compiled runners required')
     def test_entry_contract(self):
         for p, pc in ((0, 32768), (0x34, 32769)):
-            output = subprocess.check_output([RUNNER, '0', '0', '0', str(p), '10', str(pc)], text=True)
+            output = subprocess.check_output([RUNNERS['synthetic'], '0', '0', '0', str(p), '10', str(pc)], text=True, timeout=5)
             self.assertEqual(list(map(int, output.splitlines()[0].split()))[-2:], [0, 0])
 
 

@@ -4,17 +4,23 @@ Python traduz um programa sintético para instruções C++ diretas, sem decodifi
 opcodes durante a execução. O runtime C++ é independente das ferramentas existentes.
 Nenhum arquivo comercial é usado ou distribuído. Isso não executa o jogo.
 
-Contrato: fluxo linear em banco zero a partir de $8000, E=1 e M=X=1,
+Contrato: código em banco zero a partir de $8000, E=1 e M=X=1,
 A de 8 bits com B preservado, X/Y de 8 bits. Suporta LDA/LDX/LDY imediato,
-STA absoluto, INX, DEX, CLC, SEC, NOP e STP. N/Z são atualizadas nas cargas
+STA absoluto, INX, DEX, CLC, SEC, NOP, BRA e os oito desvios condicionais
+(BPL/BMI/BVC/BVS/BCC/BCS/BNE/BEQ), além de STP. N/Z são atualizadas nas cargas
 e INX/DEX; as demais flags são preservadas, salvo carry em CLC/SEC.
 STP encerra a função; não modelamos interrupções, ciclos ou retomada.
 RAM plana de 64 KiB começa zerada; o fluxo de código é separado e imutável.
-Não há LoROM, barramento SNES, PPU, APU, DMA, pilha, desvios, modo nativo,
+Não há LoROM, barramento SNES, PPU, APU, DMA, pilha, chamadas, modo nativo,
 mudanças de largura nem automodificação. STA usa DBR fixo em zero.
 
 O gerador rejeita instruções desconhecidas, truncadas, programas maiores que
-32 KiB, ausência de STP e bytes posteriores ao STP. O limite de execução é
+32 KiB, ausência de STP e bytes posteriores ao STP. Os alvos dos desvios relativos
+de 8 bits precisam estar dentro do programa, no início de uma instrução. Todo o
+fluxo é decodificado e validado, inclusive trechos não alcançados. O C++ usa saltos
+diretos entre instruções traduzidas; não interpreta opcodes durante a execução.
+STP deve ser a última instrução decodificada, mas pode ser inalcançável em um loop.
+O limite de execução é
 verificado antes de cada instrução; a saída inclui PC, passos e motivo booleano
 de parada (STP=true, limite/contrato inválido=false). Uma chamada começa em $8000;
 retomar uma execução parcial não é suportado.
@@ -30,5 +36,9 @@ ctest --test-dir build -C Release --output-on-failure
 O CMake gera os bytes e o C++ no diretório de build. O CTest compara o executável
 compilado com um interpretador Python independente em cada prefixo do programa,
 com estados iniciais determinísticos variados, flags, B, wraparound, limites e
-toda a memória modificada. Também verifica rejeições e contrato de entrada.
+toda a memória modificada. São quatro programas: linear, desvios condicionais
+com loop finito, loop infinito e deslocamentos extremos (-128/+127). Cada um é
+comparado em 300 limites de execução. Há ainda uma tabela explícita com todas
+as 16 combinações de N/V/Z/C para conferir os caminhos tomados, além das
+rejeições e do contrato de entrada. Loops infinitos param pelo limite de instruções.
 O CI existente executa esses testes junto aos anteriores em Windows e Linux.
