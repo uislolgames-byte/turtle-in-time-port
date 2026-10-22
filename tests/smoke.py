@@ -160,6 +160,13 @@ def main():
         boundary = check([cfg, str(boundary_path), '512', '--hotspots'], 0)
         assert '$009234,1,1,0,candidate,$001234,JMP,"4C 00 80 EA' in boundary, boundary
         assert ',jump' in boundary.splitlines()[1], boundary
+        # Fixed-width store instructions can be decoded without knowing M/X.
+        store_rom = bytearray(calls_rom)
+        store_rom[0x1234:0x123b] = bytes([0x78, 0x8D, 0x00, 0x21, 0xE8, 0x60, 0xEA])
+        store_path = root / 'hotspot-stores.sfc'
+        store_path.write_bytes(store_rom)
+        stores = check([cfg, str(store_path), '512', '--hotspots'], 0)
+        assert ',"SEI STA INX RTS"' in stores, stores
         check([cfg, str(calls_path), '512', '--unknown'], 2)
         cfg_calls_output = check([cfg, str(calls_path)], 0)
         assert '"$008000" -> "$009234" [label="JSR",style=dashed]' in cfg_calls_output, cfg_calls_output
