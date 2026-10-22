@@ -142,6 +142,24 @@ def main():
             output = check([cfg, str(conditional_path)], 0)
             assert f'"$008000" -> "$008004" [label="{mnemonic}"]' in output, output
             assert '"$008000" -> "$008002" [label="fallthrough"]' in output, output
+        # Decode additional instructions with 8-bit accumulator/index widths.
+        extended_rom = bytearray(rom)
+        extended_rom[:13] = bytes([
+            0xA0, 0x12,        # LDY #$12
+            0x69, 0x01,        # ADC #$01
+            0x8E, 0x00, 0x21,  # STX $2100
+            0x5A,              # PHY
+            0x7A,              # PLY
+            0xC9, 0x05,        # CMP #$05
+            0xEA,              # NOP
+            0xDB,              # STP
+        ])
+        extended_path = root / 'extended-cfg.sfc'
+        extended_path.write_bytes(extended_rom)
+        extended_output = check([cfg, str(extended_path)], 0)
+        assert '"$008000" -> "$008002" [label="next"]' in extended_output, extended_output
+        assert '"$008004" -> "$008007" [label="next"]' in extended_output, extended_output
+        assert '"$00800B" -> "$00800C" [label="next"]' in extended_output, extended_output
         check([cfg, str(invalid)], 1, 'Reset vector')
         check([cfg, str(valid), '0'], 2)
         check([callgraph, str(invalid)], 1, 'Reset vector')
