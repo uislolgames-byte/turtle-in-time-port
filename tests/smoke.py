@@ -107,7 +107,10 @@ def main():
         assert '$008004: STP' in emu_listing, emu_listing
         check([flow, str(valid), '20'], 0, 'Decoded=')
         check([hwscan, str(valid), '5'], 0, 'Total candidate byte patterns: 1')
-        check([vectors, str(valid)], 0, 'Emulation RESET: $8000 [ROM offset $000000]')
+        vector_output = check([vectors, str(valid)], 0, 'Emulation RESET: $8000 [ROM offset $000000]')
+        assert 'Interrupt vectors (bank $00, LoROM):' in vector_output
+        assert 'Emulation NMI: $8010 [ROM offset $000010]' in vector_output
+        assert 'Native NMI: $8020 [ROM offset $000020]' in vector_output
         check([vectors, str(valid)], 0, 'Native NMI: $8020 [ROM offset $000020]')
         check([entrydump, str(valid)], 0, 'RESET $8000: 18 FB C2 30 A2 FF 1D')
         check([entrydump, str(headered)], 0, 'RESET $8000: 18 FB')
