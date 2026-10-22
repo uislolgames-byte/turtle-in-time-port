@@ -12,7 +12,7 @@ Experimento de engenharia reversa do **Teenage Mutant Ninja Turtles IV: Turtles 
 - `tmnt_vectors`: lê os vetores de interrupção nativos e de emulação do 65C816, mostrando endereços e offsets LoROM quando aplicável.
 - `tmnt_entrydump`: mostra os bytes nos pontos de entrada dos vetores.
 - `tmnt_callscan`: encontra chamadas JSR/JSL em uma sequência linear conhecida.
-- `tmnt_cfg`: exporta um grafo parcial de fluxo de controle, incluindo BRA/BRL, BNE/BEQ, JMP/JML e sequência linear. Não percorre chamadas e para em opcodes desconhecidos.\n- `tmnt_callgraph`: exporta chamadas diretas encontradas em formato Graphviz DOT. A análise **não** segue caminhos de execução completos nem decodifica automaticamente rotinas chamadas com estado de CPU desconhecido.
+- `tmnt_cfg`: exporta um grafo parcial de fluxo de controle, incluindo BRA/BRL, os oito desvios condicionais (BPL/BMI/BVC/BVS/BCC/BCS/BNE/BEQ), JMP/JML e sequência linear. Não percorre chamadas e para em opcodes desconhecidos.\n- `tmnt_callgraph`: exporta chamadas diretas encontradas em formato Graphviz DOT. A análise **não** segue caminhos de execução completos nem decodifica automaticamente rotinas chamadas com estado de CPU desconhecido.
 
 ## Investigar os pontos de entrada
 
