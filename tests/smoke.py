@@ -482,6 +482,27 @@ def main():
         idx_oob_path.write_bytes(idx_oob_rom)
         idx_oob_output = check([executor, str(idx_oob_path), '20'], 0)
         assert 'reason=unsupported' in idx_oob_output, idx_oob_output
+        # BCC/BCS must use carry without altering it; exercise taken and
+        # fallthrough paths with opposite carry states.
+        for branch_op, carry_op, expected in (
+            (0x90, 0x18, 0x22),  # CLC; BCC taken
+            (0x90, 0x38, 0x11),  # SEC; BCC not taken
+            (0xB0, 0x38, 0x22),  # SEC; BCS taken
+            (0xB0, 0x18, 0x11),  # CLC; BCS not taken
+        ):
+            carry_rom = bytearray(rom)
+            carry_program = bytes([
+                carry_op, branch_op, 0x04,
+                0xA9, 0x11, 0x80, 0x02,
+                0xA9, 0x22, 0xDB,
+            ])
+            carry_rom[:len(carry_program)] = carry_program
+            carry_path = root / f'execute-carry-branch-{branch_op:02x}-{carry_op:02x}.sfc'
+            carry_path.write_bytes(carry_rom)
+            carry_output = check([executor, str(carry_path), '20'], 0)
+            assert 'reason=stp' in carry_output, carry_output
+            assert f'a=${expected:04X}' in carry_output, carry_output
+            assert f'c={1 if carry_op == 0x38 else 0}' in carry_output, carry_output
         check([executor, str(valid), '0'], 2)
         unsupported_rom = bytearray(rom)
         unsupported_rom[0] = 0xFF

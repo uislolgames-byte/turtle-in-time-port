@@ -40,7 +40,7 @@ int main(int argc, char** argv) {
         case 0xBD: case 0xB9: width = 3; break;
         case 0x85: case 0xA5: case 0x95: case 0xB5: width = 2; break;
         case 0x80: case 0xF0: case 0xD0: case 0x30: case 0x10:
-        case 0x70: case 0x50: width = 2; break;
+        case 0x70: case 0x50: case 0x90: case 0xB0: width = 2; break;
         case 0x18: case 0x38: case 0xB8: case 0xFB: case 0xEA: case 0xDB:
         case 0xE8: case 0xCA: case 0xC8: case 0x88: case 0x1A: case 0x3A:
         case 0xAA: case 0xA8: case 0x8A: case 0x98: case 0x9B: case 0xBB:
@@ -208,8 +208,9 @@ int main(int argc, char** argv) {
           last_value = a & (m8 ? 0xffu : 0xffffu);
           break;
         case 0x80: case 0xF0: case 0xD0: case 0x30: case 0x10:
-        case 0x70: case 0x50: {
-          if ((op == 0xF0 && !zero) || (op == 0xD0 && zero) ||
+        case 0x70: case 0x50: case 0x90: case 0xB0: {
+          if ((op == 0x90 && carry) || (op == 0xB0 && !carry) ||
+              (op == 0xF0 && !zero) || (op == 0xD0 && zero) ||
               (op == 0x30 && !negative) || (op == 0x10 && negative) ||
               (op == 0x70 && !overflow) || (op == 0x50 && overflow))
             break;
