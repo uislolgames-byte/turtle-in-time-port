@@ -30,9 +30,10 @@ int main(int argc, char** argv) {
       unsigned width = 1;
       switch (op) {
         case 0xC2: case 0xE2: case 0xA9: case 0xA2: case 0xA0:
-        case 0x69: case 0xE9: case 0xC9:
+        case 0x69: case 0xE9: case 0xC9: case 0x29: case 0x09: case 0x49:
           width = (op == 0xC2 || op == 0xE2) ? 2 :
-                  ((op == 0xA9 || op == 0x69 || op == 0xE9 || op == 0xC9)
+                  ((op == 0xA9 || op == 0x69 || op == 0xE9 || op == 0xC9 ||
+                       op == 0x29 || op == 0x09 || op == 0x49)
                       ? (m8 ? 2 : 3) : (x8 ? 2 : 3));
           break;
         case 0x8D: case 0xAD: width = 3; break;
@@ -95,6 +96,15 @@ int main(int argc, char** argv) {
           zero = (a & (m8 ? 0xffu : 0xffffu)) == 0;
           negative = (a & (m8 ? 0x80u : 0x8000u)) != 0;
           break;
+        case 0x29: case 0x09: case 0x49: {
+          const unsigned lhs = a & (m8 ? 0xffu : 0xffffu);
+          const unsigned result = op == 0x29 ? (lhs & value)
+              : op == 0x09 ? (lhs | value) : (lhs ^ value);
+          a = m8 ? ((a & 0xff00u) | result) : result;
+          zero = result == 0;
+          negative = (result & (m8 ? 0x80u : 0x8000u)) != 0;
+          break;
+        }
         case 0x69: case 0xE9: case 0xC9: {
           const unsigned mask = m8 ? 0xffu : 0xffffu;
           const unsigned lhs = a & mask;

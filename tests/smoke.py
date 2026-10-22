@@ -271,6 +271,30 @@ def main():
         cmpneg_path.write_bytes(cmpneg_rom)
         cmpneg_output = check([executor, str(cmpneg_path), '20'], 0)
         assert 'a=$0000' in cmpneg_output and 'c=0 z=0 n=1' in cmpneg_output, cmpneg_output
+        # Logical operations preserve carry and overflow, and update N/Z.
+        logic_rom = bytearray(rom)
+        logic_program = bytes([
+            0x38, 0xE2, 0x40, 0xA9, 0xF0, 0x29, 0x0F,
+            0x09, 0x80, 0x49, 0x80, 0xDB,
+        ])
+        logic_rom[:len(logic_program)] = logic_program
+        logic_path = root / 'execute-logic.sfc'
+        logic_path.write_bytes(logic_rom)
+        logic_output = check([executor, str(logic_path), '20'], 0)
+        assert 'reason=stp' in logic_output and 'a=$0000' in logic_output, logic_output
+        assert 'c=1 z=1 n=0 v=1' in logic_output, logic_output
+        # 16-bit EOR must consume a two-byte operand.
+        logic16_rom = bytearray(rom)
+        logic16_program = bytes([
+            0x18, 0xFB, 0xC2, 0x20, 0xA9, 0x00, 0x80,
+            0x49, 0x00, 0x80, 0xDB,
+        ])
+        logic16_rom[:len(logic16_program)] = logic16_program
+        logic16_path = root / 'execute-logic16.sfc'
+        logic16_path.write_bytes(logic16_rom)
+        logic16_output = check([executor, str(logic16_path), '20'], 0)
+        assert 'reason=stp' in logic16_output and 'a=$0000' in logic16_output, logic16_output
+        assert 'm=16' in logic16_output and 'z=1 n=0' in logic16_output, logic16_output
         check([executor, str(valid), '0'], 2)
         unsupported_rom = bytearray(rom)
         unsupported_rom[0] = 0xFF
