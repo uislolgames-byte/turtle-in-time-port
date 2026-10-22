@@ -50,6 +50,16 @@ O GitHub Actions executa em `windows-2022` e `ubuntu-24.04`. Veja os resultados 
 
 O teste de integração cria uma ROM sintética, sem arquivos comerciais. **Não publique a ROM original.**
 
+Para compilar e executar toda a bateria de uma vez, após configurar com
+`-DBUILD_TESTING=ON`, execute `cmake --build build --config Release --target check --parallel`.
+O alvo `check` compila as ferramentas, os testes e a janela Windows quando aplicável,
+executa todos os testes CTest e gera `build/ctest-results.xml`. Uma falha retorna
+erro ao comando e ao CI. A bateria inclui instruções isoladas e uma cadeia com
+mudanças de largura, comparações, lógica e loop, conferindo cada estado intermediário
+em 144 execuções, com/sem copier header e chamadas repetidas. Também verifica que
+o diagnóstico não modifica os bytes da ROM carregada. A interface gráfica ainda
+exige verificação manual; esses testes não comprovam execução completa do jogo.
+
 ## Próximos passos
 Expandir a decodificação com propagação explícita de estado do 65C816, acompanhar desvios com segurança e validar Windows/Linux em cada alteração.
 
