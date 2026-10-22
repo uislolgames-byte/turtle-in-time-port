@@ -129,7 +129,7 @@ def main():
         assert '"$008003" -> "$125678" [label="JSL"]' in graph_output, graph_output
         assert 'digraph TMNT_calls {' in graph_output, graph_output
         inventory = check([cfg, str(calls_path), '512', '--inventory'], 0)
-        assert inventory.startswith('address,origin,source,kind,status,rom_offset,first_bytes\n'), inventory
+        assert inventory.startswith('address,origin,source,kind,status,rom_offset,first_bytes,first_opcode\n'), inventory
         assert '$009234,call,$008000,JSR,candidate,$001234,\"' in inventory, inventory
         assert '$125678,call,$008003,JSL,unmapped,,\"\"\n' in inventory, inventory
         assert '$008020,vector,$007FEA,"Native NMI",entry_only,$000020,"' in inventory, inventory
