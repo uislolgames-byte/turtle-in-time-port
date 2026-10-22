@@ -133,6 +133,8 @@ def main():
         assert '"$008003" -> "$125678" [label="JSL",style=dashed]' in cfg_calls_output, cfg_calls_output
         assert '"$008000" -> "$008003" [label="return-assumed"]' in cfg_calls_output, cfg_calls_output
         assert '"$008003" -> "$008007" [label="return-assumed"]' in cfg_calls_output, cfg_calls_output
+        assert '"$009234" [shape=ellipse,style=dashed]' in cfg_calls_output, cfg_calls_output
+        assert '"$125678" [shape=ellipse,style=dashed]' in cfg_calls_output, cfg_calls_output
         # RTS and RTL are terminal return nodes, not fallthrough edges.
         for opcode in (0x60, 0x6B):
             return_rom = bytearray(rom)
