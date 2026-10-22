@@ -21,7 +21,7 @@ int main(int argc, char** argv) {
     unsigned pc = rom.reset(), a = 0, x = 0, y = 0, d = 0, sp = 0x01ff;
     bool e = true, m8 = true, x8 = true, carry = false, zero = false, negative = false, overflow = false;
     std::array<unsigned char, 0x2000> wram{};
-    unsigned stores = 0, last_store = 0, last_value = 0, call_depth = 0;
+    unsigned stores = 0, last_store = 0, last_value = 0, call_depth = 0, stack_bytes = 0;
     int steps = 0;
     const char* reason = "limit";
     for (; steps < limit; ++steps) {
@@ -44,7 +44,7 @@ int main(int argc, char** argv) {
         case 0x18: case 0x38: case 0xB8: case 0xFB: case 0xEA: case 0xDB:
         case 0xE8: case 0xCA: case 0xC8: case 0x88: case 0x1A: case 0x3A:
         case 0xAA: case 0xA8: case 0x8A: case 0x98: case 0x9B: case 0xBB:
-        case 0x5B: case 0x7B: case 0x60:
+        case 0x5B: case 0x7B: case 0x60: case 0x48: case 0x68:
           break;
         default: reason = "unsupported"; goto finished;
       }
@@ -224,10 +224,43 @@ int main(int argc, char** argv) {
           pc = (pc & 0xff0000u) | static_cast<unsigned>(target - 2);
           break;
         }
+        case 0x48: {
+          const unsigned count = m8 ? 1u : 2u;
+          if (stack_bytes + count > 256u) {
+            reason = "stack";
+            goto finished;
+          }
+          if (!m8) {
+            wram[sp] = static_cast<unsigned char>((a >> 8) & 0xffu);
+            sp = 0x0100u | ((sp - 1u) & 0xffu);
+          }
+          wram[sp] = static_cast<unsigned char>(a & 0xffu);
+          sp = 0x0100u | ((sp - 1u) & 0xffu);
+          stack_bytes += count;
+          break;
+        }
+        case 0x68: {
+          const unsigned count = m8 ? 1u : 2u;
+          if (stack_bytes < count) {
+            reason = "stack";
+            goto finished;
+          }
+          sp = 0x0100u | ((sp + 1u) & 0xffu);
+          unsigned loaded = wram[sp];
+          if (!m8) {
+            sp = 0x0100u | ((sp + 1u) & 0xffu);
+            loaded |= static_cast<unsigned>(wram[sp]) << 8;
+          }
+          stack_bytes -= count;
+          a = m8 ? ((a & 0xff00u) | loaded) : loaded;
+          zero = loaded == 0u;
+          negative = (loaded & (m8 ? 0x80u : 0x8000u)) != 0u;
+          break;
+        }
         case 0x20: {
           // JSR pushes the last operand byte's address, high byte first.
           // This bounded model rejects calls that would overflow its stack.
-          if (value < 0x8000u || call_depth >= 127u) {
+          if (value < 0x8000u || stack_bytes + 2u > 256u) {
             reason = value < 0x8000u ? "boundary" : "stack";
             goto finished;
           }
@@ -237,11 +270,12 @@ int main(int argc, char** argv) {
           wram[sp] = static_cast<unsigned char>(ret & 0xffu);
           sp = (sp & 0xff00u) | ((sp - 1u) & 0xffu);
           ++call_depth;
+          stack_bytes += 2u;
           pc = (pc & 0xff0000u) | (value - 3u);
           break;
         }
         case 0x60: {
-          if (call_depth == 0u) {
+          if (call_depth == 0u || stack_bytes < 2u) {
             reason = "stack";
             goto finished;
           }
@@ -250,6 +284,7 @@ int main(int argc, char** argv) {
           sp = (sp & 0xff00u) | ((sp + 1u) & 0xffu);
           const unsigned high = wram[sp];
           --call_depth;
+          stack_bytes -= 2u;
           const unsigned target = (((high << 8) | low) + 1u) & 0xffffu;
           if (target < 0x8000u) {
             reason = "boundary";

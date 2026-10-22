@@ -593,6 +593,43 @@ def main():
         bad_call_path.write_bytes(bad_call_rom)
         bad_call_output = check([executor, str(bad_call_path), '10'], 0)
         assert 'reason=boundary' in bad_call_output, bad_call_output
+        # PHA/PLA round-trip in emulation mode restores A and updates N/Z.
+        pha8_rom = bytearray(rom)
+        pha8_program = bytes([0xA9, 0x80, 0x48, 0xA9, 0x00, 0x68, 0xDB])
+        pha8_rom[:len(pha8_program)] = pha8_program
+        pha8_path = root / 'execute-pha-pla8.sfc'
+        pha8_path.write_bytes(pha8_rom)
+        pha8_output = check([executor, str(pha8_path), '20'], 0)
+        assert 'reason=stp' in pha8_output and 'a=$0080' in pha8_output, pha8_output
+        assert 'sp=$01FF' in pha8_output and 'n=1' in pha8_output, pha8_output
+        # Native 16-bit PHA/PLA must push high then low and restore both.
+        pha16_rom = bytearray(rom)
+        pha16_program = bytes([
+            0x18, 0xFB, 0xC2, 0x20, 0xA9, 0x34, 0x12, 0x48,
+            0xA9, 0x00, 0x00, 0x68, 0xDB,
+        ])
+        pha16_rom[:len(pha16_program)] = pha16_program
+        pha16_path = root / 'execute-pha-pla16.sfc'
+        pha16_path.write_bytes(pha16_rom)
+        pha16_output = check([executor, str(pha16_path), '20'], 0)
+        assert 'reason=stp' in pha16_output and 'a=$1234' in pha16_output, pha16_output
+        assert 'sp=$01FF' in pha16_output and 'm=16' in pha16_output, pha16_output
+        # PHA must not alter flags and PLA must update Z.
+        flags_rom = bytearray(rom)
+        flags_program = bytes([0x38, 0xA9, 0x00, 0x48, 0xA9, 0x01, 0x68, 0xDB])
+        flags_rom[:len(flags_program)] = flags_program
+        flags_path = root / 'execute-pha-flags.sfc'
+        flags_path.write_bytes(flags_rom)
+        flags_output = check([executor, str(flags_path), '20'], 0)
+        assert 'a=$0000' in flags_output and 'z=1' in flags_output, flags_output
+        assert 'c=1' in flags_output, flags_output
+        # A pop from an empty synthetic stack is rejected.
+        empty_pla_rom = bytearray(rom)
+        empty_pla_rom[0] = 0x68
+        empty_pla_path = root / 'execute-empty-pla.sfc'
+        empty_pla_path.write_bytes(empty_pla_rom)
+        empty_pla_output = check([executor, str(empty_pla_path), '10'], 0)
+        assert 'reason=stack' in empty_pla_output, empty_pla_output
         check([executor, str(valid), '0'], 2)
         unsupported_rom = bytearray(rom)
         unsupported_rom[0] = 0xFF
