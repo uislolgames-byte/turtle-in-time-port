@@ -50,6 +50,16 @@ O GitHub Actions executa em `windows-2022` e `ubuntu-24.04`. Veja os resultados 
 
 O teste de integração cria uma ROM sintética, sem arquivos comerciais. **Não publique a ROM original.**
 
+Para compilar e executar toda a bateria de uma vez, após configurar com
+`-DBUILD_TESTING=ON`, execute `cmake --build build --config Release --target check --parallel`.
+O alvo `check` compila as ferramentas, os testes e a janela Windows quando aplicável,
+executa todos os testes CTest e gera `build/ctest-results.xml`. Uma falha retorna
+erro ao comando e ao CI. A bateria inclui instruções isoladas e uma cadeia com
+mudanças de largura, comparações, lógica e loop, conferindo cada estado intermediário
+em 144 execuções, com/sem copier header e chamadas repetidas. Também verifica que
+o diagnóstico não modifica os bytes da ROM carregada. A interface gráfica ainda
+exige verificação manual; esses testes não comprovam execução completa do jogo.
+
 ## Próximos passos
 Expandir a decodificação com propagação explícita de estado do 65C816, acompanhar desvios com segurança e validar Windows/Linux em cada alteração.
 
@@ -58,3 +68,45 @@ O Windows também compila tmnt_native.exe. O aplicativo abre uma janela Win32 e 
 
 ## Diagnóstico limitado de CPU
 O aplicativo Windows possui o botão Probe CPU, que executa no máximo 32 instruções de um subconjunto conhecido do 65C816 a partir de RESET, exibindo PC/A/X/Y e motivo da parada. O mesmo núcleo de diagnóstico está disponível em tmnt_cpuprobe e é testado com ROM sintética em Windows/Linux. Não há barramento SNES, gráficos, áudio ou execução completa do jogo. A ROM permanece local.
+
+O diagnóstico também suporta BRA, os oito desvios condicionais e INX/DEX,
+respeitando larguras de 8/16 bits e atualizando N/Z em cargas e incrementos.
+REP/SEP permitem estabelecer N/V/Z/C. Flags desconhecidas após RESET encerram
+o diagnóstico quando um desvio depende delas; XCE também exige carry conhecido.
+Saltos usam deslocamento assinado e preservam o banco do PC. O limite de
+instruções encerra loops; destinos fora do mapeamento ROM encerram o diagnóstico.
+Os testes adicionais são escritos em C++ e usam apenas uma ROM sintética.
+
+CMP/CPX/CPY imediato comparam A/X/Y em 8 ou 16 bits, estabelecendo C/N/Z
+sem alterar os registradores ou V. Isso permite diagnosticar loops de comparação
+com desvios condicionais. Os testes conferem os 256 valores de 8 bits contra $80,
+casos de 16 bits, preservação de V/B e operandos truncados no limite do banco.
+
+AND/ORA/EOR imediato também respeitam a largura M (8/16 bits), atualizando
+somente N/Z e preservando o byte B de A em modo de 8 bits. Os testes C++ cobrem
+todos os 256 valores de 8 bits com máscara $80, combinações de C/V, resultados
+explícitos de 16 bits, flags desconhecidas e truncamento no limite do banco.
+
+ADC/SBC imediato binário em 8/16 bits atualiza C/V/N/Z e preserva B em 8 bits.
+Carry de entrada desconhecido encerra o diagnóstico antes da operação. O bit D
+começa limpo no RESET e pode ser alterado por CLD/SED ou REP/SEP; com D ligado,
+ADC/SBC para com `decimal arithmetic unsupported`, sem alterar A nem consumir
+a instrução. O teste de aritmética usa um oráculo de somas/subtrações e limites
+assinados para conferir resultados, carry, overflow e desvios em toda a bateria.
+
+LDA/STA/STX/STY/STZ absoluto acessam apenas RAM sintética em $0000–$1FFF,
+com DBR fixo em zero. A RAM começa zerada a cada chamada de diagnóstico,
+independente da ROM carregada. LDA respeita M e altera N/Z; STA/STZ respeitam M,
+STX/STY respeitam X, e as escritas preservam flags. Transferências de 16 bits
+usam a ordem little-endian e validam os dois bytes antes de acessar a memória.
+Acesso fora dessa região (incluindo registradores de hardware e espaço ROM)
+para com `address outside probe RAM`. Isso ainda não é um barramento SNES.
+O teste de memória cobre larguras M/X independentes, fronteiras, flags, ordem dos
+bytes, isolamento entre chamadas e preservação da ROM original.
+
+LDA/STA absoluto indexado por X ou Y também usa a RAM de diagnóstico. O endereço
+efetivo soma base e índice, sem truncar o resultado para 16 bits; acessos que
+ultrapassem a região permitida param antes de acessar os dados. M define a largura
+da transferência, X define a largura dos índices. Os testes cruzam as quatro
+combinações M/X e verificam os endereços com acessos absolutos independentes,
+além de uma sequência que preenche e percorre um buffer com loop.

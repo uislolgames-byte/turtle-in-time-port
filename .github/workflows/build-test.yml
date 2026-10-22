@@ -25,10 +25,8 @@ jobs:
           python --version
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
-      - name: Build
-        run: cmake --build build --config Release --parallel
-      - name: Test
-        run: ctest --test-dir build -C Release --output-on-failure --output-junit ctest-results.xml
+      - name: Build and run full regression chain
+        run: cmake --build build --config Release --target check --parallel
       - name: Upload test report
         if: always()
         uses: actions/upload-artifact@v7
