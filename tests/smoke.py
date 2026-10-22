@@ -157,6 +157,15 @@ def main():
             stop_output = check([cfg, str(stop_path)], 0)
             assert '"$008000" [shape=octagon,label="$008000 stop/trap"]' in stop_output, stop_output
             assert '"$008000" -> ' not in stop_output, stop_output
+        # A long jump into $7E/$7F targets WRAM, never ROM.
+        for bank in (0x7E, 0x7F):
+            wram_rom = bytearray(rom)
+            wram_rom[:5] = bytes([0x5C, 0x00, 0x80, bank, 0xDB])
+            wram_path = root / f'wram-jump-{bank:02x}.sfc'
+            wram_path.write_bytes(wram_rom)
+            wram_output = check([cfg, str(wram_path)], 0)
+            assert f'"$008000" -> "${bank:02X}8000"' not in wram_output, wram_output
+            assert 'Unresolved=1' in wram_output, wram_output
         cfg_output = check([cfg, str(branch)], 0)
         assert '"$008000" -> "$008004" [label="BRA"]' in cfg_output, cfg_output
         assert '"$008004" -> "$008000" [label="BNE"]' in cfg_output, cfg_output
