@@ -56,7 +56,8 @@ int main(int argc, char** argv) {
       switch(op) {
         case 0x18: s.carry=false; s.carry_known=true; break;
         case 0x38: s.carry=true; s.carry_known=true; break;
-        case 0xfb: { if (!s.carry_known) { unknown=true; break; }\n                     bool old=s.e; s.e=s.carry; s.carry=old;
+        case 0xfb: { if (!s.carry_known) { unknown=true; break; }
+                     bool old=s.e; s.e=s.carry; s.carry=old;
                      if(s.e) s.m8=s.x8=true; break; }
         case 0xc2: case 0xe2: bytes=1; break;
         case 0xa2: case 0xa0: bytes=s.x8?1:2; break;
@@ -73,7 +74,8 @@ int main(int argc, char** argv) {
         case 0x9a: case 0xea: case 0xaa: case 0xa8:
         case 0x8a: case 0x98: case 0x5a: case 0x7a:
         case 0x48: case 0x68: case 0x08:
-        case 0xe8: case 0xca: case 0xc8: case 0x88: break;\n        case 0x28: unknown=true; break; // PLP restores unknown M/X/E-independent status
+        case 0xe8: case 0xca: case 0xc8: case 0x88: break;
+        case 0x28: unknown=true; break; // PLP restores unknown M/X/E-independent status
         case 0x60: case 0x6b: case 0xdb: case 0x00: terminal=true; break;
         default: unknown=true; break;
       }
