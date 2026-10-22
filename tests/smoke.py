@@ -11,7 +11,7 @@ def check(args, code, expected=None):
         assert expected in output, (args, output)
 
 def main():
-    assert len(sys.argv) == 5
+    assert len(sys.argv) == 6
     tools = sys.argv[1:]
     with tempfile.TemporaryDirectory() as d:
         p = pathlib.Path(d)
@@ -21,6 +21,8 @@ def main():
         rom[0x7fc0:0x7fc0 + len(title)] = title
         assert len(rom) == 32768
         rom[0x7ffc:0x7ffe] = bytes([0, 0x80])
+        rom[0x7ffa:0x7ffc] = bytes([0x10, 0x80])
+        rom[0x7fea:0x7fec] = bytes([0x20, 0x80])
         rom[0x7fdc:0x7fe0] = bytes([0x34, 0x12, 0xcb, 0xed])
         valid = p / 'synthetic.sfc'
         valid.write_bytes(rom)
@@ -43,7 +45,10 @@ def main():
         check([tools[1], str(valid), '4'], 0, 'XCE')
         check([tools[2], str(valid), '5'], 0, 'Decoded=')
         check([tools[3], str(valid), '5'], 0, 'Total candidate byte patterns:')
-        for exe in tools[1:]:
+        check([tools[4], str(valid)], 0, 'Emulation RESET: $8000 [ROM offset $000000]')
+        check([tools[4], str(valid)], 0, 'Native NMI: $8020 [ROM offset $000020]')
+        check([tools[4], str(headered)], 0, 'Emulation NMI: $8010')
+        for exe in tools[1:4]:
             check([exe, str(valid), '0'], 2)
     print('All smoke tests passed')
 
