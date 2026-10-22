@@ -977,6 +977,26 @@ def main():
         check([vectors, str(valid)], 0, 'Native NMI: $8020 [ROM offset $000020]')
         check([entrydump, str(valid)], 0, 'RESET $8000: 18 FB C2 30 A2 FF 1D')
         check([entrydump, str(headered)], 0, 'RESET $8000: 18 FB')
+        # Every COP/ABORT entry is in bank zero. Inspect all four vectors,
+        # including invalid targets and the last byte of the LoROM bank.
+        interrupt_rom = bytearray(rom + bytes([0xCD]) * 32768)
+        interrupt_rom[0x7FE4:0x7FE6] = bytes([0x40, 0x80])
+        interrupt_rom[0x7FE8:0x7FEA] = bytes([0x50, 0x80])
+        interrupt_rom[0x7FF4:0x7FF6] = bytes([0x00, 0x20])
+        interrupt_rom[0x7FF8:0x7FFA] = bytes([0xFF, 0xFF])
+        interrupt_rom[0x40:0x50] = bytes(range(0x40, 0x50))
+        interrupt_rom[0x50:0x60] = bytes(range(0x60, 0x70))
+        interrupt_rom[0x7FFF] = 0xAB
+        for copier in (False, True):
+            interrupt_path = root / f'entrydump-interrupts-{copier}.sfc'
+            interrupt_path.write_bytes((bytes(512) if copier else b'') + interrupt_rom)
+            output = check([entrydump, str(interrupt_path)], 0)
+            lines = output.splitlines()
+            assert len(lines) == 10, output
+            assert 'Native COP $8040: ' + ' '.join(f'{b:02X}' for b in range(0x40, 0x50)) in lines, output
+            assert 'Native ABORT $8050: ' + ' '.join(f'{b:02X}' for b in range(0x60, 0x70)) in lines, output
+            assert 'Emulation COP $2000: unavailable (outside LoROM ROM window)' in lines, output
+            assert 'Emulation ABORT $FFFF: AB' in lines, output
         # JSR uses the current program bank; JSL uses an explicit 24-bit bank.
         calls_rom = bytearray(rom)
         calls_rom[:10] = bytes([0x20, 0x34, 0x92, 0x22, 0x78, 0x56, 0x12,

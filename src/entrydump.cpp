@@ -11,7 +11,9 @@ int main(int argc, char** argv) {
     constexpr Entry entries[] = {
       {"RESET", 0x7ffc}, {"Emulation NMI", 0x7ffa},
       {"Emulation IRQ/BRK", 0x7ffe}, {"Native NMI", 0x7fea},
-      {"Native IRQ", 0x7fee}, {"Native BRK", 0x7fe6}
+      {"Native IRQ", 0x7fee}, {"Native BRK", 0x7fe6},
+      {"Native COP", 0x7fe4}, {"Native ABORT", 0x7fe8},
+      {"Emulation COP", 0x7ff4}, {"Emulation ABORT", 0x7ff8}
     };
     for (const auto& entry : entries) {
       const unsigned address = rom.word(entry.offset);
