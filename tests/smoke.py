@@ -29,6 +29,7 @@ def main():
             check([exe, str(tiny)], 1, 'ROM too small')
         check([tools[0], str(valid)], 0, 'Reset vector: $8000')
         check([tools[1], str(valid), '3'], 0, 'CLC')
+        check([tools[1], str(valid), '4'], 0, 'XCE')
         check([tools[2], str(valid), '5'], 0, 'Decoded=')
         check([tools[3], str(valid), '5'], 0, 'Total candidate byte patterns:')
         for exe in tools[1:]:
