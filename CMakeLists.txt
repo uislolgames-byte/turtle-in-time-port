@@ -3,7 +3,7 @@ project(tmnt_native LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-set(TMNT_TOOLS rominfo disasm flow hwscan vectors entrydump callscan callgraph cfg lift)
+set(TMNT_TOOLS rominfo disasm flow hwscan vectors entrydump callscan callgraph cfg lift exec)
 set(TMNT_TEST_EXECUTABLES)
 foreach(tool IN LISTS TMNT_TOOLS)
   add_executable(tmnt_${tool} src/${tool}.cpp)

@@ -1,0 +1,94 @@
+#include "rom.hpp"
+#include <cstdlib>
+#include <iomanip>
+#include <iostream>
+#include <stdexcept>
+
+// Small, bounded 65C816 instruction-subset interpreter for synthetic tests.
+// This is not a SNES emulator: no bus, stack, interrupts, timing or PPU.
+int main(int argc, char** argv) {
+  if (argc < 2 || argc > 3) {
+    std::cerr << "Usage: tmnt_exec ROM.sfc [limit]\n";
+    return 2;
+  }
+  try {
+    Rom rom(argv[1]);
+    if (rom.reset() < 0x8000)
+      throw std::runtime_error("Reset vector is not in LoROM ROM space");
+    const int limit = argc == 3 ? std::atoi(argv[2]) : 32;
+    if (limit < 1 || limit > 100000) return 2;
+    unsigned pc = rom.reset(), a = 0, x = 0, y = 0;
+    bool e = true, m8 = true, x8 = true, carry = false;
+    int steps = 0;
+    const char* reason = "limit";
+    for (; steps < limit; ++steps) {
+      const size_t offset = rom.lorom(pc);
+      const unsigned op = rom.byte(offset);
+      unsigned width = 1;
+      switch (op) {
+        case 0xC2: case 0xE2: case 0xA9: case 0xA2: case 0xA0:
+          width = (op == 0xC2 || op == 0xE2) ? 2 :
+                  (op == 0xA9 ? (m8 ? 2 : 3) : (x8 ? 2 : 3));
+          break;
+        case 0x18: case 0x38: case 0xFB: case 0xEA: case 0xDB:
+          break;
+        default: reason = "unsupported"; goto finished;
+      }
+      // Never read an operand past the LoROM bank or wrap the program counter.
+      if (offset + width > rom.data.size() ||
+          (offset % 0x8000) + width > 0x8000 ||
+          (pc & 0xffffu) + width > 0xffffu) {
+        reason = "boundary";
+        break;
+      }
+      const unsigned value = width == 1 ? 0 :
+          width == 2 ? rom.byte(offset + 1) : rom.word(offset + 1);
+      switch (op) {
+        case 0x18: carry = false; break;
+        case 0x38: carry = true; break;
+        case 0xFB: {
+          const bool old_e = e;
+          e = carry;
+          carry = old_e;
+          if (e) { m8 = x8 = true; x &= 0xffu; y &= 0xffu; }
+          break;
+        }
+        case 0xC2:
+          if (value & 0x01) carry = false;
+          if (!e) {
+            if (value & 0x20) m8 = false;
+            if (value & 0x10) x8 = false;
+          }
+          break;
+        case 0xE2:
+          if (value & 0x01) carry = true;
+          if (value & 0x20) m8 = true;
+          if (value & 0x10) {
+            x8 = true;
+            x &= 0xffu;
+            y &= 0xffu;
+          }
+          break;
+        case 0xA9: a = m8 ? ((a & 0xff00u) | value) : value; break;
+        case 0xA2: x = value; break;
+        case 0xA0: y = value; break;
+        case 0xDB: reason = "stp"; break;
+        default: break;
+      }
+      pc += width;
+      if (op == 0xDB) { ++steps; break; }
+    }
+finished:
+    std::cout << "reason=" << reason << " steps=" << steps
+              << " pc=$" << std::uppercase << std::hex << std::setw(6)
+              << std::setfill('0') << pc
+              << " a=$" << std::setw(4) << a
+              << " x=$" << std::setw(4) << x
+              << " y=$" << std::setw(4) << y
+              << std::dec << " e=" << (e ? 1 : 0)
+              << " m=" << (m8 ? 8 : 16)
+              << " xbits=" << (x8 ? 8 : 16)
+              << " c=" << (carry ? 1 : 0) << '\n';
+    return 0;
+  } catch (const std::exception& ex) { return error(ex); }
+}

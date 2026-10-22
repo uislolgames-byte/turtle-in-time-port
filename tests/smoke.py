@@ -23,10 +23,10 @@ def main():
         assert name not in paths, f"Duplicate tool entry: {name}"
         paths[name] = path
     required = ("rominfo", "disasm", "flow", "hwscan",
-                "vectors", "entrydump", "callscan", "callgraph", "cfg", "lift")
+                "vectors", "entrydump", "callscan", "callgraph", "cfg", "lift", "exec")
     missing = set(required) - paths.keys()
     assert not missing, f"Missing required tools: {sorted(missing)}"
-    rominfo, disasm, flow, hwscan, vectors, entrydump, callscan, callgraph, cfg, lift = (
+    rominfo, disasm, flow, hwscan, vectors, entrydump, callscan, callgraph, cfg, lift, executor = (
         paths[name] for name in required
     )
     tools = tuple(paths.values())
@@ -122,6 +122,29 @@ def main():
         boundary_ir = check([lift, str(boundary_ir_path)], 0)
         assert '$00FFFF,NOP' in boundary_ir, boundary_ir
         assert len(boundary_ir.splitlines()) == 2, boundary_ir
+        # Bounded instruction-subset execution, not full SNES emulation.
+        executed = check([executor, str(valid), '20'], 0)
+        assert 'reason=unsupported' in executed, executed  # STA not implemented
+        assert 'x=$007F' in executed and 'm=16 xbits=8' in executed, executed
+        execute_rom = bytearray(rom)
+        execute_rom[:13] = bytes([
+            0x18, 0xFB, 0xC2, 0x30, 0xA9, 0x34, 0x12,
+            0xA2, 0x78, 0x56, 0xE2, 0x10, 0xDB,
+        ])
+        execute_path = root / 'execute.sfc'
+        execute_path.write_bytes(execute_rom)
+        execution = check([executor, str(execute_path), '20'], 0)
+        assert 'reason=stp' in execution, execution
+        assert 'a=$1234' in execution and 'x=$0078' in execution, execution
+        assert 'm=16 xbits=8' in execution, execution
+        assert 'steps=7' in execution, execution
+        check([executor, str(valid), '0'], 2)
+        unsupported_rom = bytearray(rom)
+        unsupported_rom[0] = 0xFF
+        unsupported_path = root / 'execute-unsupported.sfc'
+        unsupported_path.write_bytes(unsupported_rom)
+        unsupported = check([executor, str(unsupported_path)], 0)
+        assert 'reason=unsupported steps=0' in unsupported, unsupported
         listing = check([disasm, str(valid), '10'], 0)
         for opcode in ('CLC', 'XCE', 'REP #$30', 'LDX #$1DFF',
                        'SEP #$10', 'LDX #$7F', 'STA $2100', 'STP'):
