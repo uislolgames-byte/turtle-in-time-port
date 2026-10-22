@@ -74,7 +74,7 @@ def main():
 
         listing = check([disasm, str(valid), '10'], 0)
         for opcode in ('CLC', 'XCE', 'REP #$30', 'LDX #$1DFF',
-                       'SEP #$10', 'LDX #$7F', 'STA #$2100', 'STP'):
+                       'SEP #$10', 'LDX #$7F', 'STA $2100', 'STP'):
             assert opcode in listing, (opcode, listing)
         check([flow, str(valid), '20'], 0, 'Decoded=')
         check([hwscan, str(valid), '5'], 0, 'Total candidate byte patterns: 1')
