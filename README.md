@@ -2,9 +2,12 @@
 
 Experimento de engenharia reversa do **Teenage Mutant Ninja Turtles IV: Turtles in Time** (SNES) para Windows e Linux.
 
-**Importante:** este repositório contém ferramentas **preliminares** de inspeção, não o jogo jogável e não uma recompilação do código 65C816.
+**Importante:** este repositório contém ferramentas **preliminares** de inspeção e uma primeira recompilação estática de programas sintéticos 65C816. Ainda não é o jogo jogável nem uma recompilação do jogo.
 
 ## Ferramentas
+- `tmnt_recompile`: primeira tradução estática **escrita em C++** de programas
+  sintéticos para C++ compilável, com modos, fluxo e chamadas folha JSR/RTS.
+  Veja [recompiler/](recompiler/README.md) para o subconjunto e os testes.
 - `tmnt_rominfo`: cabeçalho e vetor de reset de ROM LoROM sem copier header.
 - `tmnt_disasm`: scanner de bytes com nomes de poucos opcodes; **não é um desmontador completo**.
 - `tmnt_flow`: scanner linear conservador; **não calcula um grafo de fluxo real**.
