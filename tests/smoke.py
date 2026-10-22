@@ -23,10 +23,10 @@ def main():
         assert name not in paths, f"Duplicate tool entry: {name}"
         paths[name] = path
     required = ("rominfo", "disasm", "flow", "hwscan",
-                "vectors", "entrydump", "callscan", "callgraph", "cfg")
+                "vectors", "entrydump", "callscan", "callgraph", "cfg", "lift")
     missing = set(required) - paths.keys()
     assert not missing, f"Missing required tools: {sorted(missing)}"
-    rominfo, disasm, flow, hwscan, vectors, entrydump, callscan, callgraph, cfg = (
+    rominfo, disasm, flow, hwscan, vectors, entrydump, callscan, callgraph, cfg, lift = (
         paths[name] for name in required
     )
     tools = tuple(paths.values())
@@ -84,6 +84,21 @@ def main():
         check([disasm, str(invalid)], 1, 'Reset vector')
         check([flow, str(invalid)], 1, 'Reset vector')
 
+        # Structured reset-prefix IR: 8/16-bit register widths and bounded stop.
+        ir = check([lift, str(valid), '16'], 0)
+        assert 'address,opcode,operand,e,m_bits,x_bits' in ir, ir
+        assert '$008004,LDX_IMM,$1DFF,0,16,16' in ir, ir
+        assert '$008009,LDX_IMM,$7F,0,16,8' in ir, ir
+        assert '$00800E,STP,,0,16,8' in ir, ir
+        assert ir.splitlines()[-1].startswith('$00800E,STP'), ir
+        unknown_ir_rom = bytearray(rom)
+        unknown_ir_rom[:2] = bytes([0xFF, 0xEA])
+        unknown_ir_path = root / 'unknown-ir.sfc'
+        unknown_ir_path.write_bytes(unknown_ir_rom)
+        unknown_ir = check([lift, str(unknown_ir_path)], 0)
+        assert '$008000,UNKNOWN' in unknown_ir, unknown_ir
+        assert len(unknown_ir.splitlines()) == 2, unknown_ir
+        check([lift, str(valid), '0'], 2)
         listing = check([disasm, str(valid), '10'], 0)
         for opcode in ('CLC', 'XCE', 'REP #$30', 'LDX #$1DFF',
                        'SEP #$10', 'LDX #$7F', 'STA $2100', 'STP'):
