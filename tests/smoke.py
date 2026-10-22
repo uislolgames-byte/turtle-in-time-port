@@ -17,7 +17,9 @@ def main():
         p = pathlib.Path(d)
         rom = bytearray(32768)
         rom[:4] = bytes([0x18, 0xfb, 0x78, 0xdb])
-        rom[0x7fc0:0x7fc9] = b'T.M.N.T. 4'
+        title = b'T.M.N.T. 4'
+        rom[0x7fc0:0x7fc0 + len(title)] = title
+        assert len(rom) == 32768
         rom[0x7ffc:0x7ffe] = bytes([0, 0x80])
         rom[0x7fdc:0x7fe0] = bytes([0x34, 0x12, 0xcb, 0xed])
         valid = p / 'synthetic.sfc'
