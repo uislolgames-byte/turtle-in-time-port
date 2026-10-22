@@ -43,6 +43,7 @@ int main(int argc, char** argv) {
     std::set<State> seen;
     std::set<Edge> edges;
     std::set<Edge> calls;
+    std::set<unsigned> returns;
     pending.push({rom.reset(),true,false,false,true,true});
     int decoded=0, unresolved=0;
     while (!pending.empty() && decoded < limit) {
@@ -103,6 +104,7 @@ int main(int argc, char** argv) {
       if (s.e) { s.m8=true; s.x8=true; }
       ++decoded;
       const unsigned from=s.pc;
+      if (op==0x60 || op==0x6b) returns.insert(from);
       const unsigned next=(from&0xff0000u)|((from+1u+unsigned(bytes))&0xffffu);
       auto enqueue=[&](unsigned target,const char* label) {
         edges.insert({from,target,label});
@@ -139,6 +141,9 @@ int main(int argc, char** argv) {
     for(const auto& e:calls)
       std::cout << "  \"" << hx(e.from) << "\" -> \"" << hx(e.to)
                 << "\" [label=\"" << e.label << "\",style=dashed];\n";
+    for(unsigned pc:returns)
+      std::cout << "  \"" << hx(pc) << "\" [shape=doublecircle,label=\""
+                << hx(pc) << " return\"];\n";
     std::cout << "}\n";
     std::cerr << "Decoded=" << decoded << " Edges=" << edges.size()
               << " Unresolved=" << unresolved
