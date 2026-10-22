@@ -217,10 +217,16 @@ int main(int argc, char** argv) {
           default: return std::string("unclassified");
         }
       };
-      std::cout << "address,origin,source,kind,status,rom_offset,first_bytes,first_opcode,entry_hint\n";
+      auto incoming_calls = [&](unsigned target) {
+        unsigned count = 0;
+        for (const auto& c : calls)
+          if (c.to == target) ++count;
+        return count;
+      };
+      std::cout << "address,origin,source,kind,status,rom_offset,first_bytes,first_opcode,entry_hint,incoming_calls\n";
       for (const auto& v : vector_edges)
         std::cout << hx(v.to) << ",vector," << hx(v.from)
-                  << ",\""<< v.label << "\",entry_only," << hx(static_cast<unsigned>(rom.lorom(v.to))) << ",\"" << preview(v.to) << "\"," << first_opcode(v.to) << "," << hint(v.to) << "\n";
+                  << ",\""<< v.label << "\",entry_only," << hx(static_cast<unsigned>(rom.lorom(v.to))) << ",\"" << preview(v.to) << "\"," << first_opcode(v.to) << "," << hint(v.to) << "," << incoming_calls(v.to) << "\n";
       for (const auto& c : calls) {
         bool mapped = true;
         size_t offset = 0;
@@ -229,7 +235,7 @@ int main(int argc, char** argv) {
         std::cout << hx(c.to) << ",call," << hx(c.from) << ","
                   << c.label << "," << (mapped ? "candidate" : "unmapped")
                   << "," << (mapped ? hx(static_cast<unsigned>(offset)) : "")
-                  << ",\"" << preview(c.to) << "\"," << first_opcode(c.to) << "," << hint(c.to) << "\n";
+                  << ",\"" << preview(c.to) << "\"," << first_opcode(c.to) << "," << hint(c.to) << "," << incoming_calls(c.to) << "\n";
       }
       return 0;
     }
