@@ -630,6 +630,43 @@ def main():
         empty_pla_path.write_bytes(empty_pla_rom)
         empty_pla_output = check([executor, str(empty_pla_path), '10'], 0)
         assert 'reason=stack' in empty_pla_output, empty_pla_output
+        # PHX/PLX round-trip in 8-bit index mode restores X.
+        phx8_rom = bytearray(rom)
+        phx8_program = bytes([0xA2, 0x80, 0xDA, 0xA2, 0x00, 0xFA, 0xDB])
+        phx8_rom[:len(phx8_program)] = phx8_program
+        phx8_path = root / 'execute-phx-plx8.sfc'
+        phx8_path.write_bytes(phx8_rom)
+        phx8_output = check([executor, str(phx8_path), '20'], 0)
+        assert 'reason=stp' in phx8_output and 'x=$0080' in phx8_output, phx8_output
+        assert 'sp=$01FF' in phx8_output and 'n=1' in phx8_output, phx8_output
+        # Native 16-bit PHX/PLX must preserve both bytes of X.
+        phx16_rom = bytearray(rom)
+        phx16_program = bytes([
+            0x18, 0xFB, 0xC2, 0x10, 0xA2, 0x34, 0x12, 0xDA,
+            0xA2, 0x00, 0x00, 0xFA, 0xDB,
+        ])
+        phx16_rom[:len(phx16_program)] = phx16_program
+        phx16_path = root / 'execute-phx-plx16.sfc'
+        phx16_path.write_bytes(phx16_rom)
+        phx16_output = check([executor, str(phx16_path), '20'], 0)
+        assert 'reason=stp' in phx16_output and 'x=$1234' in phx16_output, phx16_output
+        assert 'sp=$01FF' in phx16_output and 'xbits=16' in phx16_output, phx16_output
+        # PHX preserves carry; PLX sets zero when restoring zero.
+        phx_flags_rom = bytearray(rom)
+        phx_flags_program = bytes([0x38, 0xA2, 0x00, 0xDA, 0xA2, 0x01, 0xFA, 0xDB])
+        phx_flags_rom[:len(phx_flags_program)] = phx_flags_program
+        phx_flags_path = root / 'execute-phx-flags.sfc'
+        phx_flags_path.write_bytes(phx_flags_rom)
+        phx_flags_output = check([executor, str(phx_flags_path), '20'], 0)
+        assert 'x=$0000' in phx_flags_output and 'z=1' in phx_flags_output, phx_flags_output
+        assert 'c=1' in phx_flags_output, phx_flags_output
+        # Empty PLX must stop without reading an uninitialized stack.
+        empty_plx_rom = bytearray(rom)
+        empty_plx_rom[0] = 0xFA
+        empty_plx_path = root / 'execute-empty-plx.sfc'
+        empty_plx_path.write_bytes(empty_plx_rom)
+        empty_plx_output = check([executor, str(empty_plx_path), '10'], 0)
+        assert 'reason=stack' in empty_plx_output, empty_plx_output
         check([executor, str(valid), '0'], 2)
         unsupported_rom = bytearray(rom)
         unsupported_rom[0] = 0xFF

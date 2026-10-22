@@ -44,7 +44,7 @@ int main(int argc, char** argv) {
         case 0x18: case 0x38: case 0xB8: case 0xFB: case 0xEA: case 0xDB:
         case 0xE8: case 0xCA: case 0xC8: case 0x88: case 0x1A: case 0x3A:
         case 0xAA: case 0xA8: case 0x8A: case 0x98: case 0x9B: case 0xBB:
-        case 0x5B: case 0x7B: case 0x60: case 0x48: case 0x68:
+        case 0x5B: case 0x7B: case 0x60: case 0x48: case 0x68: case 0xDA: case 0xFA:
           break;
         default: reason = "unsupported"; goto finished;
       }
@@ -222,6 +222,39 @@ int main(int argc, char** argv) {
           }
           // pc += width after this switch, so set it to target - width.
           pc = (pc & 0xff0000u) | static_cast<unsigned>(target - 2);
+          break;
+        }
+        case 0xDA: {
+          const unsigned count = x8 ? 1u : 2u;
+          if (stack_bytes + count > 256u) {
+            reason = "stack";
+            goto finished;
+          }
+          if (!x8) {
+            wram[sp] = static_cast<unsigned char>((x >> 8) & 0xffu);
+            sp = 0x0100u | ((sp - 1u) & 0xffu);
+          }
+          wram[sp] = static_cast<unsigned char>(x & 0xffu);
+          sp = 0x0100u | ((sp - 1u) & 0xffu);
+          stack_bytes += count;
+          break;
+        }
+        case 0xFA: {
+          const unsigned count = x8 ? 1u : 2u;
+          if (stack_bytes < count) {
+            reason = "stack";
+            goto finished;
+          }
+          sp = 0x0100u | ((sp + 1u) & 0xffu);
+          unsigned loaded = wram[sp];
+          if (!x8) {
+            sp = 0x0100u | ((sp + 1u) & 0xffu);
+            loaded |= static_cast<unsigned>(wram[sp]) << 8;
+          }
+          stack_bytes -= count;
+          x = loaded;
+          zero = loaded == 0u;
+          negative = (loaded & (x8 ? 0x80u : 0x8000u)) != 0u;
           break;
         }
         case 0x48: {
