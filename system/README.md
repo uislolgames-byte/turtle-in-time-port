@@ -53,7 +53,7 @@ bus instances. This API is single-threaded. `State::ram` remains the legacy
 8 KiB backend when `bus` is null; it is unused with a connected bus.
 
 Absolute LDA/STA use `State::db` (0..255); it is fixed by the caller before a
-run, with no DBR-changing instructions yet. JSR/RTS always use bank-zero stack
+run; MVN/MVP may then change it to the destination bank. JSR/RTS always use bank-zero stack
 bytes, through the same bus. Memory faults stop before completing the faulting
 load/store/JSR, recording the bus address/reason in `diagnostic`. The existing
 RTS accounting still counts RTS before reading/validating its return.
@@ -78,10 +78,44 @@ hand-written state traces (four data banks, thirteen budgets), checking every
 WRAM byte, registers, stack and stop. It checks warm reset, explicit RAM clear,
 unsupported reset/banks, code identity and atomic memory/stack faults. The
 previous 16 tests remain part of the same chain. `system_events` adds ordering,
-same-time signals, time jumps, past-event rejection, copies and overflow checks,
-for 19 tests total. The 20,480 compiled/reference comparisons also check ticks.
+same-time signals, time jumps, past-event rejection, copies and overflow checks.
+The 20,480 compiled/reference comparisons also check ticks.
 The compiled system test injects NMI at each of its ten instruction boundaries,
 checks masked/unmasked IRQ, priority, STP, budget zero and reset of future events.
+Six `recompiled_move_*` tests add 99 generated/reference comparisons, each checking
+all WRAM bytes, registers, flags, stops and ticks, plus hand-specified final states,
+NMI between bytes and fault/overlap checks. Total: 25 tests.
+
+## MVN/MVP block transfers in generated code
+
+The generator accepts `$54` (MVN/increment) and `$44` (MVP/decrement) in the main
+flow. The encoded bytes are **destination bank, source bank**. Each iteration
+reads `source:X`, writes `destination:Y`, updates DBR to the destination, adjusts
+X/Y by +1 or -1 at their current index width and decrements the full 16-bit A.
+P is unchanged. A=$0000 transfers one byte; A=$FFFF transfers 65,536 bytes.
+M does not shorten the counter: for example M8 with A=$0101 transfers 258 bytes.
+X/Y wrap within 8 or 16 bits without incrementing/decrementing the encoded banks.
+
+Each generated iteration returns to the same static label while A is not $FFFF;
+PC advances past the three-byte instruction only on the final byte. It counts one
+logical tick and checks the instruction budget and NMI/IRQ at each iteration.
+No opcode dispatcher or host bulk-copy operation is used. Overlapping regions
+therefore observe sequential read/write effects, including WRAM aliases.
+
+A connected bus is required. Unsupported source/destination regions and writes
+to ROM stop with a diagnostic. Failure is atomic **per byte**: it leaves that
+byte's registers/DBR/PC/tick unchanged, while earlier successful bytes remain.
+This conservative failure policy is a diagnostic contract, not hardware fault
+emulation. Transfers in leaf subroutines remain unsupported. There is no
+mid-program restart API after stopping partway through a block.
+
+These are CPU instructions, **not SNES DMA/HDMA**. DMA registers, bus arbitration,
+PPU ports, channel modes and transfer cycles are still absent. Tests cover
+increment/decrement, ROM-to-WRAM, wrapping, separate M/X widths, a complete 64 KiB
+bank, partial budgets, NMI, immutable ROM and errors partway through a block.
+Reference for instruction behavior: upstream bsnes
+[block-move implementation](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-other.cpp).
+No upstream source code was copied.
 
 ## Logical event timeline (preparation for timing/interrupt integration)
 

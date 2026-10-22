@@ -112,6 +112,26 @@ inline bool load(State& s, unsigned address, bool narrow) {
     s.stop = Stop::memory; s.diagnostic = e.what(); return false;
   }
 }
+// One MVN/MVP byte iteration. A is always a 16-bit counter; index width follows X.
+// Faults are atomic per byte, not per entire block. This requires the real bus.
+inline bool move_byte(State& s, unsigned destination, unsigned source, bool narrow, bool decrement) {
+  const unsigned mask = narrow ? 255 : 65535;
+  if (!s.bus || destination > 255 || source > 255 || s.a > 65535 || s.x > mask || s.y > mask) {
+    s.stop = Stop::contract; s.diagnostic = "MVN/MVP requires a bus, valid banks and bounded registers"; return false;
+  }
+  try {
+    const auto value = s.bus->read8((source << 16) | s.x);
+    s.bus->write8((destination << 16) | s.y, value);
+  } catch (const system816::BusError& e) {
+    s.stop = Stop::memory; s.diagnostic = e.what(); return false;
+  }
+  const unsigned delta = decrement ? mask : 1;
+  s.x = (s.x + delta) & mask;
+  s.y = (s.y + delta) & mask;
+  s.a = (s.a - 1) & 65535;
+  s.db = destination;
+  return true;
+}
 // JSR/RTS always use bank zero, independently of the data bank.
 inline bool push_return(State& s, unsigned address) {
   const unsigned next = s.e ? (0x100 | ((s.s - 1) & 255)) : ((s.s - 1) & 65535);

@@ -40,7 +40,7 @@ inline std::string compile(const std::vector<uint8_t>& code) {
       case 0xc2: case 0xe2: case 0x80: length = 2; break;
       case 0xa9: length = mode.m ? 2 : 3; break;
       case 0xa2: case 0xa0: length = mode.x ? 2 : 3; break;
-      case 0xad: case 0x8d: case 0x20: length = 3; break;
+      case 0xad: case 0x8d: case 0x20: case 0x44: case 0x54: length = 3; break;
       case 0x10: case 0x30: case 0x50: case 0x70: case 0x90: case 0xb0: case 0xd0: case 0xf0: length = 2; break;
       default: throw std::runtime_error("unsupported opcode at " + std::to_string(pc));
     }
@@ -53,7 +53,7 @@ inline std::string compile(const std::vector<uint8_t>& code) {
     }
     nodes.emplace(pc, Instruction{pc,op,value,length,mode,leaf});
     const bool control_mode = op == 0x18 || op == 0x38 || op == 0xfb || op == 0xc2 || op == 0xe2;
-    if (leaf >= 0 && (control_mode || op == 0x20 || op == 0xdb || op == 0x80 || branch(op)))
+    if (leaf >= 0 && (control_mode || op == 0x20 || op == 0xdb || op == 0x80 || op == 0x44 || op == 0x54 || branch(op)))
       throw std::runtime_error("leaf subroutine must be straight-line and preserve mode/carry");
     if (op == 0x60) {
       if (leaf < 0) throw std::runtime_error("RTS outside leaf subroutine");
@@ -102,6 +102,12 @@ inline std::string compile(const std::vector<uint8_t>& code) {
     if (op == 0xfb) out << "{bool old=s.e;s.e=(s.p&1)!=0;s.p=(s.p&254)|unsigned(old);if(s.e){s.p|=48;s.x&=255;s.y&=255;s.s=256|(s.s&255);}}\n";
     if (op == 0x8d) out << "if(!store(s,(s.db<<16)|" << v << ",s.a," << m << "))return false;\n";
     if (op == 0xad) out << "if(!load(s,(s.db<<16)|" << v << "," << m << "))return false;\n";
+    if (op == 0x44 || op == 0x54) {
+      out << "if(!move_byte(s," << (v & 255) << "," << (v >> 8) << "," << x << "," << (op == 0x44) << "))return false;\n"
+          << "s.pc=s.a==65535?" << next << ":" << pc << ";complete_instruction(s);\n"
+          << "if(s.a!=65535)goto L" << pc << ";goto L" << next << ";\n";
+      return;
+    }
     if (op == 0x20) {
       out << "if(!push_return(s," << next-1 << "))return false;s.pc=" << v << ";complete_instruction(s);\n"
           << "if(!leaf" << v << "(s,limit," << next << "))return false;goto L" << next << ";\n";

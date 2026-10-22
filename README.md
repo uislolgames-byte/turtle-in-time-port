@@ -8,7 +8,8 @@ Experimento de engenharia reversa do **Teenage Mutant Ninja Turtles IV: Turtles 
 - Base do Marco 3: [barramento de memória em C++](system/README.md), com ROM
   LoROM parcial, RAM, bancos e integração ao runtime recompilado com reinicialização.
   Inclui relógio lógico e diagnóstico de pedidos NMI/IRQ. Temporização do hardware,
-  execução dos handlers de interrupção e transferências continuam pendentes.
+  execução dos handlers de interrupção e DMA continuam pendentes. MVN/MVP já
+  transferem blocos entre bancos no código recompilado, com testes sintéticos.
 - `tmnt_recompile`: primeira tradução estática **escrita em C++** de programas
   sintéticos para C++ compilável, com modos, fluxo e chamadas folha JSR/RTS.
   Veja [recompiler/](recompiler/README.md) para o subconjunto e os testes.

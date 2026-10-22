@@ -35,12 +35,17 @@ O barramento opcional e `reset_cpu` estão descritos em [system/](../system/READ
   inicial podem ser fornecidas pelo chamador. Não é um reset fiel de hardware.
 - CLC/SEC, XCE com carry estaticamente conhecido, REP/SEP, NOP, STP,
   LDA/LDX/LDY imediato, INX/DEX, LDA/STA absoluto, BRA e os oito desvios condicionais.
+- MVN/MVP no fluxo principal, com barramento conectado: um byte por repetição,
+  A de 16 bits como contador, larguras de índice independentes de M e DBR atualizado.
+  Há limites e verificação NMI/IRQ entre os bytes. Veja o contrato em
+  [system/](../system/README.md). Não é DMA do SNES.
 - Larguras M/X acompanham cada caminho. Encontros com estado de modo/carry
   diferente são rejeitados conservadoramente, mesmo quando uma análise mais
   sofisticada poderia aceitá-los. XCE desconhecido também é rejeitado.
 - JSR absoluto chama somente rotinas folha, lineares, que terminam em RTS e
   preservam E/M/X/carry. Não há chamadas aninhadas, recursão, RTL ou desvios dentro
   dessas rotinas. Chamadas de vários locais são permitidas quando o modo é igual.
+  MVN/MVP dentro de rotinas folha também são rejeitadas nesta etapa.
 - JSR grava os dois bytes do endereço na RAM da pilha; RTS recupera-os e confere
   o destino contra o retorno estático. Retorno corrompido produz parada explícita.
 - Por padrão, RAM separada do código, 8 KiB, DBR=0. Com barramento conectado,
@@ -72,6 +77,8 @@ casos inválidos do contrato inicial que devem parar antes de alterar a RAM.
 Os testes anteriores continuam no alvo `check` e no CI Windows/Linux.
 O teste `recompiled_system` acrescenta integração com ROM/RAM, bancos, RESET,
 identidade do código e falhas, sem substituir as 20480 comparações anteriores.
+Seis testes `recompiled_move_*` compilam e executam MVN/MVP contra uma referência
+independente, incluindo M8/X8, M8/X16, M16/X16 e um bloco de 65536 bytes.
 
 O Marco 2 só pode ser marcado concluído após validação e integração desta etapa
 à main, conforme o roteiro de marcos. Ter o diagnóstico do Marco 1 não prova
