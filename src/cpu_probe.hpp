@@ -27,7 +27,7 @@ inline CpuProbeResult probe_reset(const Rom& rom, unsigned limit = 32) {
     result.reason = "invalid instruction limit";
     return result;
   }
-  bool m8 = true, x8 = true, e = true, carry = false;
+  bool m8 = true, x8 = true, e = true, carry = false, decimal = false;
   unsigned flags = 0, known = 0; // N/V/Z/C are not assumed known at RESET.
   auto nz = [&](unsigned value, bool narrow) {
     const unsigned mask = narrow ? 0xffu : 0xffffu;
@@ -47,10 +47,12 @@ inline CpuProbeResult probe_reset(const Rom& rom, unsigned limit = 32) {
     switch (op) {
       case 0xEA: case 0x18: case 0x38: case 0xFB: case 0xDB: break;
       case 0xE8: case 0xCA: break;
+      case 0xD8: case 0xF8: break;
       case 0xC2: case 0xE2: length = 2; break;
       case 0x80: case 0x10: case 0x30: case 0x50: case 0x70:
       case 0x90: case 0xB0: case 0xD0: case 0xF0: length = 2; break;
       case 0xA9: case 0xC9: case 0x29: case 0x09: case 0x49: length = m8 ? 2 : 3; break;
+      case 0x69: case 0xE9: length = m8 ? 2 : 3; break;
       case 0xA2: case 0xA0: case 0xE0: case 0xC0: length = x8 ? 2 : 3; break;
       default:
         result.reason = "unsupported opcode";
@@ -88,6 +90,8 @@ inline CpuProbeResult probe_reset(const Rom& rom, unsigned limit = 32) {
     switch (op) {
       case 0x18: carry = false; known |= 1; break;
       case 0x38: carry = true; known |= 1; break;
+      case 0xD8: decimal = false; break;
+      case 0xF8: decimal = true; break;
       case 0xFB: {
         if (!(known & 1)) {
           result.reason = "unknown carry for XCE";
@@ -104,6 +108,7 @@ inline CpuProbeResult probe_reset(const Rom& rom, unsigned limit = 32) {
         break;
       }
       case 0xC2:
+        if (operand & 8u) decimal = false;
         flags &= ~(operand & 0xc2u);
         known |= operand & 0xc3u;
         if (operand & 0x01u) carry = false;
@@ -113,6 +118,7 @@ inline CpuProbeResult probe_reset(const Rom& rom, unsigned limit = 32) {
         }
         break;
       case 0xE2:
+        if (operand & 8u) decimal = true;
         flags |= operand & 0xc2u;
         known |= operand & 0xc3u;
         if (operand & 0x01u) carry = true;
@@ -129,6 +135,27 @@ inline CpuProbeResult probe_reset(const Rom& rom, unsigned limit = 32) {
         break;
       case 0xA2: result.x = operand; nz(result.x, x8); break;
       case 0xA0: result.y = operand; nz(result.y, x8); break;
+      case 0x69: case 0xE9: {
+        if (decimal) {
+          result.reason = "decimal arithmetic unsupported";
+          return result;
+        }
+        if (!(known & 1u)) {
+          result.reason = "unknown carry for arithmetic";
+          return result;
+        }
+        const unsigned mask = m8 ? 0xffu : 0xffffu;
+        const unsigned sign = m8 ? 0x80u : 0x8000u;
+        const unsigned lhs = result.a & mask;
+        const unsigned rhs = op == 0x69 ? operand : (operand ^ mask);
+        const unsigned sum = lhs + rhs + (carry ? 1u : 0u);
+        carry = sum > mask;
+        flags = (flags & ~0x40u) | ((~(lhs ^ rhs) & (lhs ^ sum) & sign) ? 0x40u : 0u);
+        known |= 0x41u;
+        result.a = m8 ? ((result.a & 0xff00u) | (sum & mask)) : (sum & mask);
+        nz(result.a, m8);
+        break;
+      }
       case 0x29: case 0x09: case 0x49: {
         const unsigned value = result.a & (m8 ? 0xffu : 0xffffu);
         const unsigned logical = op == 0x29 ? (value & operand) :

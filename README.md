@@ -86,3 +86,10 @@ AND/ORA/EOR imediato também respeitam a largura M (8/16 bits), atualizando
 somente N/Z e preservando o byte B de A em modo de 8 bits. Os testes C++ cobrem
 todos os 256 valores de 8 bits com máscara $80, combinações de C/V, resultados
 explícitos de 16 bits, flags desconhecidas e truncamento no limite do banco.
+
+ADC/SBC imediato binário em 8/16 bits atualiza C/V/N/Z e preserva B em 8 bits.
+Carry de entrada desconhecido encerra o diagnóstico antes da operação. O bit D
+começa limpo no RESET e pode ser alterado por CLD/SED ou REP/SEP; com D ligado,
+ADC/SBC para com `decimal arithmetic unsupported`, sem alterar A nem consumir
+a instrução. O teste de aritmética usa um oráculo de somas/subtrações e limites
+assinados para conferir resultados, carry, overflow e desvios em toda a bateria.

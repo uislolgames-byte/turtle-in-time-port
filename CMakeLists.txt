@@ -49,10 +49,14 @@ if(BUILD_TESTING)
   target_include_directories(tmnt_probe_chain_tests PRIVATE src)
   add_test(NAME cpu_probe_chain COMMAND "$<TARGET_FILE:tmnt_probe_chain_tests>")
   set_tests_properties(cpu_probe_chain PROPERTIES TIMEOUT 10)
+  add_executable(tmnt_probe_arithmetic_tests tests/cpu_probe_arithmetic.cpp)
+  target_include_directories(tmnt_probe_arithmetic_tests PRIVATE src)
+  add_test(NAME cpu_probe_arithmetic COMMAND "$<TARGET_FILE:tmnt_probe_arithmetic_tests>")
+  set_tests_properties(cpu_probe_arithmetic PROPERTIES TIMEOUT 30)
   add_custom_target(check
     COMMAND "${CMAKE_CTEST_COMMAND}" -C "$<CONFIG>" --output-on-failure --output-junit ctest-results.xml
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-    DEPENDS ${TMNT_CHECK_TARGETS} tmnt_cpuprobe tmnt_probe_branch_tests tmnt_probe_logic_tests tmnt_probe_chain_tests
+    DEPENDS ${TMNT_CHECK_TARGETS} tmnt_cpuprobe tmnt_probe_branch_tests tmnt_probe_logic_tests tmnt_probe_chain_tests tmnt_probe_arithmetic_tests
     USES_TERMINAL)
   if(TARGET tmnt_native)
     add_dependencies(check tmnt_native)
