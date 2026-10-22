@@ -167,17 +167,18 @@ int main(int argc, char** argv) {
       }
     }
     if (inventory) {
-      std::cout << "address,origin,source,kind,status\n";
+      std::cout << "address,origin,source,kind,status,rom_offset\n";
       for (const auto& v : vector_edges)
         std::cout << hx(v.to) << ",vector," << hx(v.from)
-                  << ",\""<< v.label << "\",entry_only\n";
+                  << ",\""<< v.label << "\",entry_only," << hx(static_cast<unsigned>(rom.lorom(v.to))) << "\n";
       for (const auto& c : calls) {
         bool mapped = true;
-        try { (void)rom.lorom(c.to); }
+        size_t offset = 0;
+        try { offset = rom.lorom(c.to); }
         catch (const std::out_of_range&) { mapped = false; }
         std::cout << hx(c.to) << ",call," << hx(c.from) << ","
                   << c.label << "," << (mapped ? "candidate" : "unmapped")
-                  << "\n";
+                  << "," << (mapped ? hx(static_cast<unsigned>(offset)) : "") << "\n";
       }
       return 0;
     }
