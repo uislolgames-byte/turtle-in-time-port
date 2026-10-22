@@ -44,6 +44,7 @@ int main(int argc, char** argv) {
     std::set<Edge> edges;
     std::set<Edge> calls;
     std::set<unsigned> returns;
+    std::set<unsigned> indirect_jumps;
     pending.push({rom.reset(),true,false,false,true,true});
     int decoded=0, unresolved=0;
     while (!pending.empty() && decoded < limit) {
@@ -65,7 +66,8 @@ int main(int argc, char** argv) {
         case 0xa2: case 0xa0: bytes=s.x8?1:2; break;
         case 0xa9: case 0x69: case 0x29: case 0x09: case 0x49:
         case 0xc9: case 0xe9: bytes=s.m8?1:2; break;
-        case 0x20: case 0x4c: case 0x8d: case 0x9c:
+        case 0x20: case 0x4c: case 0x6c: case 0x7c: case 0xdc:
+        case 0x8d: case 0x9c:
         case 0x8e: case 0x8c: case 0xad: case 0xae: case 0xac:
         case 0x2c: case 0x4d: bytes=2; break;
         case 0x22: case 0x5c: bytes=3; break;
@@ -122,6 +124,10 @@ int main(int argc, char** argv) {
           op==0xd0?"BNE":"BEQ";
         enqueue(target,label);
         if(op!=0x80 && op!=0x82) enqueue(next,"fallthrough");
+      } else if(op==0x6c || op==0x7c || op==0xdc) {
+        // Indirect jump destinations depend on memory or index register values.
+        // Record the site, but do not guess the target or add fallthrough.
+        indirect_jumps.insert(from);
       } else if(op==0x20 || op==0x22) {
         const unsigned target=op==0x20 ? ((from&0xff0000u)|operand) : operand;
         calls.insert({from,target,op==0x20?"JSR":"JSL"});
@@ -144,6 +150,9 @@ int main(int argc, char** argv) {
     for(unsigned pc:returns)
       std::cout << "  \"" << hx(pc) << "\" [shape=doublecircle,label=\""
                 << hx(pc) << " return\"];\n";
+    for(unsigned pc:indirect_jumps)
+      std::cout << "  \"" << hx(pc) << "\" [shape=diamond,label=\""
+                << hx(pc) << " indirect jump\"];\n";
     std::cout << "}\n";
     std::cerr << "Decoded=" << decoded << " Edges=" << edges.size()
               << " Unresolved=" << unresolved
