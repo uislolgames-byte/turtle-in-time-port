@@ -47,4 +47,5 @@ jobs:
             build/tmnt_disasm
             build/tmnt_flow
             build/tmnt_hwscan
+            build/tmnt_vectors
           if-no-files-found: error
