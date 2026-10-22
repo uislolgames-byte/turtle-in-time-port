@@ -42,6 +42,7 @@ int main(int argc, char** argv) {
     std::queue<State> pending;
     std::set<State> seen;
     std::set<Edge> edges;
+    std::set<Edge> calls;
     pending.push({rom.reset(),true,false,false,true,true});
     int decoded=0, unresolved=0;
     while (!pending.empty() && decoded < limit) {
@@ -119,6 +120,11 @@ int main(int argc, char** argv) {
           op==0xd0?"BNE":"BEQ";
         enqueue(target,label);
         if(op!=0x80 && op!=0x82) enqueue(next,"fallthrough");
+      } else if(op==0x20 || op==0x22) {
+        const unsigned target=op==0x20 ? ((from&0xff0000u)|operand) : operand;
+        calls.insert({from,target,op==0x20?"JSR":"JSL"});
+        // The callee is not traversed: entry state and return state are unproven.
+        enqueue(next,"return-assumed");
       } else if(op==0x4c || op==0x5c) {
         enqueue(op==0x4c ? ((from&0xff0000u)|operand) : operand,
                 op==0x4c?"JMP":"JML");
@@ -130,6 +136,9 @@ int main(int argc, char** argv) {
     for(const auto& e:edges)
       std::cout << "  \"" << hx(e.from) << "\" -> \"" << hx(e.to)
                 << "\" [label=\"" << e.label << "\"];\n";
+    for(const auto& e:calls)
+      std::cout << "  \\"" << hx(e.from) << "\\" -> \\"" << hx(e.to)
+                << "\\" [label=\\"" << e.label << "\\",style=dashed];\n";
     std::cout << "}\n";
     std::cerr << "Decoded=" << decoded << " Edges=" << edges.size()
               << " Unresolved=" << unresolved
