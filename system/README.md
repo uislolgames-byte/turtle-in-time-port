@@ -1,9 +1,9 @@
 # System memory — first part of milestone 3
 
-`bus.hpp` is a standalone C++17 memory component. It does not yet replace the
-diagnostic RAM in `cpu_probe.hpp` or `recompiler/runtime.hpp`. CPU integration,
-CPU reset, timing, interrupts and DMA remain future work. This does not run the
-game or complete milestone 3.
+`bus.hpp` is a C++17 memory component optionally connected to the static
+recompiler runtime. The existing CPU probe and Windows application are unchanged.
+Timing, interrupts and DMA remain future work. This does not run the game or
+complete milestone 3.
 
 ## Explicit supported contract
 
@@ -35,7 +35,37 @@ RAM starts at zero as a deterministic host testing policy, not a hardware
 power-on guarantee. RAM persists for the life of an instance until explicitly
 changed or `clear_ram()` is called. `reset_vector()` reads little-endian
 `$00:FFFC–FFFD` without resetting CPU or clearing RAM. ROM remains immutable.
-There is no save-state format or CPU reset operation yet.
+There is no save-state format.
+
+## Static runtime connection and reset
+
+`recompiled::reset_cpu(state, bus)` connects a borrowed bus and initializes the
+host CPU state: A/X/Y/DBR and steps zero, PC from RESET, S=$01FF, P=$34, E=1,
+no diagnostic, stop=limit. This is a deterministic subset policy, not a full
+hardware reset (no reset cycles or emulation of undefined register values).
+WRAM persists; `bus.clear_ram()` is the separate explicit operation to clear it.
+The function returns false with a contract diagnostic for RESET other than
+$8000. Generated code remains fixed to bank-zero entry $8000; no resuming.
+
+The bus must outlive the CPU state and all calls using it. State copies borrow
+the same bus, so they do not clone WRAM; independent executions need separate
+bus instances. This API is single-threaded. `State::ram` remains the legacy
+8 KiB backend when `bus` is null; it is unused with a connected bus.
+
+Absolute LDA/STA use `State::db` (0..255); it is fixed by the caller before a
+run, with no DBR-changing instructions yet. JSR/RTS always use bank-zero stack
+bytes, through the same bus. Memory faults stop before completing the faulting
+load/store/JSR, recording the bus address/reason in `diagnostic`. The existing
+RTS accounting still counts RTS before reading/validating its return.
+Word loads/stores preflight all bytes and reject crossing a 64 KiB bank boundary;
+hardware wrapping is deliberately unsupported. Failed transfers do not partially
+write RAM or update A/P. There is no MMIO with read/write side effects.
+
+On every call, before any instructions, generated code compares every reachable
+instruction/operand byte at bank zero against literal expected bytes. A mismatch
+stops with a contract diagnostic, even for budget zero. This validates the static
+code's identity without interpreting opcodes. Unreachable data is not checked and
+may differ; data reads use the actual connected cartridge.
 
 ## Validation
 
@@ -43,7 +73,11 @@ There is no save-state format or CPU reset operation yet.
 checks every ROM bank's endpoints, all WRAM bytes, mirror boundaries, WRAM
 precedence, immutable ROM, vector byte order, cartridge ownership, RAM clearing,
 independent instances, invalid sizes and typed faults. Synthetic bytes only.
-The previous 16 tests remain part of the same chain.
+`recompiled_system` additionally executes actual generated C++ against 52
+hand-written state traces (four data banks, thirteen budgets), checking every
+WRAM byte, registers, stack and stop. It checks warm reset, explicit RAM clear,
+unsupported reset/banks, code identity and atomic memory/stack faults. The
+previous 16 tests remain part of the same chain, for 18 tests total.
 
 WRAM mapping reference for comparison: the upstream bsnes implementation's
 [CPU power/mapping code](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/sfc/cpu/cpu.cpp).

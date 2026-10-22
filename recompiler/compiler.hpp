@@ -100,8 +100,8 @@ inline std::string compile(const std::vector<uint8_t>& code) {
     if (op == 0xc2) out << "s.p&=~" << v << "u;if(s.e)s.p|=48;\n";
     if (op == 0xe2) out << "s.p|=" << v << ";if(s.p&16){s.x&=255;s.y&=255;}\n";
     if (op == 0xfb) out << "{bool old=s.e;s.e=(s.p&1)!=0;s.p=(s.p&254)|unsigned(old);if(s.e){s.p|=48;s.x&=255;s.y&=255;s.s=256|(s.s&255);}}\n";
-    if (op == 0x8d) out << "if(!store(s," << v << ",s.a," << m << "))return false;\n";
-    if (op == 0xad) out << "if(!load(s," << v << "," << m << "))return false;\n";
+    if (op == 0x8d) out << "if(!store(s,(s.db<<16)|" << v << ",s.a," << m << "))return false;\n";
+    if (op == 0xad) out << "if(!load(s,(s.db<<16)|" << v << "," << m << "))return false;\n";
     if (op == 0x20) {
       out << "if(!push_return(s," << next-1 << "))return false;s.pc=" << v << ";++s.steps;\n"
           << "if(!leaf" << v << "(s,limit," << next << "))return false;goto L" << next << ";\n";
@@ -127,8 +127,11 @@ inline std::string compile(const std::vector<uint8_t>& code) {
     out << "}\n";
   }
   out << "bool run_generated(State& s,unsigned limit){\n"
-      << "if(s.pc!=32768||!s.e||(s.p&48)!=48||s.p>255||s.s!=511||s.a>65535||s.x>255||s.y>255){s.stop=Stop::contract;return false;}\n"
-      << "goto L32768;\n";
+      << "if(s.pc!=32768||!s.e||(s.p&48)!=48||s.p>255||s.s!=511||s.a>65535||s.x>255||s.y>255||s.db>255||(!s.bus&&s.db)){s.stop=Stop::contract;return false;}\n";
+  out << "if(s.bus){\n";
+  for (const auto& byte : owners)
+    out << "if(!code_byte(s," << byte.first << "," << unsigned(code[byte.first-0x8000]) << "))return false;\n";
+  out << "}\ngoto L32768;\n";
   for (const auto& entry : nodes) if (entry.second.leaf < 0) emit(entry.second);
   out << "}\n}\n";
   return out.str();

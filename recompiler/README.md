@@ -3,8 +3,9 @@
 `tmnt_recompile` é escrito em C++17 e lê um fluxo **sintético** de 1 a 32768 bytes,
 com entrada em $8000 no banco zero. A saída contém operações C++ literais,
 saltos diretos e funções para subrotinas. O executável gerado não contém os
-bytes de instrução nem um interpretador de opcodes. Este é um primeiro subconjunto;
-não recompila o jogo, não lê o cabeçalho/vetores de uma ROM SNES e não implementa
+array de instruções nem um interpretador de opcodes. Com barramento conectado,
+constantes literais conferem a identidade do código antes de executar. Este é um primeiro subconjunto;
+não recompila o jogo; o gerador não lê cabeçalho/vetores de ROM SNES e não implementa
 hardware, ciclos ou interrupções. Não há gerador Python neste caminho.
 
 ## Uso
@@ -23,6 +24,8 @@ em erro de arquivo ou tradução. Valida a entrada antes de abrir a saída.
 O runtime é `runtime.hpp`; o chamador cria `recompiled::State` e chama
 `run_generated(state, limit)`. O bool retornado indica STP. `state.stop` distingue
 limite, STP, memória fora do subconjunto, pilha/retorno inválido e contrato inicial.
+Mantenha as pastas `recompiler/` e `system/` lado a lado ao distribuir os headers.
+O barramento opcional e `reset_cpu` estão descritos em [system/](../system/README.md).
 
 ## Contrato e limites
 
@@ -39,8 +42,10 @@ limite, STP, memória fora do subconjunto, pilha/retorno inválido e contrato in
   dessas rotinas. Chamadas de vários locais são permitidas quando o modo é igual.
 - JSR grava os dois bytes do endereço na RAM da pilha; RTS recupera-os e confere
   o destino contra o retorno estático. Retorno corrompido produz parada explícita.
-- RAM separada do código, 8 KiB, DBR=0. Transferências verificam todos os bytes
-  antes do acesso. Não há código automodificável nem barramento SNES.
+- Por padrão, RAM separada do código, 8 KiB, DBR=0. Com barramento conectado,
+  LDA/STA absoluto usam `State::db`; pilha permanece no banco zero. ROM é imutável.
+  Transferências verificam todos os bytes antes de alterar o estado. Palavras
+  cruzando limite de banco são rejeitadas. O barramento é um subconjunto SNES.
 - O limite é verificado antes de cada instrução, inclusive JSR, RTS e loops.
   Uma chamada da função começa na entrada; não há retomada após parada parcial.
 - A análise segue os dois caminhos de cada desvio condicional e os destinos de
@@ -60,6 +65,8 @@ São comparados A/X/Y, P/E, PC, S, passos, parada e todos os 8192 bytes de RAM.
 Há resultados fixos escritos à mão para conferir os dois executores, além de
 casos inválidos do contrato inicial que devem parar antes de alterar a RAM.
 Os testes anteriores continuam no alvo `check` e no CI Windows/Linux.
+O teste `recompiled_system` acrescenta integração com ROM/RAM, bancos, RESET,
+identidade do código e falhas, sem substituir as 20480 comparações anteriores.
 
 O Marco 2 só pode ser marcado concluído após validação e integração desta etapa
 à main, conforme o roteiro de marcos. Ter o diagnóstico do Marco 1 não prova

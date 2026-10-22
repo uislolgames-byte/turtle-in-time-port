@@ -36,9 +36,13 @@ public:
     return location.ram ? ram_[location.offset] : rom_[location.offset];
   }
   void write8(uint32_t address, uint8_t value) {
+    validate_write8(address);
+    ram_[resolve(address).offset] = value;
+  }
+  // Preflight for atomic multi-byte transfers in the strict (no MMIO) runtime.
+  void validate_write8(uint32_t address) const {
     const auto location = resolve(address);
     if (!location.ram) throw BusError(Fault::read_only, address, "ROM write rejected");
-    ram_[location.offset] = value;
   }
   uint16_t reset_vector() const {
     return static_cast<uint16_t>(read8(0x00fffc) | (unsigned(read8(0x00fffd)) << 8));
