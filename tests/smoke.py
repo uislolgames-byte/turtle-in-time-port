@@ -130,6 +130,15 @@ def main():
         assert '"$008003" -> "$125678" [label="JSL",style=dashed]' in cfg_calls_output, cfg_calls_output
         assert '"$008000" -> "$008003" [label="return-assumed"]' in cfg_calls_output, cfg_calls_output
         assert '"$008003" -> "$008007" [label="return-assumed"]' in cfg_calls_output, cfg_calls_output
+        # RTS and RTL are terminal return nodes, not fallthrough edges.
+        for opcode in (0x60, 0x6B):
+            return_rom = bytearray(rom)
+            return_rom[:2] = bytes([opcode, 0xEA])
+            return_path = root / f'return-{opcode:02x}.sfc'
+            return_path.write_bytes(return_rom)
+            return_output = check([cfg, str(return_path)], 0)
+            assert '"$008000" [shape=doublecircle,label="$008000 return"]' in return_output, return_output
+            assert '"$008000" -> "$008001"' not in return_output, return_output
         cfg_output = check([cfg, str(branch)], 0)
         assert '"$008000" -> "$008004" [label="BRA"]' in cfg_output, cfg_output
         assert '"$008004" -> "$008000" [label="BNE"]' in cfg_output, cfg_output
