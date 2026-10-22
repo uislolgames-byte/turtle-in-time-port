@@ -125,6 +125,11 @@ def main():
         assert '"$008000" -> "$009234" [label="JSR"]' in graph_output, graph_output
         assert '"$008003" -> "$125678" [label="JSL"]' in graph_output, graph_output
         assert 'digraph TMNT_calls {' in graph_output, graph_output
+        cfg_calls_output = check([cfg, str(calls_path)], 0)
+        assert '"$008000" -> "$009234" [label="JSR",style=dashed]' in cfg_calls_output, cfg_calls_output
+        assert '"$008003" -> "$125678" [label="JSL",style=dashed]' in cfg_calls_output, cfg_calls_output
+        assert '"$008000" -> "$008003" [label="return-assumed"]' in cfg_calls_output, cfg_calls_output
+        assert '"$008003" -> "$008007" [label="return-assumed"]' in cfg_calls_output, cfg_calls_output
         cfg_output = check([cfg, str(branch)], 0)
         assert '"$008000" -> "$008004" [label="BRA"]' in cfg_output, cfg_output
         assert '"$008004" -> "$008000" [label="BNE"]' in cfg_output, cfg_output
