@@ -161,6 +161,39 @@ def main():
         escape_path.write_bytes(escape_rom)
         escape_output = check([executor, str(escape_path), '5'], 0)
         assert 'reason=boundary' in escape_output, escape_output
+        # STA/LDA round-trip and BEQ taken after loading zero.
+        read_rom = bytearray(rom)
+        read_rom[:17] = bytes([
+            0xA9, 0x2A, 0x8D, 0x20, 0x00, 0xA9, 0x00,
+            0xAD, 0x20, 0x00, 0xD0, 0x02, 0x80, 0x01,
+            0xFF, 0xDB, 0xEA,
+        ])
+        read_path = root / 'execute-read.sfc'
+        read_path.write_bytes(read_rom)
+        read_output = check([executor, str(read_path), '20'], 0)
+        assert 'reason=stp' in read_output, read_output
+        assert 'a=$002A' in read_output and 'z=0' in read_output, read_output
+        # BEQ taken on zero skips an unsupported opcode.
+        beq_rom = bytearray(rom)
+        beq_rom[:7] = bytes([0xA9, 0x00, 0xF0, 0x01, 0xFF, 0xDB, 0xEA])
+        beq_path = root / 'execute-beq.sfc'
+        beq_path.write_bytes(beq_rom)
+        beq_output = check([executor, str(beq_path), '10'], 0)
+        assert 'reason=stp' in beq_output and 'z=1' in beq_output, beq_output
+        # BNE not taken when Z is set.
+        bne_rom = bytearray(rom)
+        bne_rom[:7] = bytes([0xA9, 0x00, 0xD0, 0x01, 0xDB, 0xFF, 0xEA])
+        bne_path = root / 'execute-bne.sfc'
+        bne_path.write_bytes(bne_rom)
+        bne_output = check([executor, str(bne_path), '10'], 0)
+        assert 'reason=stp' in bne_output, bne_output
+        # Unmodeled hardware reads must stop instead of returning fake data.
+        hardware_rom = bytearray(rom)
+        hardware_rom[:4] = bytes([0xAD, 0x00, 0x21, 0xDB])
+        hardware_path = root / 'execute-hardware-read.sfc'
+        hardware_path.write_bytes(hardware_rom)
+        hardware_output = check([executor, str(hardware_path)], 0)
+        assert 'reason=unsupported steps=0' in hardware_output, hardware_output
         check([executor, str(valid), '0'], 2)
         unsupported_rom = bytearray(rom)
         unsupported_rom[0] = 0xFF

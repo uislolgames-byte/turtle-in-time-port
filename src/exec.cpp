@@ -19,7 +19,7 @@ int main(int argc, char** argv) {
     const int limit = argc == 3 ? std::atoi(argv[2]) : 32;
     if (limit < 1 || limit > 100000) return 2;
     unsigned pc = rom.reset(), a = 0, x = 0, y = 0;
-    bool e = true, m8 = true, x8 = true, carry = false;
+    bool e = true, m8 = true, x8 = true, carry = false, zero = false;
     std::array<unsigned char, 0x2000> wram{};
     unsigned stores = 0, last_store = 0, last_value = 0;
     int steps = 0;
@@ -33,8 +33,8 @@ int main(int argc, char** argv) {
           width = (op == 0xC2 || op == 0xE2) ? 2 :
                   (op == 0xA9 ? (m8 ? 2 : 3) : (x8 ? 2 : 3));
           break;
-        case 0x8D: width = 3; break;
-        case 0x80: width = 2; break;
+        case 0x8D: case 0xAD: width = 3; break;
+        case 0x80: case 0xF0: case 0xD0: width = 2; break;
         case 0x18: case 0x38: case 0xFB: case 0xEA: case 0xDB:
           break;
         default: reason = "unsupported"; goto finished;
@@ -48,7 +48,8 @@ int main(int argc, char** argv) {
       }
       const unsigned value = width == 1 ? 0 :
           width == 2 ? rom.byte(offset + 1) : rom.word(offset + 1);
-      if (op == 0x8D && value >= wram.size()) {
+      if ((op == 0x8D || op == 0xAD) &&
+          (value >= wram.size() || (!m8 && value + 1 >= wram.size()))) {
         // $2100 and other hardware registers require a modeled SNES bus.
         reason = "unsupported";
         break;
@@ -79,9 +80,19 @@ int main(int argc, char** argv) {
             y &= 0xffu;
           }
           break;
-        case 0xA9: a = m8 ? ((a & 0xff00u) | value) : value; break;
-        case 0xA2: x = value; break;
-        case 0xA0: y = value; break;
+        case 0xA9:
+          a = m8 ? ((a & 0xff00u) | value) : value;
+          zero = (a & (m8 ? 0xffu : 0xffffu)) == 0;
+          break;
+        case 0xA2: x = value; zero = x == 0; break;
+        case 0xA0: y = value; zero = y == 0; break;
+        case 0xAD: {
+          const unsigned loaded = m8 ? wram[value] :
+              static_cast<unsigned>(wram[value] | (wram[value + 1] << 8));
+          a = m8 ? ((a & 0xff00u) | loaded) : loaded;
+          zero = loaded == 0;
+          break;
+        }
         case 0x8D:
           wram[value] = static_cast<unsigned char>(a & 0xffu);
           if (!m8) {
@@ -91,7 +102,9 @@ int main(int argc, char** argv) {
           last_store = value;
           last_value = a & (m8 ? 0xffu : 0xffffu);
           break;
-        case 0x80: {
+        case 0x80: case 0xF0: case 0xD0: {
+          if ((op == 0xF0 && !zero) || (op == 0xD0 && zero))
+            break;
           const int displacement = static_cast<int>(static_cast<signed char>(value));
           const int target = static_cast<int>(pc & 0xffffu) + 2 + displacement;
           if (target < 0x8000 || target > 0xffff) {
@@ -119,6 +132,7 @@ finished:
               << " m=" << (m8 ? 8 : 16)
               << " xbits=" << (x8 ? 8 : 16)
               << " c=" << (carry ? 1 : 0)
+              << " z=" << (zero ? 1 : 0)
               << " stores=" << stores
               << " last_addr=$" << std::uppercase << std::hex
               << std::setw(4) << std::setfill('0') << last_store
