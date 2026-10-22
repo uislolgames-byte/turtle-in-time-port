@@ -37,6 +37,7 @@ int main(int argc, char** argv) {
                       ? (m8 ? 2 : 3) : (x8 ? 2 : 3));
           break;
         case 0x8D: case 0xAD: width = 3; break;
+        case 0x85: case 0xA5: width = 2; break;
         case 0x80: case 0xF0: case 0xD0: case 0x30: case 0x10:
         case 0x70: case 0x50: width = 2; break;
         case 0x18: case 0x38: case 0xB8: case 0xFB: case 0xEA: case 0xDB:
@@ -54,7 +55,7 @@ int main(int argc, char** argv) {
       }
       const unsigned value = width == 1 ? 0 :
           width == 2 ? rom.byte(offset + 1) : rom.word(offset + 1);
-      if ((op == 0x8D || op == 0xAD) &&
+      if ((op == 0x8D || op == 0xAD || op == 0x85 || op == 0xA5) &&
           (value >= wram.size() || (!m8 && value + 1 >= wram.size()))) {
         // $2100 and other hardware registers require a modeled SNES bus.
         reason = "unsupported";
@@ -133,7 +134,7 @@ int main(int argc, char** argv) {
         }
         case 0xA2: x = value; zero = x == 0; negative = (x & (x8 ? 0x80u : 0x8000u)) != 0; break;
         case 0xA0: y = value; zero = y == 0; negative = (y & (x8 ? 0x80u : 0x8000u)) != 0; break;
-        case 0xAD: {
+        case 0xAD: case 0xA5: {
           const unsigned loaded = m8 ? wram[value] :
               static_cast<unsigned>(wram[value] | (wram[value + 1] << 8));
           a = m8 ? ((a & 0xff00u) | loaded) : loaded;
@@ -172,7 +173,7 @@ int main(int argc, char** argv) {
           negative = (result & sign) != 0;
           break;
         }
-        case 0x8D:
+        case 0x8D: case 0x85:
           wram[value] = static_cast<unsigned char>(a & 0xffu);
           if (!m8) {
             wram[(value + 1) & 0x1fffu] = static_cast<unsigned char>(a >> 8);

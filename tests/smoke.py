@@ -377,6 +377,30 @@ def main():
         txy_path.write_bytes(txy_rom)
         txy_output = check([executor, str(txy_path), '20'], 0)
         assert 'a=$0042' in txy_output and 'y=$0042' in txy_output, txy_output
+        # Direct Page STA/LDA round trip with a one-byte address.
+        dp_rom = bytearray(rom)
+        dp_program = bytes([
+            0xA9, 0xA5, 0x85, 0x42, 0xA9, 0x00,
+            0xA5, 0x42, 0xDB,
+        ])
+        dp_rom[:len(dp_program)] = dp_program
+        dp_path = root / 'execute-direct-page.sfc'
+        dp_path.write_bytes(dp_rom)
+        dp_output = check([executor, str(dp_path), '20'], 0)
+        assert 'reason=stp' in dp_output and 'a=$00A5' in dp_output, dp_output
+        assert 'stores=1 last_addr=$0042 last_value=$00A5' in dp_output, dp_output
+        # Direct Page 16-bit store/load uses adjacent low WRAM bytes.
+        dp16_rom = bytearray(rom)
+        dp16_program = bytes([
+            0x18, 0xFB, 0xC2, 0x20, 0xA9, 0xCD, 0xAB,
+            0x85, 0xFE, 0xA9, 0x00, 0x00, 0xA5, 0xFE, 0xDB,
+        ])
+        dp16_rom[:len(dp16_program)] = dp16_program
+        dp16_path = root / 'execute-direct-page16.sfc'
+        dp16_path.write_bytes(dp16_rom)
+        dp16_output = check([executor, str(dp16_path), '20'], 0)
+        assert 'reason=stp' in dp16_output and 'a=$ABCD' in dp16_output, dp16_output
+        assert 'm=16' in dp16_output and 'stores=1' in dp16_output, dp16_output
         check([executor, str(valid), '0'], 2)
         unsupported_rom = bytearray(rom)
         unsupported_rom[0] = 0xFF
