@@ -100,6 +100,10 @@ int main(int argc, char** argv) {
       if (name == "calls") ok = state.steps == 17 && state.pc == 0x8013 && state.a == 0x1234 &&
         state.x == 0 && state.s == 0x1ff && state.ram[0x1000] == 0x34 && state.ram[0x1001] == 0x12 &&
         state.ram[0x1fe] == 0x0c && state.ram[0x1ff] == 0x80 && state.stop == recompiled::Stop::stp;
+      if (name == "mixed") ok = state.steps == 19 && state.pc == 0x8025 && state.a == 0xab80 &&
+        state.x == 0x80 && state.y == 0x78 && state.e && state.s == 0x1ff &&
+        (state.p & 48) == 48 && state.ram[0x1000] == 0xcd && state.ram[0x1001] == 0xab &&
+        state.ram[0x1002] == 0x80 && state.stop == recompiled::Stop::stp;
       if (name == "emulation_calls") ok = state.steps == 7 && state.pc == 0x8007 && state.x == 2 &&
         state.s == 0x1ff && state.stop == recompiled::Stop::stp;
       if (name == "corrupt_return") ok = state.steps == 4 && state.pc == 0x8001 && state.s == 0x1ff &&

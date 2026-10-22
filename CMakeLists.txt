@@ -70,7 +70,7 @@ if(BUILD_TESTING)
   add_executable(tmnt_recompiler_rejections tests/recompiler_rejections.cpp)
   add_test(NAME recompiler_rejections COMMAND tmnt_recompiler_rejections)
   add_dependencies(check tmnt_recompiler_rejections)
-  foreach(fixture widths calls emulation_calls corrupt_return loop branches memory)
+  foreach(fixture widths mixed calls emulation_calls corrupt_return loop branches memory)
     set(fixture_bin "${CMAKE_CURRENT_BINARY_DIR}/recompiler_${fixture}.bin")
     set(fixture_cpp "${CMAKE_CURRENT_BINARY_DIR}/recompiler_${fixture}.cpp")
     add_custom_command(OUTPUT "${fixture_cpp}" "${fixture_bin}"
