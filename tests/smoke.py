@@ -530,6 +530,36 @@ def main():
         loop_path.write_bytes(loop_rom)
         loop_output = check([executor, str(loop_path), '7'], 0)
         assert 'reason=limit steps=7' in loop_output, loop_output
+        # BRL uses a signed 16-bit displacement from the next instruction.
+        brl_rom = bytearray(rom)
+        brl_program = bytes([
+            0x82, 0x04, 0x00, 0xA9, 0x11, 0xDB, 0xEA,
+            0xA9, 0x42, 0xDB,
+        ])
+        brl_rom[:len(brl_program)] = brl_program
+        brl_path = root / 'execute-brl-forward.sfc'
+        brl_path.write_bytes(brl_rom)
+        brl_output = check([executor, str(brl_path), '10'], 0)
+        assert 'reason=stp' in brl_output and 'a=$0042' in brl_output, brl_output
+        # BRL -3 loops to itself and must honor the execution limit.
+        back_rom = bytearray(rom)
+        back_program = bytes([0x82, 0xFD, 0xFF])
+        back_rom[:len(back_program)] = back_program
+        back_path = root / 'execute-brl-back.sfc'
+        back_path.write_bytes(back_rom)
+        back_output = check([executor, str(back_path), '6'], 0)
+        assert 'reason=limit steps=6' in back_output, back_output
+        # BRL into the non-ROM lower half of the bank is rejected.
+        bad_brl_rom = bytearray(rom)
+        bad_brl_program = bytes([0x82, 0xFD, 0xFF, 0xDB])
+        bad_brl_rom[:len(bad_brl_program)] = bad_brl_program
+        # Put the branch at $8001 so a -4 offset lands at $8000;
+        # a -5 offset lands at $7FFF and must be rejected.
+        bad_brl_rom[:6] = bytes([0xEA, 0x82, 0xFB, 0xFF, 0xDB, 0xEA])
+        bad_brl_path = root / 'execute-brl-boundary.sfc'
+        bad_brl_path.write_bytes(bad_brl_rom)
+        bad_brl_output = check([executor, str(bad_brl_path), '10'], 0)
+        assert 'reason=boundary' in bad_brl_output, bad_brl_output
         check([executor, str(valid), '0'], 2)
         unsupported_rom = bytearray(rom)
         unsupported_rom[0] = 0xFF
