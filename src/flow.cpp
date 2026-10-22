@@ -6,7 +6,8 @@ int main(int argc, char** argv) {
     int limit=argc==3?std::atoi(argv[2]):100;
     if (limit<=0 || limit>100000) return 2;
     Rom r(argv[1]);
-    size_t pc=r.lorom(0x008000u | r.reset());
+    if (r.reset() < 0x8000) throw std::runtime_error("Reset vector is not in LoROM ROM space");
+    size_t pc=r.lorom(r.reset());
     int decoded=0;
     while (decoded<limit && pc<r.data.size()) {
       auto op=r.byte(pc++);
