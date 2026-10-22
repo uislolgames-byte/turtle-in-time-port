@@ -401,6 +401,43 @@ def main():
         dp16_output = check([executor, str(dp16_path), '20'], 0)
         assert 'reason=stp' in dp16_output and 'a=$ABCD' in dp16_output, dp16_output
         assert 'm=16' in dp16_output and 'stores=1' in dp16_output, dp16_output
+        # TCD moves the full 16-bit accumulator to D; Direct Page offsets
+        # are relative to D even when the accumulator later becomes 8-bit.
+        d_rom = bytearray(rom)
+        d_program = bytes([
+            0x18, 0xFB, 0xC2, 0x20, 0xA9, 0x00, 0x01,
+            0x5B, 0xE2, 0x20, 0xA9, 0x5A, 0x85, 0x10,
+            0xA9, 0x00, 0xA5, 0x10, 0xDB,
+        ])
+        d_rom[:len(d_program)] = d_program
+        d_path = root / 'execute-d-register.sfc'
+        d_path.write_bytes(d_rom)
+        d_output = check([executor, str(d_path), '30'], 0)
+        assert 'reason=stp' in d_output and 'd=$0100' in d_output, d_output
+        assert 'a=$015A' in d_output and 'last_addr=$0110' in d_output, d_output
+        # TDC copies D to the full accumulator, regardless of M width.
+        tdc_rom = bytearray(rom)
+        tdc_program = bytes([
+            0x18, 0xFB, 0xC2, 0x20, 0xA9, 0x34, 0x12,
+            0x5B, 0xE2, 0x20, 0xA9, 0x00, 0x7B, 0xDB,
+        ])
+        tdc_rom[:len(tdc_program)] = tdc_program
+        tdc_path = root / 'execute-tdc.sfc'
+        tdc_path.write_bytes(tdc_rom)
+        tdc_output = check([executor, str(tdc_path), '30'], 0)
+        assert 'a=$1234' in tdc_output and 'd=$1234' in tdc_output, tdc_output
+        assert 'm=8' in tdc_output and 'n=0' in tdc_output, tdc_output
+        # Direct Page outside modeled WRAM is rejected, not silently aliased.
+        dp_oob_rom = bytearray(rom)
+        dp_oob_program = bytes([
+            0x18, 0xFB, 0xC2, 0x20, 0xA9, 0x00, 0x21,
+            0x5B, 0xA5, 0x00, 0xDB,
+        ])
+        dp_oob_rom[:len(dp_oob_program)] = dp_oob_program
+        dp_oob_path = root / 'execute-dp-oob.sfc'
+        dp_oob_path.write_bytes(dp_oob_rom)
+        dp_oob_output = check([executor, str(dp_oob_path), '30'], 0)
+        assert 'reason=unsupported' in dp_oob_output, dp_oob_output
         check([executor, str(valid), '0'], 2)
         unsupported_rom = bytearray(rom)
         unsupported_rom[0] = 0xFF

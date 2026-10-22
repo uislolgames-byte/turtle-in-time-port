@@ -18,7 +18,7 @@ int main(int argc, char** argv) {
       throw std::runtime_error("Reset vector is not in LoROM ROM space");
     const int limit = argc == 3 ? std::atoi(argv[2]) : 32;
     if (limit < 1 || limit > 100000) return 2;
-    unsigned pc = rom.reset(), a = 0, x = 0, y = 0;
+    unsigned pc = rom.reset(), a = 0, x = 0, y = 0, d = 0;
     bool e = true, m8 = true, x8 = true, carry = false, zero = false, negative = false, overflow = false;
     std::array<unsigned char, 0x2000> wram{};
     unsigned stores = 0, last_store = 0, last_value = 0;
@@ -43,6 +43,7 @@ int main(int argc, char** argv) {
         case 0x18: case 0x38: case 0xB8: case 0xFB: case 0xEA: case 0xDB:
         case 0xE8: case 0xCA: case 0xC8: case 0x88: case 0x1A: case 0x3A:
         case 0xAA: case 0xA8: case 0x8A: case 0x98: case 0x9B: case 0xBB:
+        case 0x5B: case 0x7B:
           break;
         default: reason = "unsupported"; goto finished;
       }
@@ -55,8 +56,10 @@ int main(int argc, char** argv) {
       }
       const unsigned value = width == 1 ? 0 :
           width == 2 ? rom.byte(offset + 1) : rom.word(offset + 1);
+      const unsigned address = (op == 0x85 || op == 0xA5)
+          ? ((d + value) & 0xffffu) : value;
       if ((op == 0x8D || op == 0xAD || op == 0x85 || op == 0xA5) &&
-          (value >= wram.size() || (!m8 && value + 1 >= wram.size()))) {
+          (address >= wram.size() || (!m8 && address + 1 >= wram.size()))) {
         // $2100 and other hardware registers require a modeled SNES bus.
         reason = "unsupported";
         break;
@@ -135,13 +138,23 @@ int main(int argc, char** argv) {
         case 0xA2: x = value; zero = x == 0; negative = (x & (x8 ? 0x80u : 0x8000u)) != 0; break;
         case 0xA0: y = value; zero = y == 0; negative = (y & (x8 ? 0x80u : 0x8000u)) != 0; break;
         case 0xAD: case 0xA5: {
-          const unsigned loaded = m8 ? wram[value] :
-              static_cast<unsigned>(wram[value] | (wram[value + 1] << 8));
+          const unsigned loaded = m8 ? wram[address] :
+              static_cast<unsigned>(wram[address] | (wram[address + 1] << 8));
           a = m8 ? ((a & 0xff00u) | loaded) : loaded;
           zero = loaded == 0;
           negative = (loaded & (m8 ? 0x80u : 0x8000u)) != 0;
           break;
         }
+        case 0x5B:
+          d = a & 0xffffu;
+          zero = d == 0;
+          negative = (d & 0x8000u) != 0;
+          break;
+        case 0x7B:
+          a = d;
+          zero = a == 0;
+          negative = (a & 0x8000u) != 0;
+          break;
         case 0xAA: case 0xA8: case 0x8A: case 0x98:
         case 0x9B: case 0xBB: {
           const unsigned source = (op == 0xAA || op == 0xA8) ? a
@@ -174,12 +187,12 @@ int main(int argc, char** argv) {
           break;
         }
         case 0x8D: case 0x85:
-          wram[value] = static_cast<unsigned char>(a & 0xffu);
+          wram[address] = static_cast<unsigned char>(a & 0xffu);
           if (!m8) {
-            wram[(value + 1) & 0x1fffu] = static_cast<unsigned char>(a >> 8);
+            wram[address + 1] = static_cast<unsigned char>(a >> 8);
           }
           ++stores;
-          last_store = value;
+          last_store = address;
           last_value = a & (m8 ? 0xffu : 0xffffu);
           break;
         case 0x80: case 0xF0: case 0xD0: case 0x30: case 0x10:
@@ -211,6 +224,7 @@ finished:
               << " a=$" << std::setw(4) << a
               << " x=$" << std::setw(4) << x
               << " y=$" << std::setw(4) << y
+              << " d=$" << std::setw(4) << d
               << std::dec << " e=" << (e ? 1 : 0)
               << " m=" << (m8 ? 8 : 16)
               << " xbits=" << (x8 ? 8 : 16)
