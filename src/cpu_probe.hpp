@@ -50,8 +50,8 @@ inline CpuProbeResult probe_reset(const Rom& rom, unsigned limit = 32) {
       case 0xC2: case 0xE2: length = 2; break;
       case 0x80: case 0x10: case 0x30: case 0x50: case 0x70:
       case 0x90: case 0xB0: case 0xD0: case 0xF0: length = 2; break;
-      case 0xA9: length = m8 ? 2 : 3; break;
-      case 0xA2: case 0xA0: length = x8 ? 2 : 3; break;
+      case 0xA9: case 0xC9: length = m8 ? 2 : 3; break;
+      case 0xA2: case 0xA0: case 0xE0: case 0xC0: length = x8 ? 2 : 3; break;
       default:
         result.reason = "unsupported opcode";
         return result;
@@ -129,6 +129,15 @@ inline CpuProbeResult probe_reset(const Rom& rom, unsigned limit = 32) {
         break;
       case 0xA2: result.x = operand; nz(result.x, x8); break;
       case 0xA0: result.y = operand; nz(result.y, x8); break;
+      case 0xC9: case 0xE0: case 0xC0: {
+        const bool narrow = op == 0xC9 ? m8 : x8;
+        const unsigned value = (op == 0xC9 ? result.a : op == 0xE0 ? result.x : result.y) &
+                               (narrow ? 0xffu : 0xffffu);
+        carry = value >= operand;
+        known |= 1u;
+        nz(value - operand, narrow);
+        break;
+      }
       case 0xE8: case 0xCA:
         result.x = (result.x + (op == 0xE8 ? 1u : 0xffffu)) & (x8 ? 0xffu : 0xffffu);
         nz(result.x, x8);

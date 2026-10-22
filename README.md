@@ -66,3 +66,8 @@ o diagnóstico quando um desvio depende delas; XCE também exige carry conhecido
 Saltos usam deslocamento assinado e preservam o banco do PC. O limite de
 instruções encerra loops; destinos fora do mapeamento ROM encerram o diagnóstico.
 Os testes adicionais são escritos em C++ e usam apenas uma ROM sintética.
+
+CMP/CPX/CPY imediato comparam A/X/Y em 8 ou 16 bits, estabelecendo C/N/Z
+sem alterar os registradores ou V. Isso permite diagnosticar loops de comparação
+com desvios condicionais. Os testes conferem os 256 valores de 8 bits contra $80,
+casos de 16 bits, preservação de V/B e operandos truncados no limite do banco.

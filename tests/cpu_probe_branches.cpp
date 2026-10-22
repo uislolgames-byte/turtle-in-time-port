@@ -54,6 +54,48 @@ int main() {
     r = probe_reset(rom); check(r.reason == "STP" && r.pc == 0x8003 && r.steps == 2);
     rom.data = bytes; rom.data[0x7ffc] = 0xff; rom.data[0x7ffd] = 0xff; rom.data[0x7fff] = 0x80;
     r = probe_reset(rom); check(r.reason == "instruction crosses boundary" && r.steps == 0);
+    // CMP/CPX/CPY leave registers unchanged and establish C/Z/N for branches.
+    const unsigned char loads[] = {0xa9, 0xa2, 0xa0};
+    const unsigned char compares[] = {0xc9, 0xe0, 0xc0};
+    const unsigned char conditions[] = {0xb0, 0xf0, 0x30};
+    for (unsigned reg = 0; reg < 3; ++reg) {
+      for (unsigned value = 0; value < 256; ++value) {
+        for (unsigned condition = 0; condition < 3; ++condition) {
+          r = run({loads[reg], static_cast<unsigned char>(value), compares[reg], 0x80,
+                   conditions[condition], 1, 0x00, 0xdb});
+          const bool taken = condition == 0 ? value >= 128 : condition == 1 ? value == 128 : value < 128;
+          check(r.reason == (taken ? "STP" : "unsupported opcode") &&
+                r.steps == (taken ? 4u : 3u) && r.pc == (taken ? 0x8008u : 0x8006u));
+          check(r.a == (reg == 0 ? value : 0) && r.x == (reg == 1 ? value : 0) &&
+                r.y == (reg == 2 ? value : 0));
+        }
+      }
+      // Native 16-bit comparisons must not truncate either operand.
+      for (unsigned value : {0x007fu, 0x0080u, 0x0100u, 0x7fffu, 0x8000u, 0xffffu}) {
+        for (unsigned condition = 0; condition < 3; ++condition) {
+          r = run({0x18,0xfb,0xc2,0x30,loads[reg],static_cast<unsigned char>(value),
+                   static_cast<unsigned char>(value >> 8),compares[reg],0,0x80,
+                   conditions[condition],1,0,0xdb});
+          const bool taken = condition == 0 ? value >= 0x8000 : condition == 1 ? value == 0x8000 : value < 0x8000;
+          check(r.reason == (taken ? "STP" : "unsupported opcode") && r.steps == (taken ? 7u : 6u));
+          check((reg == 0 ? r.a : reg == 1 ? r.x : r.y) == value);
+        }
+      }
+      for (unsigned set = 0; set < 2; ++set) {
+        r = run({static_cast<unsigned char>(set ? 0xe2 : 0xc2),0x40,
+                 loads[reg],1,compares[reg],2,static_cast<unsigned char>(set ? 0x70 : 0x50),1,0,0xdb});
+        check(r.reason == "STP" && r.steps == 5); // Comparison preserves V.
+      }
+    }
+    r = run({0x18,0xfb,0xc2,0x20,0xa9,0xcd,0xab,0xe2,0x20,0xc9,0xcd,0xf0,1,0,0xdb});
+    check(r.reason == "STP" && r.a == 0xabcd && r.steps == 8); // Compare low A, preserve B.
+    r = run({0xa2,0,0xe8,0xe0,3,0xd0,0xfb,0xdb});
+    check(r.reason == "STP" && r.x == 3 && r.steps == 11);
+    for (unsigned char opcode : compares) {
+      rom.data = bytes; rom.data[0x7ffc] = 0xff; rom.data[0x7ffd] = 0xff;
+      rom.data[0x7fff] = opcode;
+      r = probe_reset(rom); check(r.reason == "instruction crosses boundary" && r.steps == 0);
+    }
     std::remove(path);
     std::cout << "CPU branch tests passed\n";
     return 0;
