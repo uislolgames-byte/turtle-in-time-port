@@ -136,9 +136,9 @@ def main():
         assert 'digraph' not in inventory, inventory
         hotspots = check([cfg, str(calls_path), '512', '--hotspots'], 0)
         assert hotspots.splitlines() == [
-            'address,incoming_calls,status,rom_offset',
-            '$009234,1,candidate,$001234',
-            '$125678,1,unmapped,',
+            'address,incoming_calls,jsr_sites,jsl_sites,status,rom_offset,first_opcode',
+            '$009234,1,1,0,candidate,$001234,unknown',
+            '$125678,1,0,1,unmapped,,unmapped',
         ], hotspots
         assert 'digraph' not in hotspots, hotspots
         check([cfg, str(calls_path), '512', '--unknown'], 2)

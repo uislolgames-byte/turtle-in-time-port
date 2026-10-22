@@ -179,15 +179,39 @@ int main(int argc, char** argv) {
         if (a.second != b.second) return a.second > b.second;
         return a.first < b.first;
       });
-      std::cout << "address,incoming_calls,status,rom_offset\n";
+      std::cout << "address,incoming_calls,jsr_sites,jsl_sites,status,rom_offset,first_opcode\n";
       for (const auto& entry : ranked) {
+        unsigned jsr_sites = 0, jsl_sites = 0;
+        for (const auto& call : calls) {
+          if (call.to != entry.first) continue;
+          if (call.label == "JSR") ++jsr_sites;
+          if (call.label == "JSL") ++jsl_sites;
+        }
         size_t offset = 0;
         bool mapped = true;
         try { offset = rom.lorom(entry.first); }
         catch (const std::out_of_range&) { mapped = false; }
+        std::string opcode = "unmapped";
+        if (mapped) {
+          switch (rom.byte(offset)) {
+            case 0x20: opcode = "JSR"; break;
+            case 0x22: opcode = "JSL"; break;
+            case 0x4C: opcode = "JMP"; break;
+            case 0x5C: opcode = "JML"; break;
+            case 0x60: opcode = "RTS"; break;
+            case 0x6B: opcode = "RTL"; break;
+            case 0x78: opcode = "SEI"; break;
+            case 0xC2: opcode = "REP"; break;
+            case 0xE2: opcode = "SEP"; break;
+            case 0xEA: opcode = "NOP"; break;
+            default: opcode = "unknown"; break;
+          }
+        }
         std::cout << hx(entry.first) << "," << entry.second << ","
+                  << jsr_sites << "," << jsl_sites << ","
                   << (mapped ? "candidate" : "unmapped") << ","
-                  << (mapped ? hx(static_cast<unsigned>(offset)) : "") << "\n";
+                  << (mapped ? hx(static_cast<unsigned>(offset)) : "")
+                  << "," << opcode << "\n";
       }
       return 0;
     }
