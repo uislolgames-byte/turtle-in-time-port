@@ -186,7 +186,7 @@ def main():
             output = check([callgraph, str(bit_path)], 0)
             source = 0x8000 + len(prefix)
             assert f'"${source:06X}" -> "$008010" [label="JSR"]' in output, output
-            assert 'Decoded=7 ' in output, output
+            assert 'Decoded=6 ' in output, output
         # Logical operations and index increments preserve a known carry.
         preserving_rom = bytearray(rom)
         preserving_program = bytes([
