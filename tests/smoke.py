@@ -128,6 +128,13 @@ def main():
         assert '"$008000" -> "$009234" [label="JSR"]' in graph_output, graph_output
         assert '"$008003" -> "$125678" [label="JSL"]' in graph_output, graph_output
         assert 'digraph TMNT_calls {' in graph_output, graph_output
+        inventory = check([cfg, str(calls_path), '512', '--inventory'], 0)
+        assert inventory.startswith('address,origin,source,kind,status\\n'), inventory
+        assert '$009234,call,$008000,JSR,candidate' in inventory, inventory
+        assert '$125678,call,$008003,JSL,unmapped' in inventory, inventory
+        assert '$008020,vector,$007FEA,"Native NMI",entry_only' in inventory, inventory
+        assert 'digraph' not in inventory, inventory
+        check([cfg, str(calls_path), '512', '--unknown'], 2)
         cfg_calls_output = check([cfg, str(calls_path)], 0)
         assert '"$008000" -> "$009234" [label="JSR",style=dashed]' in cfg_calls_output, cfg_calls_output
         assert '"$008003" -> "$125678" [label="JSL",style=dashed]' in cfg_calls_output, cfg_calls_output
