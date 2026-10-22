@@ -5,6 +5,8 @@ Experimento de engenharia reversa do **Teenage Mutant Ninja Turtles IV: Turtles 
 **Importante:** este repositório contém ferramentas **preliminares** de inspeção e uma primeira recompilação estática de programas sintéticos 65C816. Ainda não é o jogo jogável nem uma recompilação do jogo.
 
 ## Ferramentas
+- Base do Marco 3: [barramento de memória em C++](system/README.md), com ROM
+  LoROM parcial, RAM e testes de bancos. A integração com a CPU ainda está pendente.
 - `tmnt_recompile`: primeira tradução estática **escrita em C++** de programas
   sintéticos para C++ compilável, com modos, fluxo e chamadas folha JSR/RTS.
   Veja [recompiler/](recompiler/README.md) para o subconjunto e os testes.
