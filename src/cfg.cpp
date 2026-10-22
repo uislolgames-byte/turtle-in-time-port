@@ -111,8 +111,7 @@ int main(int argc, char** argv) {
       if (op==0xdb || op==0x00) stops.insert(from);
       const unsigned next=(from&0xff0000u)|((from+1u+unsigned(bytes))&0xffffu);
       auto enqueue=[&](unsigned target,const char* label) {
-        edges.insert({from,target,label});
-        try { (void)rom.lorom(target); pending.push({target,s.e,s.carry,s.carry_known,s.m8,s.x8}); }
+        try { (void)rom.lorom(target); edges.insert({from,target,label}); pending.push({target,s.e,s.carry,s.carry_known,s.m8,s.x8}); }
         catch(const std::out_of_range&) { ++unresolved; }
       };
       if(op==0x80 || op==0x82 || op==0x10 || op==0x30 ||
