@@ -254,11 +254,13 @@ int main(int argc, char** argv) {
             }
           }
         }
-        // Decode at most four fixed-width instructions. Do not follow control
-        // transfers or guess operand widths that depend on unknown CPU flags.
+        // Decode at most four instructions, tracking only provable 8-bit M/X
+        // widths. A routine entry has unknown E/M/X; REP cannot prove 16-bit
+        // width without knowing E=0, while SEP always forces 8-bit width.
         std::ostringstream sequence;
         if (mapped) {
           size_t pos = offset;
+          bool m8_known = false, x8_known = false;
           for (int i = 0; i < 4 && pos < rom.data.size() &&
                (pos / 0x8000) == (offset / 0x8000); ++i) {
             const unsigned op = rom.byte(pos);
@@ -287,6 +289,9 @@ int main(int argc, char** argv) {
               case 0x8C: name = "STY"; width = 3; break;
               case 0xC2: name = "REP"; width = 2; break;
               case 0xE2: name = "SEP"; width = 2; break;
+              case 0xA9: name = "LDA"; width = m8_known ? 2 : 0; break;
+              case 0xA2: name = "LDX"; width = x8_known ? 2 : 0; break;
+              case 0xA0: name = "LDY"; width = x8_known ? 2 : 0; break;
               case 0x20: name = "JSR"; width = 3; break;
               case 0x22: name = "JSL"; width = 4; break;
               case 0x4C: name = "JMP"; width = 3; stop = true; break;
@@ -304,6 +309,15 @@ int main(int argc, char** argv) {
             }
             if (i) sequence << " ";
             sequence << name;
+            if (op == 0xE2) {
+              const unsigned mask = rom.byte(pos + 1);
+              if (mask & 0x20) m8_known = true;
+              if (mask & 0x10) x8_known = true;
+            } else if (op == 0xC2) {
+              const unsigned mask = rom.byte(pos + 1);
+              if (mask & 0x20) m8_known = false;
+              if (mask & 0x10) x8_known = false;
+            }
             pos += width;
             if (stop) break;
           }

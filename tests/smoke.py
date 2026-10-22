@@ -160,6 +160,18 @@ def main():
         boundary = check([cfg, str(boundary_path), '512', '--hotspots'], 0)
         assert '$009234,1,1,0,candidate,$001234,JMP,"4C 00 80 EA' in boundary, boundary
         assert ',jump' in boundary.splitlines()[1], boundary
+        # SEP establishes 8-bit immediate widths even with unknown entry E.
+        width_rom = bytearray(calls_rom)
+        width_rom[0x1234:0x123b] = bytes([0xE2, 0x30, 0xA9, 0x12, 0xA2, 0x34, 0x60])
+        width_path = root / 'hotspot-width.sfc'
+        width_path.write_bytes(width_rom)
+        width_output = check([cfg, str(width_path), '512', '--hotspots'], 0)
+        assert ',"SEP LDA LDX RTS"' in width_output, width_output
+        # REP cannot establish 16-bit width without knowing native mode.
+        width_rom[0x1234:0x123a] = bytes([0xE2, 0x20, 0xC2, 0x20, 0xA9, 0x12])
+        width_path.write_bytes(width_rom)
+        width_output = check([cfg, str(width_path), '512', '--hotspots'], 0)
+        assert ',"SEP REP ?"' in width_output, width_output
         # Fixed-width store instructions can be decoded without knowing M/X.
         store_rom = bytearray(calls_rom)
         store_rom[0x1234:0x123b] = bytes([0x78, 0x8D, 0x00, 0x21, 0xE8, 0x60, 0xEA])
