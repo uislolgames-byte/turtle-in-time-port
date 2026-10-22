@@ -155,7 +155,8 @@ int main(int argc, char** argv) {
       } else if(op==0x20 || op==0x22) {
         const unsigned target=op==0x20 ? ((from&0xff0000u)|operand) : operand;
         calls.insert({from,target,op==0x20?"JSR":"JSL"});
-        call_targets.insert(target);
+        try { (void)rom.lorom(target); call_targets.insert(target); }
+        catch (const std::out_of_range&) { /* unmapped calls remain in CSV */ }
         // The callee is not traversed: entry state and return state are unproven.
         enqueue(next,"return-assumed");
       } else if(op==0x4c || op==0x5c) {
