@@ -301,7 +301,7 @@ int main(int argc, char** argv) {
               case 0xDB: name = "STP"; width = 1; stop = true; break;
               default: break;
             }
-            if (!name || pos + width > rom.data.size() ||
+            if (!name || width == 0 || pos + width > rom.data.size() ||
                 (pos % 0x8000) + width > 0x8000) {
               if (i) sequence << " ";
               sequence << "?";
