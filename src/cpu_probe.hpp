@@ -1,5 +1,6 @@
 #pragma once
 #include "rom.hpp"
+#include <array>
 #include <cstdint>
 #include <iomanip>
 #include <sstream>
@@ -28,6 +29,8 @@ inline CpuProbeResult probe_reset(const Rom& rom, unsigned limit = 32) {
     return result;
   }
   bool m8 = true, x8 = true, e = true, carry = false, decimal = false;
+  // Synthetic diagnostic RAM, reset for each call. DBR is fixed at zero.
+  std::array<uint8_t, 0x2000> ram{};
   unsigned flags = 0, known = 0; // N/V/Z/C are not assumed known at RESET.
   auto nz = [&](unsigned value, bool narrow) {
     const unsigned mask = narrow ? 0xffu : 0xffffu;
@@ -54,6 +57,7 @@ inline CpuProbeResult probe_reset(const Rom& rom, unsigned limit = 32) {
       case 0xA9: case 0xC9: case 0x29: case 0x09: case 0x49: length = m8 ? 2 : 3; break;
       case 0x69: case 0xE9: length = m8 ? 2 : 3; break;
       case 0xA2: case 0xA0: case 0xE0: case 0xC0: length = x8 ? 2 : 3; break;
+      case 0xAD: case 0x8D: case 0x8E: case 0x8C: case 0x9C: length = 3; break;
       default:
         result.reason = "unsupported opcode";
         return result;
@@ -135,6 +139,26 @@ inline CpuProbeResult probe_reset(const Rom& rom, unsigned limit = 32) {
         break;
       case 0xA2: result.x = operand; nz(result.x, x8); break;
       case 0xA0: result.y = operand; nz(result.y, x8); break;
+      case 0xAD: case 0x8D: case 0x8E: case 0x8C: case 0x9C: {
+        const bool narrow = (op == 0x8E || op == 0x8C) ? x8 : m8;
+        const unsigned width = narrow ? 1u : 2u;
+        // Check the whole transfer before reading or writing either byte.
+        if (operand + width > ram.size()) {
+          result.reason = "address outside probe RAM";
+          return result;
+        }
+        if (op == 0xAD) {
+          unsigned value = ram[operand];
+          if (!narrow) value |= unsigned(ram[operand + 1]) << 8;
+          result.a = narrow ? ((result.a & 0xff00u) | value) : value;
+          nz(result.a, narrow);
+        } else {
+          const unsigned value = op == 0x8D ? result.a : op == 0x8E ? result.x : op == 0x8C ? result.y : 0u;
+          ram[operand] = static_cast<uint8_t>(value);
+          if (!narrow) ram[operand + 1] = static_cast<uint8_t>(value >> 8);
+        }
+        break;
+      }
       case 0x69: case 0xE9: {
         if (decimal) {
           result.reason = "decimal arithmetic unsupported";

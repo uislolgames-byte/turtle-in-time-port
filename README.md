@@ -93,3 +93,13 @@ começa limpo no RESET e pode ser alterado por CLD/SED ou REP/SEP; com D ligado,
 ADC/SBC para com `decimal arithmetic unsupported`, sem alterar A nem consumir
 a instrução. O teste de aritmética usa um oráculo de somas/subtrações e limites
 assinados para conferir resultados, carry, overflow e desvios em toda a bateria.
+
+LDA/STA/STX/STY/STZ absoluto acessam apenas RAM sintética em $0000–$1FFF,
+com DBR fixo em zero. A RAM começa zerada a cada chamada de diagnóstico,
+independente da ROM carregada. LDA respeita M e altera N/Z; STA/STZ respeitam M,
+STX/STY respeitam X, e as escritas preservam flags. Transferências de 16 bits
+usam a ordem little-endian e validam os dois bytes antes de acessar a memória.
+Acesso fora dessa região (incluindo registradores de hardware e espaço ROM)
+para com `address outside probe RAM`. Isso ainda não é um barramento SNES.
+O teste de memória cobre larguras M/X independentes, fronteiras, flags, ordem dos
+bytes, isolamento entre chamadas e preservação da ROM original.
