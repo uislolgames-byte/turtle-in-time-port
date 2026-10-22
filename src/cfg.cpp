@@ -55,11 +55,13 @@ int main(int argc, char** argv) {
       {"Native BRK", 0x7fe6}
     };
     std::set<Edge> vector_edges;
+    std::set<unsigned> vector_targets;
     for (const auto& v : vector_entries) {
       const unsigned target = rom.word(v.offset);
       try {
         (void)rom.lorom(target);
         vector_edges.insert({static_cast<unsigned>(v.offset), target, v.name});
+        vector_targets.insert(target);
       } catch (const std::out_of_range&) {
         // Some vectors are uninitialized or point to RAM; do not infer code.
       }
@@ -175,6 +177,8 @@ int main(int argc, char** argv) {
     for(unsigned pc:stops)
       std::cout << "  \"" << hx(pc) << "\" [shape=octagon,label=\""
                 << hx(pc) << " stop/trap\"];\n";
+    for (unsigned target : vector_targets)
+      std::cout << "  \"" << hx(target) << "\" [peripheries=2];\n";
     for (const auto& v : vector_edges)
       std::cout << "  \"vector_" << std::hex << v.from
                 << "\" [shape=box,label=\"" << v.label << "\"];\n"
