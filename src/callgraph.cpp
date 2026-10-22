@@ -65,13 +65,23 @@ int main(int argc, char** argv) {
           case 0xfb: { bool old=emulation; emulation=carry; carry=old;
                        if(emulation) m8=x8=true; break; }
           case 0xc2: case 0xe2: bytes=1; break;
-          case 0xa2: bytes=x8?1:2; break;
-          case 0xa9: bytes=m8?1:2; break;
-          case 0x20: case 0x4c: case 0x8d: case 0x9c: bytes=2; break;
+          case 0xa2: case 0xa0: bytes=x8?1:2; break;
+          case 0xa9: case 0x69: case 0xe9: case 0xc9:
+          case 0x29: case 0x09: case 0x49: bytes=m8?1:2; break;
+          case 0x20: case 0x4c: case 0x8d: case 0x9c:
+          case 0xad: case 0x9d: case 0x99: case 0xbd: case 0xb9: bytes=2; break;
           case 0x22: case 0x5c: bytes=3; break;
-          case 0x78: case 0xd8: case 0x9a: case 0xea: break;
-          case 0x80: case 0x82: case 0xd0: case 0xf0: stop=true; bytes=(op==0x82?2:1); break;
-          case 0x60: case 0x6b: case 0xdb: case 0x00: stop=true; break;
+          case 0x78: case 0xd8: case 0x9a: case 0xea:
+          case 0xe8: case 0xca: case 0xc8: case 0x88:
+          case 0x1a: case 0x3a: case 0xaa: case 0xa8:
+          case 0x8a: case 0x98: case 0x9b: case 0xbb:
+          case 0x5b: case 0x7b: case 0x48: case 0x68:
+          case 0xda: case 0xfa: case 0x5a: case 0x7a: break;
+          case 0x80: case 0x82: case 0xd0: case 0xf0:
+          case 0x10: case 0x30: case 0x50: case 0x70:
+          case 0x90: case 0xb0: stop=true; bytes=(op==0x82?2:1); break;
+          case 0x60: case 0x6b: case 0xdb: case 0x00:
+          case 0x28: stop=true; break;
           default: unknown=true; break;
         }
         if (unknown || (offset%0x8000)+1+size_t(bytes)>0x8000 ||

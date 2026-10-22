@@ -105,6 +105,23 @@ def main():
         graph_invalid_path.write_bytes(graph_invalid_rom)
         graph_invalid_output = check([callgraph, str(graph_invalid_path)], 0)
         assert '"$008000" -> "$002000" [label="JMP"]' in graph_invalid_output, graph_invalid_output
+        # Callgraph can skip known arithmetic/index instructions before a call.
+        graph_prefix_rom = bytearray(rom)
+        graph_prefix_rom[:11] = bytes([
+            0xA0, 0x02, 0xE8, 0x69, 0x01, 0xA9, 0x33,
+            0x20, 0x10, 0x80, 0xDB,
+        ])
+        graph_prefix_path = root / 'callgraph-prefix.sfc'
+        graph_prefix_path.write_bytes(graph_prefix_rom)
+        graph_prefix_output = check([callgraph, str(graph_prefix_path)], 0)
+        assert '"$008007" -> "$008010" [label="JSR"]' in graph_prefix_output, graph_prefix_output
+        # A conditional branch ends the conservative linear path.
+        graph_branch_rom = bytearray(rom)
+        graph_branch_rom[:6] = bytes([0x90, 0x01, 0x20, 0x10, 0x80, 0xDB])
+        graph_branch_path = root / 'callgraph-branch-stop.sfc'
+        graph_branch_path.write_bytes(graph_branch_rom)
+        graph_branch_output = check([callgraph, str(graph_branch_path)], 0)
+        assert 'label="JSR"' not in graph_branch_output, graph_branch_output
         # Structured reset-prefix IR: 8/16-bit register widths and bounded stop.
         ir = check([lift, str(valid), '16'], 0)
         assert 'address,opcode,operand,e,m_bits,x_bits' in ir, ir
