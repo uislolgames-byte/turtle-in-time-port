@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <commdlg.h>
 #include "rom.hpp"
+#include "cpu_probe.hpp"
 #include <memory>
 #include <sstream>
 #include <string>
@@ -10,6 +11,7 @@ namespace {
 std::unique_ptr<Rom> loaded;
 std::string status = "No ROM loaded. Click Open ROM to inspect a local file.";
 constexpr int open_button_id = 1001;
+constexpr int probe_button_id = 1002;
 void open_rom(HWND window) {
   char filename[MAX_PATH] = {};
   OPENFILENAMEA dialog = {};
@@ -43,9 +45,17 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
                     20, 20, 140, 32, window,
                     reinterpret_cast<HMENU>(static_cast<INT_PTR>(open_button_id)),
                     GetModuleHandleA(nullptr), nullptr);
+      CreateWindowA("BUTTON", "Probe CPU", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+                    175, 20, 140, 32, window,
+                    reinterpret_cast<HMENU>(static_cast<INT_PTR>(probe_button_id)),
+                    GetModuleHandleA(nullptr), nullptr);
       return 0;
     case WM_COMMAND:
       if (LOWORD(wparam) == open_button_id) open_rom(window);
+      if (LOWORD(wparam) == probe_button_id && loaded) {
+        status = format_cpu_probe(probe_reset(*loaded));
+        InvalidateRect(window, nullptr, TRUE);
+      }
       return 0;
     case WM_PAINT: {
       PAINTSTRUCT paint;
