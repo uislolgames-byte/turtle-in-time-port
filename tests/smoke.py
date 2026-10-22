@@ -122,6 +122,26 @@ def main():
         graph_branch_path.write_bytes(graph_branch_rom)
         graph_branch_output = check([callgraph, str(graph_branch_path)], 0)
         assert 'label="JSR"' not in graph_branch_output, graph_branch_output
+        # Relative branches are recorded as candidates without exploring unknown paths.
+        branch_target_rom = bytearray(rom)
+        branch_target_rom[:2] = bytes([0x90, 0x02])
+        branch_target_path = root / 'callgraph-bcc-target.sfc'
+        branch_target_path.write_bytes(branch_target_rom)
+        branch_target_output = check([callgraph, str(branch_target_path)], 0)
+        assert '"$008000" -> "$008004" [label="BCC"]' in branch_target_output, branch_target_output
+        assert 'Decoded=1' in branch_target_output, branch_target_output
+        long_branch_rom = bytearray(rom)
+        long_branch_rom[:3] = bytes([0x82, 0x10, 0x00])
+        long_branch_path = root / 'callgraph-brl-target.sfc'
+        long_branch_path.write_bytes(long_branch_rom)
+        long_branch_output = check([callgraph, str(long_branch_path)], 0)
+        assert '"$008000" -> "$008013" [label="BRL"]' in long_branch_output, long_branch_output
+        backwards_branch_rom = bytearray(rom)
+        backwards_branch_rom[:2] = bytes([0x80, 0xFE])
+        backwards_branch_path = root / 'callgraph-bra-back.sfc'
+        backwards_branch_path.write_bytes(backwards_branch_rom)
+        backwards_branch_output = check([callgraph, str(backwards_branch_path)], 0)
+        assert '"$008000" -> "$008000" [label="BRA"]' in backwards_branch_output, backwards_branch_output
         # Structured reset-prefix IR: 8/16-bit register widths and bounded stop.
         ir = check([lift, str(valid), '16'], 0)
         assert 'address,opcode,operand,e,m_bits,x_bits' in ir, ir

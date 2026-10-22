@@ -106,6 +106,23 @@ int main(int argc, char** argv) {
             if ((op==0x20 || op==0x22) && entries.insert(target).second) pending.push(target);
           } catch (const std::out_of_range&) { /* target not in ROM */ }
         }
+        // Report relative branch destinations without claiming either path was decoded.
+        // The 65C816 computes these displacements within the current program bank.
+        if (op==0x80 || op==0x82 || op==0xd0 || op==0xf0 ||
+            op==0x10 || op==0x30 || op==0x50 || op==0x70 ||
+            op==0x90 || op==0xb0) {
+          const int displacement = op==0x82
+              ? static_cast<int>(static_cast<short>(static_cast<unsigned short>(operand)))
+              : static_cast<int>(static_cast<signed char>(operand));
+          const unsigned target = (cpu & 0xff0000u) |
+              ((cpu + 1u + static_cast<unsigned>(bytes) + displacement) & 0xffffu);
+          const char* kind = op==0x80 ? "BRA" : op==0x82 ? "BRL" :
+              op==0xd0 ? "BNE" : op==0xf0 ? "BEQ" :
+              op==0x10 ? "BPL" : op==0x30 ? "BMI" :
+              op==0x50 ? "BVC" : op==0x70 ? "BVS" :
+              op==0x90 ? "BCC" : "BCS";
+          edges.insert({cpu,target,kind});
+        }
         if (op==0x4c || op==0x5c || stop) break;
         const unsigned next=(cpu&0xff0000u)|((cpu+1u+unsigned(bytes))&0xffffu);
         if ((next&0x8000u)==0 || (next&0xffffu)<(cpu&0xffffu)) break;
