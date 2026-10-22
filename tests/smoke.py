@@ -560,6 +560,39 @@ def main():
         bad_brl_path.write_bytes(bad_brl_rom)
         bad_brl_output = check([executor, str(bad_brl_path), '10'], 0)
         assert 'reason=boundary' in bad_brl_output, bad_brl_output
+        # JSR pushes a return address and RTS resumes after the call.
+        jsr_rom = bytearray(rom)
+        jsr_rom[:6] = bytes([0x20, 0x10, 0x80, 0xA9, 0x42, 0xDB])
+        jsr_rom[0x10:0x13] = bytes([0xA9, 0x11, 0x60])
+        jsr_path = root / 'execute-jsr-rts.sfc'
+        jsr_path.write_bytes(jsr_rom)
+        jsr_output = check([executor, str(jsr_path), '20'], 0)
+        assert 'reason=stp' in jsr_output and 'a=$0042' in jsr_output, jsr_output
+        assert 'sp=$01FF depth=0' in jsr_output, jsr_output
+        # Nested calls must restore the correct return address twice.
+        nested_rom = bytearray(rom)
+        nested_rom[:6] = bytes([0x20, 0x10, 0x80, 0xA9, 0x77, 0xDB])
+        nested_rom[0x10:0x16] = bytes([0x20, 0x20, 0x80, 0xA9, 0x55, 0x60])
+        nested_rom[0x20:0x23] = bytes([0xA9, 0x33, 0x60])
+        nested_path = root / 'execute-nested-jsr.sfc'
+        nested_path.write_bytes(nested_rom)
+        nested_output = check([executor, str(nested_path), '30'], 0)
+        assert 'reason=stp' in nested_output and 'a=$0077' in nested_output, nested_output
+        assert 'sp=$01FF depth=0' in nested_output, nested_output
+        # Bare RTS is rejected rather than interpreting uninitialized stack.
+        bare_rom = bytearray(rom)
+        bare_rom[0] = 0x60
+        bare_path = root / 'execute-bare-rts.sfc'
+        bare_path.write_bytes(bare_rom)
+        bare_output = check([executor, str(bare_path), '10'], 0)
+        assert 'reason=stack' in bare_output, bare_output
+        # JSR into the non-ROM portion of the bank is rejected.
+        bad_call_rom = bytearray(rom)
+        bad_call_rom[:3] = bytes([0x20, 0x00, 0x20])
+        bad_call_path = root / 'execute-jsr-nonrom.sfc'
+        bad_call_path.write_bytes(bad_call_rom)
+        bad_call_output = check([executor, str(bad_call_path), '10'], 0)
+        assert 'reason=boundary' in bad_call_output, bad_call_output
         check([executor, str(valid), '0'], 2)
         unsupported_rom = bytearray(rom)
         unsupported_rom[0] = 0xFF

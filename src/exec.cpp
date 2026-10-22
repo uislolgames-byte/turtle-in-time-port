@@ -6,7 +6,7 @@
 #include <array>
 
 // Small, bounded 65C816 instruction-subset interpreter for synthetic tests.
-// This is not a SNES emulator: no bus, stack, interrupts, timing or PPU.
+// This is not a SNES emulator: no full bus, interrupts, timing or PPU.
 int main(int argc, char** argv) {
   if (argc < 2 || argc > 3) {
     std::cerr << "Usage: tmnt_exec ROM.sfc [limit]\n";
@@ -18,10 +18,10 @@ int main(int argc, char** argv) {
       throw std::runtime_error("Reset vector is not in LoROM ROM space");
     const int limit = argc == 3 ? std::atoi(argv[2]) : 32;
     if (limit < 1 || limit > 100000) return 2;
-    unsigned pc = rom.reset(), a = 0, x = 0, y = 0, d = 0;
+    unsigned pc = rom.reset(), a = 0, x = 0, y = 0, d = 0, sp = 0x01ff;
     bool e = true, m8 = true, x8 = true, carry = false, zero = false, negative = false, overflow = false;
     std::array<unsigned char, 0x2000> wram{};
-    unsigned stores = 0, last_store = 0, last_value = 0;
+    unsigned stores = 0, last_store = 0, last_value = 0, call_depth = 0;
     int steps = 0;
     const char* reason = "limit";
     for (; steps < limit; ++steps) {
@@ -37,14 +37,14 @@ int main(int argc, char** argv) {
                       ? (m8 ? 2 : 3) : (x8 ? 2 : 3));
           break;
         case 0x8D: case 0xAD: case 0x9D: case 0x99:
-        case 0xBD: case 0xB9: case 0x4C: case 0x82: width = 3; break;
+        case 0xBD: case 0xB9: case 0x4C: case 0x82: case 0x20: width = 3; break;
         case 0x85: case 0xA5: case 0x95: case 0xB5: width = 2; break;
         case 0x80: case 0xF0: case 0xD0: case 0x30: case 0x10:
         case 0x70: case 0x50: case 0x90: case 0xB0: width = 2; break;
         case 0x18: case 0x38: case 0xB8: case 0xFB: case 0xEA: case 0xDB:
         case 0xE8: case 0xCA: case 0xC8: case 0x88: case 0x1A: case 0x3A:
         case 0xAA: case 0xA8: case 0x8A: case 0x98: case 0x9B: case 0xBB:
-        case 0x5B: case 0x7B:
+        case 0x5B: case 0x7B: case 0x60:
           break;
         default: reason = "unsupported"; goto finished;
       }
@@ -224,6 +224,40 @@ int main(int argc, char** argv) {
           pc = (pc & 0xff0000u) | static_cast<unsigned>(target - 2);
           break;
         }
+        case 0x20: {
+          // JSR pushes the last operand byte's address, high byte first.
+          // This bounded model rejects calls that would overflow its stack.
+          if (value < 0x8000u || call_depth >= 127u) {
+            reason = value < 0x8000u ? "boundary" : "stack";
+            goto finished;
+          }
+          const unsigned ret = (pc + 2u) & 0xffffu;
+          wram[sp] = static_cast<unsigned char>((ret >> 8) & 0xffu);
+          sp = (sp & 0xff00u) | ((sp - 1u) & 0xffu);
+          wram[sp] = static_cast<unsigned char>(ret & 0xffu);
+          sp = (sp & 0xff00u) | ((sp - 1u) & 0xffu);
+          ++call_depth;
+          pc = (pc & 0xff0000u) | (value - 3u);
+          break;
+        }
+        case 0x60: {
+          if (call_depth == 0u) {
+            reason = "stack";
+            goto finished;
+          }
+          sp = (sp & 0xff00u) | ((sp + 1u) & 0xffu);
+          const unsigned low = wram[sp];
+          sp = (sp & 0xff00u) | ((sp + 1u) & 0xffu);
+          const unsigned high = wram[sp];
+          --call_depth;
+          const unsigned target = (((high << 8) | low) + 1u) & 0xffffu;
+          if (target < 0x8000u) {
+            reason = "boundary";
+            goto finished;
+          }
+          pc = (pc & 0xff0000u) | ((target - 1u) & 0xffffu);
+          break;
+        }
         case 0x82: {
           // BRL adds a signed 16-bit displacement to the following PC.
           // A 65C816 wraps within the current 16-bit program bank.
@@ -260,6 +294,8 @@ finished:
               << " x=$" << std::setw(4) << x
               << " y=$" << std::setw(4) << y
               << " d=$" << std::setw(4) << d
+              << " sp=$" << std::setw(4) << sp
+              << " depth=" << std::dec << call_depth << std::hex
               << std::dec << " e=" << (e ? 1 : 0)
               << " m=" << (m8 ? 8 : 16)
               << " xbits=" << (x8 ? 8 : 16)
