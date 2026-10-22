@@ -163,11 +163,12 @@ def main():
         assert 'reason=boundary' in escape_output, escape_output
         # STA/LDA round-trip and BEQ taken after loading zero.
         read_rom = bytearray(rom)
-        read_rom[:17] = bytes([
+        read_rom[:16] = bytes([
             0xA9, 0x2A, 0x8D, 0x20, 0x00, 0xA9, 0x00,
             0xAD, 0x20, 0x00, 0xD0, 0x01, 0xFF, 0xDB,
             0xEA, 0xEA,
         ])
+        assert len(read_rom) == len(rom), "Synthetic ROM size must not change"
         read_path = root / 'execute-read.sfc'
         read_path.write_bytes(read_rom)
         read_output = check([executor, str(read_path), '20'], 0)
