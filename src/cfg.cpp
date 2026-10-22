@@ -45,6 +45,7 @@ int main(int argc, char** argv) {
     std::set<Edge> calls;
     std::set<unsigned> returns;
     std::set<unsigned> indirect_jumps;
+    std::set<unsigned> stops;
     pending.push({rom.reset(),true,false,false,true,true});
     int decoded=0, unresolved=0;
     while (!pending.empty() && decoded < limit) {
@@ -107,6 +108,7 @@ int main(int argc, char** argv) {
       ++decoded;
       const unsigned from=s.pc;
       if (op==0x60 || op==0x6b) returns.insert(from);
+      if (op==0xdb || op==0x00) stops.insert(from);
       const unsigned next=(from&0xff0000u)|((from+1u+unsigned(bytes))&0xffffu);
       auto enqueue=[&](unsigned target,const char* label) {
         edges.insert({from,target,label});
@@ -153,6 +155,9 @@ int main(int argc, char** argv) {
     for(unsigned pc:indirect_jumps)
       std::cout << "  \"" << hx(pc) << "\" [shape=diamond,label=\""
                 << hx(pc) << " indirect jump\"];\n";
+    for(unsigned pc:stops)
+      std::cout << "  \"" << hx(pc) << "\" [shape=octagon,label=\""
+                << hx(pc) << " stop/trap\"];\n";
     std::cout << "}\n";
     std::cerr << "Decoded=" << decoded << " Edges=" << edges.size()
               << " Unresolved=" << unresolved
