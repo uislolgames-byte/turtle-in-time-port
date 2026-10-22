@@ -179,7 +179,7 @@ int main(int argc, char** argv) {
         if (a.second != b.second) return a.second > b.second;
         return a.first < b.first;
       });
-      std::cout << "address,incoming_calls,jsr_sites,jsl_sites,status,rom_offset,first_opcode\n";
+      std::cout << "address,incoming_calls,jsr_sites,jsl_sites,status,rom_offset,first_opcode,first_bytes\n";
       for (const auto& entry : ranked) {
         unsigned jsr_sites = 0, jsl_sites = 0;
         for (const auto& call : calls) {
@@ -207,11 +207,20 @@ int main(int argc, char** argv) {
             default: opcode = "unknown"; break;
           }
         }
+        std::ostringstream bytes;
+        if (mapped) {
+          for (size_t i = 0; i < 8 && offset + i < rom.data.size() &&
+               (offset % 0x8000) + i < 0x8000; ++i) {
+            if (i) bytes << ' ';
+            bytes << std::uppercase << std::hex << std::setw(2)
+                  << std::setfill('0') << unsigned(rom.byte(offset + i));
+          }
+        }
         std::cout << hx(entry.first) << "," << entry.second << ","
                   << jsr_sites << "," << jsl_sites << ","
                   << (mapped ? "candidate" : "unmapped") << ","
                   << (mapped ? hx(static_cast<unsigned>(offset)) : "")
-                  << "," << opcode << "\n";
+                  << "," << opcode << ",\"" << bytes.str() << "\"\n";
       }
       return 0;
     }
