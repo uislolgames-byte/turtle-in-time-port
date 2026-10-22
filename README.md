@@ -32,6 +32,9 @@ A saída padrão contém apenas a sintaxe DOT; diagnósticos são enviados para 
 O grafo é **parcial** e não prova que os endereços são rotinas válidas.
 A decodificação parte do RESET com o estado inicial conhecido; alvos de chamadas
 são listados, mas não percorridos sem evidência sobre os registradores M/X.
+O `tmnt_callgraph` interrompe a análise em XCE quando o carry é desconhecido
+(no RESET ou após ADC/SBC/CMP). CLC, SEC e o bit de carry de REP/SEP permitem
+restabelecer esse estado; isso evita inferir larguras M/X e chamadas sem evidência.
 
 Para inspecionar desvios e loops conhecidos: `tmnt_cfg caminho/para/sua_rom.sfc > fluxo.dot`. O grafo é limitado aos opcodes implementados (incluindo novos LDY, ADC, CMP, STX e instruções de pilha) e não equivale ao fluxo completo do jogo. As instruções são reconhecidas pelo tamanho, mas o analisador ainda não modela todos os efeitos sobre flags e registradores. O CFG agora rastreia quando o carry é conhecido para XCE e interrompe a análise em PLP, cujo estado de flags não pode ser recuperado sem modelar a pilha.\n\n## Compilar e testar
 ```sh

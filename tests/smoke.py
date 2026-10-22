@@ -130,6 +130,57 @@ def main():
         branch_target_output = check([callgraph, str(branch_target_path)], 0)
         assert '"$008000" -> "$008004" [label="BCC"]' in branch_target_output, branch_target_output
         assert 'Decoded=1' in branch_target_output, branch_target_output
+        # Carry is unknown at RESET and after arithmetic. XCE must stop
+        # before an unproven CPU mode can produce spurious call edges.
+        uncertain_prefixes = [bytes([0xFB])]
+        for arithmetic in (0x69, 0xE9, 0xC9):
+            uncertain_prefixes.append(bytes([0x18, arithmetic, 0x01, 0xFB]))
+        for index, prefix in enumerate(uncertain_prefixes):
+            uncertain_rom = bytearray(rom)
+            program = prefix + bytes([0x20, 0x10, 0x80, 0xDB])
+            uncertain_rom[:len(program)] = program
+            uncertain_path = root / f'callgraph-unknown-carry-{index}.sfc'
+            uncertain_path.write_bytes(uncertain_rom)
+            output = check([callgraph, str(uncertain_path)], 0)
+            assert 'label="JSR"' not in output, output
+            expected_decoded = 0 if index == 0 else 2
+            assert f'Decoded={expected_decoded} ' in output, output
+
+        # Instructions that explicitly set C restore knowledge after ADC.
+        # REP/SEP affect C even in emulation mode. Width-only masks preserve C.
+        known_carry_cases = (
+            (bytes([0x18]), False),
+            (bytes([0x38]), True),
+            (bytes([0xC2, 0x01]), False),
+            (bytes([0xE2, 0x01]), True),
+            (bytes([0x18, 0xE2, 0x30]), False),
+            (bytes([0x38, 0xC2, 0x30]), True),
+        )
+        for index, (setter, emulation) in enumerate(known_carry_cases):
+            known_rom = bytearray(rom)
+            prefix = bytes([0x69, 0x01]) + setter + bytes([0xFB, 0xC2, 0x30])
+            # REP widens immediates only after XCE proves native mode.
+            loads = bytes([0xA9, 0x34] + ([] if emulation else [0x12]))
+            loads += bytes([0xA2, 0x56] + ([] if emulation else [0x78]))
+            source = 0x8000 + len(prefix) + len(loads)
+            program = prefix + loads + bytes([0x20, 0x10, 0x80, 0xDB])
+            known_rom[:len(program)] = program
+            known_path = root / f'callgraph-known-carry-{index}.sfc'
+            known_path.write_bytes(known_rom)
+            output = check([callgraph, str(known_path)], 0)
+            assert f'"${source:06X}" -> "$008010" [label="JSR"]' in output, output
+
+        # Logical operations and index increments preserve a known carry.
+        preserving_rom = bytearray(rom)
+        preserving_program = bytes([
+            0x18, 0x29, 0xFF, 0x09, 0x00, 0x49, 0x00, 0xE8,
+            0xFB, 0xC2, 0x30, 0xA9, 0x34, 0x12, 0x20, 0x10, 0x80, 0xDB,
+        ])
+        preserving_rom[:len(preserving_program)] = preserving_program
+        preserving_path = root / 'callgraph-preserved-carry.sfc'
+        preserving_path.write_bytes(preserving_rom)
+        output = check([callgraph, str(preserving_path)], 0)
+        assert '"$00800E" -> "$008010" [label="JSR"]' in output, output
         long_branch_rom = bytearray(rom)
         long_branch_rom[:3] = bytes([0x82, 0x10, 0x00])
         long_branch_path = root / 'callgraph-brl-target.sfc'
