@@ -34,6 +34,23 @@ if(MSVC)
 else()
   target_compile_options(tmnt_cpuprobe PRIVATE -Wall -Wextra -Wpedantic)
 endif()
+
+# Python runs at build time; the generated executable only needs C++ at runtime.
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set(RECOMPILER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/recompiler")
+add_custom_command(
+  OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/synthetic.cpp" "${CMAKE_CURRENT_BINARY_DIR}/synthetic.bin"
+  COMMAND "${Python3_EXECUTABLE}" "${RECOMPILER_DIR}/fixture.py"
+    "${CMAKE_CURRENT_BINARY_DIR}/synthetic.bin" "${CMAKE_CURRENT_BINARY_DIR}/synthetic.cpp"
+  DEPENDS "${RECOMPILER_DIR}/fixture.py" "${RECOMPILER_DIR}/generate.py"
+  VERBATIM)
+add_executable(tmnt_recompiler_synthetic recompiler/runner.cpp "${CMAKE_CURRENT_BINARY_DIR}/synthetic.cpp")
+target_include_directories(tmnt_recompiler_synthetic PRIVATE "${RECOMPILER_DIR}")
+if(BUILD_TESTING)
+  add_test(NAME recompiler_equivalence COMMAND "${Python3_EXECUTABLE}"
+    "${RECOMPILER_DIR}/test_recompiler.py" "$<TARGET_FILE:tmnt_recompiler_synthetic>")
+  set_tests_properties(recompiler_equivalence PROPERTIES TIMEOUT 60)
+endif()
 if(BUILD_TESTING)
   add_test(NAME cpu_probe_synthetic COMMAND "$<TARGET_FILE:tmnt_cpuprobe>" --self-test)
 endif()
