@@ -136,11 +136,17 @@ def main():
         assert 'digraph' not in inventory, inventory
         hotspots = check([cfg, str(calls_path), '512', '--hotspots'], 0)
         assert hotspots.splitlines() == [
-            'address,incoming_calls,jsr_sites,jsl_sites,status,rom_offset,first_opcode,first_bytes,second_opcode',
-            '$009234,1,1,0,candidate,$001234,unknown,"00 00 00 00 00 00 00 00",unknown',
-            '$125678,1,0,1,unmapped,,unmapped,"",unknown',
+            'address,incoming_calls,jsr_sites,jsl_sites,status,rom_offset,first_opcode,first_bytes,second_opcode,entry_sequence',
+            '$009234,1,1,0,candidate,$001234,unknown,"00 00 00 00 00 00 00 00",unknown,"?"',
+            '$125678,1,0,1,unmapped,,unmapped,"",unknown,""',
         ], hotspots
         assert 'digraph' not in hotspots, hotspots
+        sequence_rom = bytearray(calls_rom)
+        sequence_rom[0x1234:0x123a] = bytes([0x78, 0xC2, 0x30, 0xEA, 0x60, 0xEA])
+        sequence_path = root / 'hotspot-sequence.sfc'
+        sequence_path.write_bytes(sequence_rom)
+        sequence_output = check([cfg, str(sequence_path), '512', '--hotspots'], 0)
+        assert ',"SEI REP NOP RTS"' in sequence_output, sequence_output
         # A return or jump must not be interpreted as linear fallthrough.
         boundary_rom = bytearray(calls_rom)
         boundary_rom[0x1234:0x1236] = bytes([0x60, 0xEA])

@@ -179,7 +179,7 @@ int main(int argc, char** argv) {
         if (a.second != b.second) return a.second > b.second;
         return a.first < b.first;
       });
-      std::cout << "address,incoming_calls,jsr_sites,jsl_sites,status,rom_offset,first_opcode,first_bytes,second_opcode\n";
+      std::cout << "address,incoming_calls,jsr_sites,jsl_sites,status,rom_offset,first_opcode,first_bytes,second_opcode,entry_sequence\n";
       for (const auto& entry : ranked) {
         unsigned jsr_sites = 0, jsl_sites = 0;
         for (const auto& call : calls) {
@@ -254,11 +254,50 @@ int main(int argc, char** argv) {
             }
           }
         }
+        // Decode at most four fixed-width instructions. Do not follow control
+        // transfers or guess operand widths that depend on unknown CPU flags.
+        std::ostringstream sequence;
+        if (mapped) {
+          size_t pos = offset;
+          for (int i = 0; i < 4 && pos < rom.data.size() &&
+               (pos / 0x8000) == (offset / 0x8000); ++i) {
+            const unsigned op = rom.byte(pos);
+            const char* name = nullptr;
+            size_t width = 0;
+            bool stop = false;
+            switch (op) {
+              case 0x18: name = "CLC"; width = 1; break;
+              case 0x38: name = "SEC"; width = 1; break;
+              case 0x78: name = "SEI"; width = 1; break;
+              case 0xEA: name = "NOP"; width = 1; break;
+              case 0xC2: name = "REP"; width = 2; break;
+              case 0xE2: name = "SEP"; width = 2; break;
+              case 0x20: name = "JSR"; width = 3; break;
+              case 0x22: name = "JSL"; width = 4; break;
+              case 0x4C: name = "JMP"; width = 3; stop = true; break;
+              case 0x5C: name = "JML"; width = 4; stop = true; break;
+              case 0x60: name = "RTS"; width = 1; stop = true; break;
+              case 0x6B: name = "RTL"; width = 1; stop = true; break;
+              case 0xDB: name = "STP"; width = 1; stop = true; break;
+              default: break;
+            }
+            if (!name || pos + width > rom.data.size() ||
+                (pos % 0x8000) + width > 0x8000) {
+              if (i) sequence << " ";
+              sequence << "?";
+              break;
+            }
+            if (i) sequence << " ";
+            sequence << name;
+            pos += width;
+            if (stop) break;
+          }
+        }
         std::cout << hx(entry.first) << "," << entry.second << ","
                   << jsr_sites << "," << jsl_sites << ","
                   << (mapped ? "candidate" : "unmapped") << ","
                   << (mapped ? hx(static_cast<unsigned>(offset)) : "")
-                  << "," << opcode << ",\"" << bytes.str() << "\"," << second << "\n";
+                  << "," << opcode << ",\"" << bytes.str() << "\"," << second << ",\"" << sequence.str() << "\"\n";
       }
       return 0;
     }
