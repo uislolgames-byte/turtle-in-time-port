@@ -52,3 +52,6 @@ O teste de integração cria uma ROM sintética, sem arquivos comerciais. **Não
 
 ## Próximos passos
 Expandir a decodificação com propagação explícita de estado do 65C816, acompanhar desvios com segurança e validar Windows/Linux em cada alteração.
+
+## Protótipo de janela nativa Windows
+O Windows também compila tmnt_native.exe. O aplicativo abre uma janela Win32 e permite escolher localmente uma ROM .sfc/.smc, exibindo tamanho, vetor RESET e consistência do checksum. Nenhuma ROM é incluída ou enviada à rede. Ainda não executa o jogo nem renderiza gráficos ou áudio.
