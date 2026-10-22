@@ -13,6 +13,7 @@ int main(int argc, char** argv) {
       {"Emulation ABORT",0x7ff8}, {"Emulation NMI",0x7ffa},
       {"Emulation RESET",0x7ffc}, {"Emulation IRQ/BRK",0x7ffe}
     };
+    std::cout << "Interrupt vectors (bank $00, LoROM):\n";
     for (const auto& v : vectors) {
       const auto target = r.word(v.offset);
       std::cout << v.name << ": $"
