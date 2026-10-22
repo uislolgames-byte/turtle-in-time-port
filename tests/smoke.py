@@ -129,6 +129,19 @@ def main():
         assert '"$008000" -> "$008004" [label="BRA"]' in cfg_output, cfg_output
         assert '"$008004" -> "$008000" [label="BNE"]' in cfg_output, cfg_output
         assert '"$008004" -> "$008006" [label="fallthrough"]' in cfg_output, cfg_output
+        # Exercise every conditional branch: both taken and fallthrough edges.
+        branch_cases = {
+            0x10: "BPL", 0x30: "BMI", 0x50: "BVC", 0x70: "BVS",
+            0x90: "BCC", 0xB0: "BCS", 0xD0: "BNE", 0xF0: "BEQ",
+        }
+        for opcode, mnemonic in branch_cases.items():
+            conditional_rom = bytearray(rom)
+            conditional_rom[:5] = bytes([opcode, 0x02, 0xDB, 0xEA, 0xDB])
+            conditional_path = root / f"branch-{opcode:02x}.sfc"
+            conditional_path.write_bytes(conditional_rom)
+            output = check([cfg, str(conditional_path)], 0)
+            assert f'"$008000" -> "$008004" [label="{mnemonic}"]' in output, output
+            assert '"$008000" -> "$008002" [label="fallthrough"]' in output, output
         check([cfg, str(invalid)], 1, 'Reset vector')
         check([cfg, str(valid), '0'], 2)
         check([callgraph, str(invalid)], 1, 'Reset vector')
