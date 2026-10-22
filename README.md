@@ -58,3 +58,11 @@ O Windows também compila tmnt_native.exe. O aplicativo abre uma janela Win32 e 
 
 ## Diagnóstico limitado de CPU
 O aplicativo Windows possui o botão Probe CPU, que executa no máximo 32 instruções de um subconjunto conhecido do 65C816 a partir de RESET, exibindo PC/A/X/Y e motivo da parada. O mesmo núcleo de diagnóstico está disponível em tmnt_cpuprobe e é testado com ROM sintética em Windows/Linux. Não há barramento SNES, gráficos, áudio ou execução completa do jogo. A ROM permanece local.
+
+O diagnóstico também suporta BRA, os oito desvios condicionais e INX/DEX,
+respeitando larguras de 8/16 bits e atualizando N/Z em cargas e incrementos.
+REP/SEP permitem estabelecer N/V/Z/C. Flags desconhecidas após RESET encerram
+o diagnóstico quando um desvio depende delas; XCE também exige carry conhecido.
+Saltos usam deslocamento assinado e preservam o banco do PC. O limite de
+instruções encerra loops; destinos fora do mapeamento ROM encerram o diagnóstico.
+Os testes adicionais são escritos em C++ e usam apenas uma ROM sintética.
