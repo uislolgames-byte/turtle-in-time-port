@@ -40,6 +40,7 @@ int main(int argc, char** argv) {
         case 0x80: case 0xF0: case 0xD0: case 0x30: case 0x10:
         case 0x70: case 0x50: width = 2; break;
         case 0x18: case 0x38: case 0xB8: case 0xFB: case 0xEA: case 0xDB:
+        case 0xE8: case 0xCA: case 0xC8: case 0x88: case 0x1A: case 0x3A:
           break;
         default: reason = "unsupported"; goto finished;
       }
@@ -137,6 +138,21 @@ int main(int argc, char** argv) {
           a = m8 ? ((a & 0xff00u) | loaded) : loaded;
           zero = loaded == 0;
           negative = (loaded & (m8 ? 0x80u : 0x8000u)) != 0;
+          break;
+        }
+        case 0xE8: case 0xCA: case 0xC8: case 0x88:
+        case 0x1A: case 0x3A: {
+          const bool accumulator = op == 0x1A || op == 0x3A;
+          const unsigned mask = accumulator ? (m8 ? 0xffu : 0xffffu)
+                                            : (x8 ? 0xffu : 0xffffu);
+          const unsigned sign = accumulator ? (m8 ? 0x80u : 0x8000u)
+                                            : (x8 ? 0x80u : 0x8000u);
+          const bool increment = op == 0xE8 || op == 0xC8 || op == 0x1A;
+          unsigned& reg = accumulator ? a : (op == 0xE8 || op == 0xCA ? x : y);
+          const unsigned result = ((reg & mask) + (increment ? 1u : mask)) & mask;
+          reg = accumulator && m8 ? ((reg & 0xff00u) | result) : result;
+          zero = result == 0;
+          negative = (result & sign) != 0;
           break;
         }
         case 0x8D:

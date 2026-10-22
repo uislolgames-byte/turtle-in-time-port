@@ -295,6 +295,45 @@ def main():
         logic16_output = check([executor, str(logic16_path), '20'], 0)
         assert 'reason=stp' in logic16_output and 'a=$0000' in logic16_output, logic16_output
         assert 'm=16' in logic16_output and 'z=1 n=0' in logic16_output, logic16_output
+        # INX wraps in 8-bit index mode and preserves carry.
+        inx_rom = bytearray(rom)
+        inx_program = bytes([0x38, 0xA2, 0xFF, 0xE8, 0xDB])
+        inx_rom[:len(inx_program)] = inx_program
+        inx_path = root / 'execute-inx.sfc'
+        inx_path.write_bytes(inx_rom)
+        inx_output = check([executor, str(inx_path), '20'], 0)
+        assert 'reason=stp' in inx_output and 'x=$0000' in inx_output, inx_output
+        assert 'c=1 z=1 n=0' in inx_output, inx_output
+        # DEY wraps zero to 0xFF and sets Negative in 8-bit mode.
+        dey_rom = bytearray(rom)
+        dey_program = bytes([0xA0, 0x00, 0x88, 0xDB])
+        dey_rom[:len(dey_program)] = dey_program
+        dey_path = root / 'execute-dey.sfc'
+        dey_path.write_bytes(dey_rom)
+        dey_output = check([executor, str(dey_path), '20'], 0)
+        assert 'y=$00FF' in dey_output and 'z=0 n=1' in dey_output, dey_output
+        # INC A in 8-bit mode retains the high accumulator byte.
+        inc_rom = bytearray(rom)
+        inc_program = bytes([
+            0x18, 0xFB, 0xC2, 0x20, 0xA9, 0x34, 0x12,
+            0xE2, 0x20, 0x1A, 0xDB,
+        ])
+        inc_rom[:len(inc_program)] = inc_program
+        inc_path = root / 'execute-inca.sfc'
+        inc_path.write_bytes(inc_rom)
+        inc_output = check([executor, str(inc_path), '20'], 0)
+        assert 'a=$1235' in inc_output and 'm=8' in inc_output, inc_output
+        # 16-bit DEX wraps from zero to 0xFFFF.
+        dex16_rom = bytearray(rom)
+        dex16_program = bytes([
+            0x18, 0xFB, 0xC2, 0x10, 0xA2, 0x00, 0x00, 0xCA, 0xDB,
+        ])
+        dex16_rom[:len(dex16_program)] = dex16_program
+        dex16_path = root / 'execute-dex16.sfc'
+        dex16_path.write_bytes(dex16_rom)
+        dex16_output = check([executor, str(dex16_path), '20'], 0)
+        assert 'x=$FFFF' in dex16_output and 'xbits=16' in dex16_output, dex16_output
+        assert 'z=0 n=1' in dex16_output, dex16_output
         check([executor, str(valid), '0'], 2)
         unsupported_rom = bytearray(rom)
         unsupported_rom[0] = 0xFF
