@@ -160,6 +160,21 @@ def main():
         assert '"$008000" -> "$008002" [label="next"]' in extended_output, extended_output
         assert '"$008004" -> "$008007" [label="next"]' in extended_output, extended_output
         assert '"$00800B" -> "$00800C" [label="next"]' in extended_output, extended_output
+        # XCE cannot infer CPU mode after an instruction with unknown carry.
+        unknown_carry_rom = bytearray(rom)
+        unknown_carry_rom[:6] = bytes([0x69, 0x01, 0xFB, 0xA9, 0x12, 0xDB])
+        unknown_carry_path = root / 'unknown-carry.sfc'
+        unknown_carry_path.write_bytes(unknown_carry_rom)
+        unknown_carry_output = check([cfg, str(unknown_carry_path)], 0)
+        assert '"$008000" -> "$008002" [label="next"]' in unknown_carry_output
+        assert '"$008002" -> "$008003"' not in unknown_carry_output
+        # PLP restores flags that cannot be determined without stack tracking.
+        plp_rom = bytearray(rom)
+        plp_rom[:4] = bytes([0x28, 0xA9, 0x12, 0xDB])
+        plp_path = root / 'plp.sfc'
+        plp_path.write_bytes(plp_rom)
+        plp_output = check([cfg, str(plp_path)], 0)
+        assert '"$008000" -> "$008001"' not in plp_output
         check([cfg, str(invalid)], 1, 'Reset vector')
         check([cfg, str(valid), '0'], 2)
         check([callgraph, str(invalid)], 1, 'Reset vector')
