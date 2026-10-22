@@ -22,8 +22,8 @@ struct Edge {
   }
 };
 // A deliberately conservative discovery pass: only decodes a known subset.
-// It follows direct calls as new entries but does not assume a called routine's
-// M/X flags match the caller. Conditional branches and indirect jumps stop paths.
+// It records direct calls as entries but does not decode their unknown CPU state.
+// Conditional branches, indirect jumps and XCE with unknown carry stop paths.
 int main(int argc, char** argv) {
   if (argc < 2 || argc > 3) {
     std::cerr << "Usage: tmnt_callgraph ROM.sfc [limit]\n"; return 2;
@@ -44,6 +44,7 @@ int main(int argc, char** argv) {
       const unsigned entry = pending.front(); pending.pop();
       unsigned cpu = entry;
       bool emulation = true, carry = false, m8 = true, x8 = true;
+      bool carry_known = false; // RESET does not establish C.
       // The width flags of independently discovered routines are unknown.
       // Only RESET has a guaranteed emulation-mode entry state.
       if (entry != unsigned(rom.reset())) {
@@ -60,10 +61,16 @@ int main(int argc, char** argv) {
         int bytes=0;
         bool stop=false, unknown=false;
         switch (op) {
-          case 0x18: carry=false; break;
-          case 0x38: carry=true; break;
-          case 0xfb: { bool old=emulation; emulation=carry; carry=old;
-                       if(emulation) m8=x8=true; break; }
+          case 0x18: carry=false; carry_known=true; break;
+          case 0x38: carry=true; carry_known=true; break;
+          case 0xfb: {
+            if (!carry_known) { unknown=true; break; }
+            const bool old=emulation;
+            emulation=carry;
+            carry=old;
+            if (emulation) m8=x8=true;
+            break;
+          }
           case 0xc2: case 0xe2: bytes=1; break;
           case 0xa2: case 0xa0: bytes=x8?1:2; break;
           case 0xa9: case 0x69: case 0xe9: case 0xc9:
@@ -88,6 +95,12 @@ int main(int argc, char** argv) {
             offset+1+size_t(bytes)>rom.data.size()) break;
         unsigned operand=0;
         for (int i=0;i<bytes;++i) operand |= unsigned(rom.byte(offset+1+i))<<(8*i);
+        // REP/SEP can establish C in either CPU mode, independently of M/X.
+        if ((op==0xc2 || op==0xe2) && (operand&0x01)) {
+          carry=op==0xe2;
+          carry_known=true;
+        }
+        if (op==0x69 || op==0xe9 || op==0xc9) carry_known=false;
         if (op==0xc2 && !emulation) {
           if (operand&0x20) m8=false;
           if (operand&0x10) x8=false;
