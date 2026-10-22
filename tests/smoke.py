@@ -15,9 +15,21 @@ def check(args, code, expected=None):
 
 
 def main():
-    assert len(sys.argv) == 8, "Expected seven tool executables from CMake"
-    rominfo, disasm, flow, hwscan, vectors, entrydump, callscan = sys.argv[1:]
-    tools = (rominfo, disasm, flow, hwscan, vectors, entrydump, callscan)
+    # CMake supplies name=executable entries, avoiding positional count drift.
+    paths = {}
+    for entry in sys.argv[1:]:
+        name, separator, path = entry.partition("=")
+        assert separator and name and path, f"Invalid tool entry: {entry!r}"
+        assert name not in paths, f"Duplicate tool entry: {name}"
+        paths[name] = path
+    required = ("rominfo", "disasm", "flow", "hwscan",
+                "vectors", "entrydump", "callscan")
+    missing = set(required) - paths.keys()
+    assert not missing, f"Missing required tools: {sorted(missing)}"
+    rominfo, disasm, flow, hwscan, vectors, entrydump, callscan = (
+        paths[name] for name in required
+    )
+    tools = tuple(paths.values())
     with tempfile.TemporaryDirectory() as directory:
         root = pathlib.Path(directory)
         rom = bytearray(32768)
