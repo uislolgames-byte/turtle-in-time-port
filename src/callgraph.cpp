@@ -150,7 +150,16 @@ int main(int argc, char** argv) {
           cpu=target;
           continue;
         }
-        if (op==0x4c || op==0x5c || stop) break;
+        // Absolute JMP has one successor in the same program bank and
+        // leaves CPU flags unchanged. Keep invalid targets as edges only.
+        if (op==0x4c) {
+          const unsigned target=(cpu&0xff0000u)|operand;
+          try { (void)rom.lorom(target); }
+          catch (const std::out_of_range&) { break; }
+          cpu=target;
+          continue;
+        }
+        if (op==0x5c || stop) break;
         const unsigned next=(cpu&0xff0000u)|((cpu+1u+unsigned(bytes))&0xffffu);
         if ((next&0x8000u)==0 || (next&0xffffu)<(cpu&0xffffu)) break;
         cpu=next;

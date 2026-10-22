@@ -218,6 +218,38 @@ def main():
         invalid_follow_path.write_bytes(invalid_follow_rom)
         invalid_follow_output = check([callgraph, str(invalid_follow_path)], 0)
         assert 'Decoded=1' in invalid_follow_output, invalid_follow_output
+        # JMP absolute preserves PBR and CPU width state. Follow the target,
+        # never the bytes immediately after the jump.
+        jump_rom = bytearray(rom)
+        jump_rom[:10] = bytes([
+            0x18, 0xFB, 0xC2, 0x30, 0x4C, 0x10, 0x80,
+            0x20, 0xEF, 0xBE,  # unreachable fake JSR
+        ])
+        jump_rom[0x10:0x17] = bytes([
+            0xA9, 0x34, 0x12, 0x20, 0x20, 0x80, 0xDB,
+        ])
+        jump_path = root / 'callgraph-follow-jmp.sfc'
+        jump_path.write_bytes(jump_rom)
+        output = check([callgraph, str(jump_path)], 0)
+        assert '"$008004" -> "$008010" [label="JMP"]' in output, output
+        assert '"$008013" -> "$008020" [label="JSR"]' in output, output
+        assert '$00BEEF' not in output, output
+        assert 'Decoded=7 ' in output, output
+        limited = check([callgraph, str(jump_path), '4'], 0)
+        assert 'label="JSR"' not in limited, limited
+        assert 'Decoded=4 ' in limited, limited
+        # Invalid targets remain candidates; self-loops terminate via visited.
+        for target in (0x2000, 0x8000):
+            bounded_rom = bytearray(rom)
+            bounded_rom[:6] = bytes([
+                0x4C, target & 0xFF, target >> 8, 0x20, 0xEF, 0xBE,
+            ])
+            bounded_path = root / f'callgraph-jmp-bounded-{target:04x}.sfc'
+            bounded_path.write_bytes(bounded_rom)
+            output = check([callgraph, str(bounded_path)], 0)
+            assert f'"$008000" -> "${target:06X}" [label="JMP"]' in output, output
+            assert 'label="JSR"' not in output, output
+            assert 'Decoded=1 ' in output, output
         # Structured reset-prefix IR: 8/16-bit register widths and bounded stop.
         ir = check([lift, str(valid), '16'], 0)
         assert 'address,opcode,operand,e,m_bits,x_bits' in ir, ir
