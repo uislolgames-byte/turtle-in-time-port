@@ -46,6 +46,24 @@ int main(int argc, char** argv) {
     std::set<unsigned> returns;
     std::set<unsigned> indirect_jumps;
     std::set<unsigned> stops;
+    // Interrupt entry states are unknown; show vectors without decoding handlers.
+    struct VectorEntry { const char* name; size_t offset; };
+    constexpr VectorEntry vector_entries[] = {
+      {"Emulation RESET", 0x7ffc},
+      {"Emulation NMI", 0x7ffa}, {"Emulation IRQ/BRK", 0x7ffe},
+      {"Native NMI", 0x7fea}, {"Native IRQ", 0x7fee},
+      {"Native BRK", 0x7fe6}
+    };
+    std::set<Edge> vector_edges;
+    for (const auto& v : vector_entries) {
+      const unsigned target = rom.word(v.offset);
+      try {
+        (void)rom.lorom(target);
+        vector_edges.insert({static_cast<unsigned>(v.offset), target, v.name});
+      } catch (const std::out_of_range&) {
+        // Some vectors are uninitialized or point to RAM; do not infer code.
+      }
+    }
     pending.push({rom.reset(),true,false,false,true,true});
     int decoded=0, unresolved=0;
     while (!pending.empty() && decoded < limit) {
@@ -157,6 +175,11 @@ int main(int argc, char** argv) {
     for(unsigned pc:stops)
       std::cout << "  \"" << hx(pc) << "\" [shape=octagon,label=\""
                 << hx(pc) << " stop/trap\"];\n";
+    for (const auto& v : vector_edges)
+      std::cout << "  \"vector_" << std::hex << v.from
+                << "\" [shape=box,label=\"" << v.label << "\"];\n"
+                << "  \"vector_" << v.from << "\" -> \"" << hx(v.to)
+                << "\" [style=dotted,label=\"entry only\"];\n";
     std::cout << "}\n";
     std::cerr << "Decoded=" << decoded << " Edges=" << edges.size()
               << " Unresolved=" << unresolved
