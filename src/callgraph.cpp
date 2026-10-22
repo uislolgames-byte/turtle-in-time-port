@@ -87,12 +87,13 @@ int main(int argc, char** argv) {
           if (operand&0x10) x8=true;
         }
         ++decoded;
-        if (op==0x20 || op==0x22) {
-          const unsigned target = op==0x20 ? (cpu&0xff0000u)|operand : operand;
-          edges.insert({cpu,target,op==0x20?"JSR":"JSL"});
+        if (op==0x20 || op==0x22 || op==0x4c || op==0x5c) {
+          const unsigned target = (op==0x20 || op==0x4c) ? (cpu&0xff0000u)|operand : operand;
+          const char* kind = op==0x20 ? "JSR" : op==0x22 ? "JSL" : op==0x4c ? "JMP" : "JML";
+          edges.insert({cpu,target,kind});
           try {
             (void)rom.lorom(target);
-            if (entries.insert(target).second) pending.push(target);
+            if ((op==0x20 || op==0x22) && entries.insert(target).second) pending.push(target);
           } catch (const std::out_of_range&) { /* target not in ROM */ }
         }
         if (op==0x4c || op==0x5c || stop) break;
@@ -106,7 +107,7 @@ int main(int argc, char** argv) {
       std::cout << "  \"" << hex(e.source) << "\" -> \"" << hex(e.target)
                 << "\" [label=\"" << e.kind << "\"];\n";
     std::cout << "}\n";
-    std::cerr << "Entries=" << entries.size() << " Calls=" << edges.size()
+    std::cerr << "Entries=" << entries.size() << " Edges=" << edges.size()
               << " Decoded=" << decoded << " (partial conservative graph)\n";
     return 0;
   } catch (const std::exception& e) { return error(e); }

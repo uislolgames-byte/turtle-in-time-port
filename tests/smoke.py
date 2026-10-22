@@ -84,6 +84,27 @@ def main():
         check([disasm, str(invalid)], 1, 'Reset vector')
         check([flow, str(invalid)], 1, 'Reset vector')
 
+        # Callgraph records direct jump targets, but does not claim they are decoded.
+        graph_rom = bytearray(rom)
+        graph_rom[:6] = bytes([0x4C, 0x10, 0x80, 0xEA, 0xEA, 0xDB])
+        graph_path = root / 'callgraph-jmp.sfc'
+        graph_path.write_bytes(graph_rom)
+        graph_output = check([callgraph, str(graph_path)], 0)
+        assert '"$008000" -> "$008010" [label="JMP"]' in graph_output, graph_output
+        assert 'Entries=1 Edges=1' in graph_output, graph_output
+        graph_long_rom = bytearray(rom)
+        graph_long_rom[:5] = bytes([0x5C, 0x10, 0x80, 0x01, 0xDB])
+        graph_long_path = root / 'callgraph-jml.sfc'
+        graph_long_path.write_bytes(graph_long_rom)
+        graph_long_output = check([callgraph, str(graph_long_path)], 0)
+        assert '"$008000" -> "$018010" [label="JML"]' in graph_long_output, graph_long_output
+        # Invalid targets are shown as candidates, not decoded as proven code.
+        graph_invalid_rom = bytearray(rom)
+        graph_invalid_rom[:3] = bytes([0x4C, 0x00, 0x20])
+        graph_invalid_path = root / 'callgraph-jmp-invalid.sfc'
+        graph_invalid_path.write_bytes(graph_invalid_rom)
+        graph_invalid_output = check([callgraph, str(graph_invalid_path)], 0)
+        assert '"$008000" -> "$002000" [label="JMP"]' in graph_invalid_output, graph_invalid_output
         # Structured reset-prefix IR: 8/16-bit register widths and bounded stop.
         ir = check([lift, str(valid), '16'], 0)
         assert 'address,opcode,operand,e,m_bits,x_bits' in ir, ir
