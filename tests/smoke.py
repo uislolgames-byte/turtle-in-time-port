@@ -139,6 +139,15 @@ def main():
             return_output = check([cfg, str(return_path)], 0)
             assert '"$008000" [shape=doublecircle,label="$008000 return"]' in return_output, return_output
             assert '"$008000" -> "$008001"' not in return_output, return_output
+        # Indirect JMP forms have unknown targets and must not fall through.
+        for opcode in (0x6C, 0x7C, 0xDC):
+            indirect_rom = bytearray(rom)
+            indirect_rom[:5] = bytes([opcode, 0x00, 0x90, 0xEA, 0xDB])
+            indirect_path = root / f'indirect-{opcode:02x}.sfc'
+            indirect_path.write_bytes(indirect_rom)
+            indirect_output = check([cfg, str(indirect_path)], 0)
+            assert '"$008000" [shape=diamond,label="$008000 indirect jump"]' in indirect_output, indirect_output
+            assert '"$008000" -> ' not in indirect_output, indirect_output
         cfg_output = check([cfg, str(branch)], 0)
         assert '"$008000" -> "$008004" [label="BRA"]' in cfg_output, cfg_output
         assert '"$008004" -> "$008000" [label="BNE"]' in cfg_output, cfg_output
