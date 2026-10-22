@@ -96,9 +96,10 @@ int main(int argc, char** argv) {
       }
       // Arithmetic and restored flags invalidate the known carry value.
       // The next XCE must not assume the old carry.
-      if (op==0x69 || op==0xe9 || op==0xc9 || op==0x2c ||
-          op==0xe8 || op==0xca || op==0xc8 || op==0x88)
+      if (op==0x69 || op==0xe9 || op==0xc9 || op==0x2c)
         s.carry_known=false;
+      // In emulation mode, accumulator and index registers are always 8-bit.
+      if (s.e) { s.m8=true; s.x8=true; }
       ++decoded;
       const unsigned from=s.pc;
       const unsigned next=(from&0xff0000u)|((from+1u+unsigned(bytes))&0xffffu);
