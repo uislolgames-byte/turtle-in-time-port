@@ -1,0 +1,8 @@
+build/
+cmake-build-*/
+*.sfc
+*.smc
+*.zip
+*.exe
+*.o
+*.obj
