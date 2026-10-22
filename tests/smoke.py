@@ -23,10 +23,10 @@ def main():
         assert name not in paths, f"Duplicate tool entry: {name}"
         paths[name] = path
     required = ("rominfo", "disasm", "flow", "hwscan",
-                "vectors", "entrydump", "callscan", "callgraph")
+                "vectors", "entrydump", "callscan", "callgraph", "cfg")
     missing = set(required) - paths.keys()
     assert not missing, f"Missing required tools: {sorted(missing)}"
-    rominfo, disasm, flow, hwscan, vectors, entrydump, callscan, callgraph = (
+    rominfo, disasm, flow, hwscan, vectors, entrydump, callscan, callgraph, cfg = (
         paths[name] for name in required
     )
     tools = tuple(paths.values())
@@ -125,6 +125,12 @@ def main():
         assert '"$008000" -> "$009234" [label="JSR"]' in graph_output, graph_output
         assert '"$008003" -> "$125678" [label="JSL"]' in graph_output, graph_output
         assert 'digraph TMNT_calls {' in graph_output, graph_output
+        cfg_output = check([cfg, str(branch)], 0)
+        assert '"$008000" -> "$008004" [label="BRA"]' in cfg_output, cfg_output
+        assert '"$008004" -> "$008000" [label="BNE"]' in cfg_output, cfg_output
+        assert '"$008004" -> "$008006" [label="fallthrough"]' in cfg_output, cfg_output
+        check([cfg, str(invalid)], 1, 'Reset vector')
+        check([cfg, str(valid), '0'], 2)
         check([callgraph, str(invalid)], 1, 'Reset vector')
         check([callgraph, str(valid), '0'], 2)
         check([callscan, str(invalid)], 1, 'Reset vector')
