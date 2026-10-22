@@ -37,7 +37,7 @@ int main(int argc, char** argv) {
                       ? (m8 ? 2 : 3) : (x8 ? 2 : 3));
           break;
         case 0x8D: case 0xAD: case 0x9D: case 0x99:
-        case 0xBD: case 0xB9: width = 3; break;
+        case 0xBD: case 0xB9: case 0x4C: width = 3; break;
         case 0x85: case 0xA5: case 0x95: case 0xB5: width = 2; break;
         case 0x80: case 0xF0: case 0xD0: case 0x30: case 0x10:
         case 0x70: case 0x50: case 0x90: case 0xB0: width = 2; break;
@@ -222,6 +222,15 @@ int main(int argc, char** argv) {
           }
           // pc += width after this switch, so set it to target - width.
           pc = (pc & 0xff0000u) | static_cast<unsigned>(target - 2);
+          break;
+        }
+        case 0x4C: {
+          // Absolute JMP stays in the current program bank.
+          if (value < 0x8000u) {
+            reason = "boundary";
+            goto finished;
+          }
+          pc = (pc & 0xff0000u) | (value - 3u);
           break;
         }
         case 0xDB: reason = "stp"; break;

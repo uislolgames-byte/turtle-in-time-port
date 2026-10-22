@@ -503,6 +503,33 @@ def main():
             assert 'reason=stp' in carry_output, carry_output
             assert f'a=${expected:04X}' in carry_output, carry_output
             assert f'c={1 if carry_op == 0x38 else 0}' in carry_output, carry_output
+        # JMP absolute skips instructions and retains the current ROM bank.
+        jmp_rom = bytearray(rom)
+        jmp_program = bytes([
+            0x4C, 0x07, 0x80, 0xA9, 0x11, 0xDB, 0xEA,
+            0xA9, 0x42, 0xDB,
+        ])
+        jmp_rom[:len(jmp_program)] = jmp_program
+        jmp_path = root / 'execute-jmp-absolute.sfc'
+        jmp_path.write_bytes(jmp_rom)
+        jmp_output = check([executor, str(jmp_path), '10'], 0)
+        assert 'reason=stp' in jmp_output and 'a=$0042' in jmp_output, jmp_output
+        # JMP to $0000-$7FFF is not executable LoROM space.
+        bad_jmp_rom = bytearray(rom)
+        bad_jmp_program = bytes([0x4C, 0x00, 0x20, 0xDB])
+        bad_jmp_rom[:len(bad_jmp_program)] = bad_jmp_program
+        bad_jmp_path = root / 'execute-jmp-nonrom.sfc'
+        bad_jmp_path.write_bytes(bad_jmp_rom)
+        bad_jmp_output = check([executor, str(bad_jmp_path), '10'], 0)
+        assert 'reason=boundary' in bad_jmp_output, bad_jmp_output
+        # Self-jumps are bounded by the caller-supplied instruction limit.
+        loop_rom = bytearray(rom)
+        loop_program = bytes([0x4C, 0x00, 0x80])
+        loop_rom[:len(loop_program)] = loop_program
+        loop_path = root / 'execute-jmp-loop.sfc'
+        loop_path.write_bytes(loop_rom)
+        loop_output = check([executor, str(loop_path), '7'], 0)
+        assert 'reason=limit steps=7' in loop_output, loop_output
         check([executor, str(valid), '0'], 2)
         unsupported_rom = bytearray(rom)
         unsupported_rom[0] = 0xFF
