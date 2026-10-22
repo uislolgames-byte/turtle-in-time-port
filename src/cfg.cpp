@@ -224,13 +224,17 @@ int main(int argc, char** argv) {
           size_t length = 0;
           switch (op) {
             case 0x18: case 0x38: case 0x78: case 0xEA:
-            case 0x60: case 0x6B: case 0xDB: length = 1; break;
+              length = 1; break;
             case 0xC2: case 0xE2: length = 2; break;
-            case 0x20: case 0x4C: length = 3; break;
-            case 0x22: case 0x5C: length = 4; break;
+            case 0x20: length = 3; break;
+            case 0x22: length = 4; break;
             default: break;
           }
-          if (length && offset + length < rom.data.size() &&
+          if (op == 0x60 || op == 0x6B || op == 0xDB)
+            second = "terminal";
+          else if (op == 0x4C || op == 0x5C)
+            second = "jump";
+          else if (length && offset + length < rom.data.size() &&
               (offset % 0x8000) + length < 0x8000) {
             switch (rom.byte(offset + length)) {
               case 0x18: second = "CLC"; break;

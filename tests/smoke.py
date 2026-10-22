@@ -141,6 +141,19 @@ def main():
             '$125678,1,0,1,unmapped,,unmapped,"",unknown',
         ], hotspots
         assert 'digraph' not in hotspots, hotspots
+        # A return or jump must not be interpreted as linear fallthrough.
+        boundary_rom = bytearray(calls_rom)
+        boundary_rom[0x1234:0x1236] = bytes([0x60, 0xEA])
+        boundary_path = root / 'hotspot-boundary.sfc'
+        boundary_path.write_bytes(boundary_rom)
+        boundary = check([cfg, str(boundary_path), '512', '--hotspots'], 0)
+        assert '$009234,1,1,0,candidate,$001234,RTS,"60 EA' in boundary, boundary
+        assert ',terminal' in boundary.splitlines()[1], boundary
+        boundary_rom[0x1234:0x1238] = bytes([0x4C, 0x00, 0x80, 0xEA])
+        boundary_path.write_bytes(boundary_rom)
+        boundary = check([cfg, str(boundary_path), '512', '--hotspots'], 0)
+        assert '$009234,1,1,0,candidate,$001234,JMP,"4C 00 80 EA' in boundary, boundary
+        assert ',jump' in boundary.splitlines()[1], boundary
         check([cfg, str(calls_path), '512', '--unknown'], 2)
         cfg_calls_output = check([cfg, str(calls_path)], 0)
         assert '"$008000" -> "$009234" [label="JSR",style=dashed]' in cfg_calls_output, cfg_calls_output
