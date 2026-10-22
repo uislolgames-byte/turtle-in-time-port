@@ -250,6 +250,30 @@ def main():
             assert f'"$008000" -> "${target:06X}" [label="JMP"]' in output, output
             assert 'label="JSR"' not in output, output
             assert 'Decoded=1 ' in output, output
+        # JML follows a valid target across program banks, without decoding
+        # unreachable bytes after the jump or inventing callee CPU state.
+        long_jump_rom = bytearray(rom) + bytearray(32768)
+        long_jump_rom[:7] = bytes([0x18, 0xFB, 0xC2, 0x30, 0x5C, 0x10, 0x80])
+        long_jump_rom[7] = 0x01
+        long_jump_rom[8:11] = bytes([0x20, 0xEF, 0xBE])
+        long_jump_rom[0x8010:0x8018] = bytes([
+            0xA9, 0x34, 0x12, 0x20, 0x20, 0x80, 0xDB, 0xEA,
+        ])
+        long_jump_path = root / 'callgraph-follow-jml-bank.sfc'
+        long_jump_path.write_bytes(long_jump_rom)
+        long_jump_output = check([callgraph, str(long_jump_path)], 0)
+        assert '"$008004" -> "$018010" [label="JML"]' in long_jump_output, long_jump_output
+        assert '"$018013" -> "$018020" [label="JSR"]' in long_jump_output, long_jump_output
+        assert '$00BEEF' not in long_jump_output, long_jump_output
+        assert 'Decoded=7 ' in long_jump_output, long_jump_output
+        # A JML target outside mapped ROM is only reported, never traversed.
+        bad_long_jump_rom = bytearray(rom)
+        bad_long_jump_rom[:5] = bytes([0x5C, 0x10, 0x80, 0x01, 0xDB])
+        bad_long_jump_path = root / 'callgraph-follow-jml-unmapped.sfc'
+        bad_long_jump_path.write_bytes(bad_long_jump_rom)
+        bad_long_jump_output = check([callgraph, str(bad_long_jump_path)], 0)
+        assert '"$008000" -> "$018010" [label="JML"]' in bad_long_jump_output, bad_long_jump_output
+        assert 'Decoded=1 ' in bad_long_jump_output, bad_long_jump_output
         # Structured reset-prefix IR: 8/16-bit register widths and bounded stop.
         ir = check([lift, str(valid), '16'], 0)
         assert 'address,opcode,operand,e,m_bits,x_bits' in ir, ir
