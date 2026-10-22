@@ -704,6 +704,35 @@ def main():
         empty_ply_path.write_bytes(empty_ply_rom)
         empty_ply_output = check([executor, str(empty_ply_path), '10'], 0)
         assert 'reason=stack' in empty_ply_output, empty_ply_output
+        # PHP/PLP restores carry and zero without altering the accumulator.
+        php_rom = bytearray(rom)
+        php_program = bytes([0x38, 0xA9, 0x00, 0x08, 0x18, 0xA9, 0x01, 0x28, 0xDB])
+        php_rom[:len(php_program)] = php_program
+        php_path = root / 'execute-php-plp.sfc'
+        php_path.write_bytes(php_rom)
+        php_output = check([executor, str(php_path), '20'], 0)
+        assert 'reason=stp' in php_output and 'c=1' in php_output and 'z=1' in php_output, php_output
+        assert 'sp=$01FF' in php_output and 'a=$0001' in php_output, php_output
+        # Native PLP restores M and X widths and truncates X/Y when X becomes 8-bit.
+        native_php_rom = bytearray(rom)
+        native_php_program = bytes([
+            0x18, 0xFB, 0x08, 0xC2, 0x30, 0xA2, 0x34, 0x12,
+            0x28, 0xDB,
+        ])
+        native_php_rom[:len(native_php_program)] = native_php_program
+        native_php_path = root / 'execute-php-native.sfc'
+        native_php_path.write_bytes(native_php_rom)
+        native_php_output = check([executor, str(native_php_path), '20'], 0)
+        assert 'reason=stp' in native_php_output and 'm=8' in native_php_output, native_php_output
+        assert 'xbits=8' in native_php_output and 'x=$0034' in native_php_output, native_php_output
+        assert 'sp=$01FF' in native_php_output, native_php_output
+        # An empty PLP must stop rather than read a fabricated status byte.
+        empty_plp_rom = bytearray(rom)
+        empty_plp_rom[0] = 0x28
+        empty_plp_path = root / 'execute-empty-plp.sfc'
+        empty_plp_path.write_bytes(empty_plp_rom)
+        empty_plp_output = check([executor, str(empty_plp_path), '10'], 0)
+        assert 'reason=stack' in empty_plp_output, empty_plp_output
         check([executor, str(valid), '0'], 2)
         unsupported_rom = bytearray(rom)
         unsupported_rom[0] = 0xFF

@@ -20,6 +20,7 @@ int main(int argc, char** argv) {
     if (limit < 1 || limit > 100000) return 2;
     unsigned pc = rom.reset(), a = 0, x = 0, y = 0, d = 0, sp = 0x01ff;
     bool e = true, m8 = true, x8 = true, carry = false, zero = false, negative = false, overflow = false;
+    bool decimal = false, interrupt_disable = true;
     std::array<unsigned char, 0x2000> wram{};
     unsigned stores = 0, last_store = 0, last_value = 0, call_depth = 0, stack_bytes = 0;
     int steps = 0;
@@ -44,7 +45,7 @@ int main(int argc, char** argv) {
         case 0x18: case 0x38: case 0xB8: case 0xFB: case 0xEA: case 0xDB:
         case 0xE8: case 0xCA: case 0xC8: case 0x88: case 0x1A: case 0x3A:
         case 0xAA: case 0xA8: case 0x8A: case 0x98: case 0x9B: case 0xBB:
-        case 0x5B: case 0x7B: case 0x60: case 0x48: case 0x68: case 0xDA: case 0xFA: case 0x5A: case 0x7A:
+        case 0x5B: case 0x7B: case 0x60: case 0x48: case 0x68: case 0xDA: case 0xFA: case 0x5A: case 0x7A: case 0x08: case 0x28:
           break;
         default: reason = "unsupported"; goto finished;
       }
@@ -222,6 +223,45 @@ int main(int argc, char** argv) {
           }
           // pc += width after this switch, so set it to target - width.
           pc = (pc & 0xff0000u) | static_cast<unsigned>(target - 2);
+          break;
+        }
+        case 0x08: {
+          if (stack_bytes >= 256u) {
+            reason = "stack";
+            goto finished;
+          }
+          const unsigned status = (negative ? 0x80u : 0u) |
+              (overflow ? 0x40u : 0u) | (m8 ? 0x20u : 0u) |
+              (x8 ? 0x10u : 0u) | (decimal ? 0x08u : 0u) |
+              (interrupt_disable ? 0x04u : 0u) |
+              (zero ? 0x02u : 0u) | (carry ? 0x01u : 0u);
+          wram[sp] = static_cast<unsigned char>(e ? (status | 0x30u) : status);
+          sp = 0x0100u | ((sp - 1u) & 0xffu);
+          ++stack_bytes;
+          break;
+        }
+        case 0x28: {
+          if (stack_bytes == 0u) {
+            reason = "stack";
+            goto finished;
+          }
+          sp = 0x0100u | ((sp + 1u) & 0xffu);
+          const unsigned status = wram[sp];
+          --stack_bytes;
+          negative = (status & 0x80u) != 0u;
+          overflow = (status & 0x40u) != 0u;
+          decimal = (status & 0x08u) != 0u;
+          interrupt_disable = (status & 0x04u) != 0u;
+          zero = (status & 0x02u) != 0u;
+          carry = (status & 0x01u) != 0u;
+          if (!e) {
+            m8 = (status & 0x20u) != 0u;
+            const bool new_x8 = (status & 0x10u) != 0u;
+            if (new_x8) { x &= 0xffu; y &= 0xffu; }
+            x8 = new_x8;
+          } else {
+            m8 = x8 = true;
+          }
           break;
         }
         case 0x5A: {
