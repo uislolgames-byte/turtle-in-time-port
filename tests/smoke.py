@@ -15,9 +15,9 @@ def check(args, code, expected=None):
 
 
 def main():
-    assert len(sys.argv) == 7, "Expected six tool executables from CMake"
-    rominfo, disasm, flow, hwscan, vectors, entrydump = sys.argv[1:]
-    tools = (rominfo, disasm, flow, hwscan, vectors, entrydump)
+    assert len(sys.argv) == 8, "Expected seven tool executables from CMake"
+    rominfo, disasm, flow, hwscan, vectors, entrydump, callscan = sys.argv[1:]
+    tools = (rominfo, disasm, flow, hwscan, vectors, entrydump, callscan)
     with tempfile.TemporaryDirectory() as directory:
         root = pathlib.Path(directory)
         rom = bytearray(32768)
@@ -99,6 +99,18 @@ def main():
         check([vectors, str(valid)], 0, 'Native NMI: $8020 [ROM offset $000020]')
         check([entrydump, str(valid)], 0, 'RESET $8000: 18 FB C2 30 A2 FF 1D')
         check([entrydump, str(headered)], 0, 'RESET $8000: 18 FB')
+        # JSR uses the current program bank; JSL uses an explicit 24-bit bank.
+        calls_rom = bytearray(rom)
+        calls_rom[:10] = bytes([0x20, 0x34, 0x92, 0x22, 0x78, 0x56, 0x12,
+                                0xEA, 0x60, 0xDB])
+        calls_path = root / 'calls.sfc'
+        calls_path.write_bytes(calls_rom)
+        calls_output = check([callscan, str(calls_path)], 0)
+        assert '$008000: JSR $009234' in calls_output, calls_output
+        assert '$008003: JSL $125678' in calls_output, calls_output
+        assert 'Calls=2' in calls_output, calls_output
+        check([callscan, str(invalid)], 1, 'Reset vector')
+        check([callscan, str(valid), '0'], 2)
         for exe in (disasm, flow, hwscan):
             check([exe, str(valid), '0'], 2)
             check([exe, str(valid), '-1'], 2)
