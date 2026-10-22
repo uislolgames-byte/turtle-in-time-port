@@ -41,7 +41,7 @@ inline std::string compile(const std::vector<uint8_t>& code) {
       case 0xa2: case 0xa0: length = mode.x ? 2 : 3; break;
       case 0xad: case 0x8d: case 0x20: length = 3; break;
       case 0x10: case 0x30: case 0x50: case 0x70: case 0x90: case 0xb0: case 0xd0: case 0xf0: length = 2; break;
-      default: throw std::runtime_error("unsupported opcode");
+      default: throw std::runtime_error("unsupported opcode at " + std::to_string(pc));
     }
     if (pos + length > code.size()) throw std::runtime_error("truncated instruction");
     unsigned value = 0;
