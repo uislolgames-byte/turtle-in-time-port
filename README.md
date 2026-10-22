@@ -10,10 +10,28 @@ Experimento de engenharia reversa do **Teenage Mutant Ninja Turtles IV: Turtles 
 - `tmnt_flow`: scanner linear conservador; **não calcula um grafo de fluxo real**.
 - `tmnt_hwscan`: localiza padrões candidatos de escrita na PPU; pode gerar falsos positivos.
 - `tmnt_vectors`: lê os vetores de interrupção nativos e de emulação do 65C816, mostrando endereços e offsets LoROM quando aplicável.
+- `tmnt_entrydump`: mostra os bytes nos pontos de entrada dos vetores.
+- `tmnt_callscan`: encontra chamadas JSR/JSL em uma sequência linear conhecida.
+- `tmnt_callgraph`: exporta chamadas diretas encontradas em formato Graphviz DOT. A análise **não** segue caminhos de execução completos nem decodifica automaticamente rotinas chamadas com estado de CPU desconhecido.
 
 ## Investigar os pontos de entrada
 
 Execute `tmnt_vectors caminho/para/sua_rom.sfc` para listar RESET, NMI, IRQ e outros vetores. O vetor de RESET indica por onde o processador começa a executar após reinicializar; NMI costuma ser importante para atualização gráfica a cada quadro. **Não é necessário enviar a ROM ao GitHub**.
+
+## Exportar o grafo de chamadas
+
+Execute a ferramenta na sua ROM local (não faça upload dela):
+
+```sh
+tmnt_callgraph caminho/para/sua_rom.sfc > chamadas.dot
+dot -Tsvg chamadas.dot -o chamadas.svg
+```
+
+O comando `dot` pertence ao Graphviz, que precisa ser instalado separadamente.
+A saída padrão contém apenas a sintaxe DOT; diagnósticos são enviados para stderr.
+O grafo é **parcial** e não prova que os endereços são rotinas válidas.
+A decodificação parte do RESET com o estado inicial conhecido; alvos de chamadas
+são listados, mas não percorridos sem evidência sobre os registradores M/X.
 
 ## Compilar e testar
 ```sh
@@ -27,4 +45,4 @@ O GitHub Actions executa em `windows-2022` e `ubuntu-24.04`. Veja os resultados 
 O teste de integração cria uma ROM sintética, sem arquivos comerciais. **Não publique a ROM original.**
 
 ## Próximos passos
-Restaurar/portar o analisador mais completo da versão local 0.5, implementar testes de LoROM e decodificação, e validar ambos os sistemas no CI.
+Expandir a decodificação com propagação explícita de estado do 65C816, acompanhar desvios com segurança e validar Windows/Linux em cada alteração.
