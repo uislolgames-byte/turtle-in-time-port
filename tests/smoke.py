@@ -160,6 +160,16 @@ def main():
         boundary = check([cfg, str(boundary_path), '512', '--hotspots'], 0)
         assert '$009234,1,1,0,candidate,$001234,JMP,"4C 00 80 EA' in boundary, boundary
         assert ',jump' in boundary.splitlines()[1], boundary
+        # Calls must terminate prefix inspection; callee state is unknown.
+        for call_bytes, call_name in (
+            (bytes([0x20, 0x00, 0x80, 0xEA]), 'JSR'),
+            (bytes([0x22, 0x00, 0x80, 0x00, 0xEA]), 'JSL'),
+        ):
+            call_boundary_rom = bytearray(calls_rom)
+            call_boundary_rom[0x1234:0x1234 + len(call_bytes)] = call_bytes
+            boundary_path.write_bytes(call_boundary_rom)
+            call_boundary = check([cfg, str(boundary_path), '512', '--hotspots'], 0)
+            assert ',"' + call_name + '"' in call_boundary, call_boundary
         # SEP establishes 8-bit immediate widths even with unknown entry E.
         width_rom = bytearray(calls_rom)
         width_rom[0x1234:0x123b] = bytes([0xE2, 0x30, 0xA9, 0x12, 0xA2, 0x34, 0x60])

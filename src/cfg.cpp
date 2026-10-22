@@ -257,6 +257,7 @@ int main(int argc, char** argv) {
         // Decode at most four instructions, tracking only provable 8-bit M/X
         // widths. A routine entry has unknown E/M/X; REP cannot prove 16-bit
         // width without knowing E=0, while SEP always forces 8-bit width.
+        // Calls also stop the prefix: a callee may modify M/X or control flow.
         std::ostringstream sequence;
         if (mapped) {
           size_t pos = offset;
@@ -292,8 +293,8 @@ int main(int argc, char** argv) {
               case 0xA9: name = "LDA"; width = m8_known ? 2 : 0; break;
               case 0xA2: name = "LDX"; width = x8_known ? 2 : 0; break;
               case 0xA0: name = "LDY"; width = x8_known ? 2 : 0; break;
-              case 0x20: name = "JSR"; width = 3; break;
-              case 0x22: name = "JSL"; width = 4; break;
+              case 0x20: name = "JSR"; width = 3; stop = true; break;
+              case 0x22: name = "JSL"; width = 4; stop = true; break;
               case 0x4C: name = "JMP"; width = 3; stop = true; break;
               case 0x5C: name = "JML"; width = 4; stop = true; break;
               case 0x60: name = "RTS"; width = 1; stop = true; break;
