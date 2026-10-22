@@ -182,6 +182,27 @@ def main():
         width_path.write_bytes(width_rom)
         width_output = check([cfg, str(width_path), '512', '--hotspots'], 0)
         assert ',"SEP REP ?"' in width_output, width_output
+        # SEC; XCE proves emulation mode; REP cannot widen M or X.
+        emulation_rom = bytearray(calls_rom)
+        emulation_rom[0x1234:0x123a] = bytes([0x38, 0xFB, 0xC2, 0x30, 0xA9, 0x42])
+        emulation_path = root / 'hotspot-emulation.sfc'
+        emulation_path.write_bytes(emulation_rom)
+        emulation_output = check([cfg, str(emulation_path), '512', '--hotspots'], 0)
+        assert ',"SEC XCE REP LDA"' in emulation_output, emulation_output
+        # Native REP establishes 16-bit index width for LDX/LDY.
+        index_rom = bytearray(calls_rom)
+        index_rom[0x1234:0x123b] = bytes([0x18, 0xFB, 0xC2, 0x10, 0xA2, 0x34, 0x12])
+        index_path = root / 'hotspot-index.sfc'
+        index_path.write_bytes(index_rom)
+        index_output = check([cfg, str(index_path), '512', '--hotspots'], 0)
+        assert ',"CLC XCE REP LDX"' in index_output, index_output
+        # ADC changes carry: XCE after arithmetic must not assume native mode.
+        carry_rom = bytearray(calls_rom)
+        carry_rom[0x1234:0x123a] = bytes([0xE2, 0x20, 0x18, 0x69, 0x01, 0xFB])
+        carry_path = root / 'hotspot-carry.sfc'
+        carry_path.write_bytes(carry_rom)
+        carry_output = check([cfg, str(carry_path), '512', '--hotspots'], 0)
+        assert ',"SEP CLC ADC ?"' in carry_output, carry_output
         # CLC; XCE proves native mode, so REP can establish 16-bit M.
         native_rom = bytearray(calls_rom)
         native_rom[0x1234:0x123b] = bytes([0x18, 0xFB, 0xC2, 0x20, 0xA9, 0x34, 0x12])

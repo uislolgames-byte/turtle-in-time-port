@@ -295,6 +295,12 @@ int main(int argc, char** argv) {
               case 0xC2: name = "REP"; width = 2; break;
               case 0xE2: name = "SEP"; width = 2; break;
               case 0xA9: name = "LDA"; width = m8_known ? 2 : (m16_known ? 3 : 0); break;
+              case 0x69: name = "ADC"; width = m8_known ? 2 : (m16_known ? 3 : 0); break;
+              case 0xE9: name = "SBC"; width = m8_known ? 2 : (m16_known ? 3 : 0); break;
+              case 0x29: name = "AND"; width = m8_known ? 2 : (m16_known ? 3 : 0); break;
+              case 0x09: name = "ORA"; width = m8_known ? 2 : (m16_known ? 3 : 0); break;
+              case 0x49: name = "EOR"; width = m8_known ? 2 : (m16_known ? 3 : 0); break;
+              case 0xC9: name = "CMP"; width = m8_known ? 2 : (m16_known ? 3 : 0); break;
               case 0xA2: name = "LDX"; width = x8_known ? 2 : (x16_known ? 3 : 0); break;
               case 0xA0: name = "LDY"; width = x8_known ? 2 : (x16_known ? 3 : 0); break;
               case 0x20: name = "JSR"; width = 3; stop = true; break;
@@ -334,6 +340,9 @@ int main(int argc, char** argv) {
                 m8_known = x8_known = true;
                 m16_known = x16_known = false;
               }
+              carry_known = false;
+            } else if (op == 0x69 || op == 0xE9 || op == 0xC9) {
+              // Arithmetic/compare instructions may change carry.
               carry_known = false;
             }
             pos += width;
