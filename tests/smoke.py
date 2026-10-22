@@ -193,6 +193,31 @@ def main():
         backwards_branch_path.write_bytes(backwards_branch_rom)
         backwards_branch_output = check([callgraph, str(backwards_branch_path)], 0)
         assert '"$008000" -> "$008000" [label="BRA"]' in backwards_branch_output, backwards_branch_output
+        # Unconditional BRA/BRL preserve known CPU width state and may be
+        # traversed safely, unlike conditional branches with unknown flags.
+        for name, branch, target in (
+            ('bra', bytes([0x80, 0x02]), 0x8004),
+            ('brl', bytes([0x82, 0x02, 0x00]), 0x8005),
+        ):
+            follow_rom = bytearray(rom)
+            follow_rom[:16] = bytes([0xDB] * 16)
+            follow_rom[:len(branch)] = branch
+            follow_rom[target - 0x8000:target - 0x8000 + 4] = bytes([0x20, 0x10, 0x80, 0xDB])
+            follow_path = root / f'callgraph-follow-{name}.sfc'
+            follow_path.write_bytes(follow_rom)
+            output = check([callgraph, str(follow_path)], 0)
+            assert f'"${target:06X}" -> "$008010" [label="JSR"]' in output, output
+            assert 'Decoded=3' in output, output
+        # Self-loops must terminate through visited-address tracking.
+        loop_follow = check([callgraph, str(backwards_branch_path)], 0)
+        assert 'Decoded=1' in loop_follow, loop_follow
+        # Out-of-ROM branches are reported but never traversed.
+        invalid_follow_rom = bytearray(rom)
+        invalid_follow_rom[:2] = bytes([0x80, 0x80])
+        invalid_follow_path = root / 'callgraph-follow-invalid.sfc'
+        invalid_follow_path.write_bytes(invalid_follow_rom)
+        invalid_follow_output = check([callgraph, str(invalid_follow_path)], 0)
+        assert 'Decoded=1' in invalid_follow_output, invalid_follow_output
         # Structured reset-prefix IR: 8/16-bit register widths and bounded stop.
         ir = check([lift, str(valid), '16'], 0)
         assert 'address,opcode,operand,e,m_bits,x_bits' in ir, ir
