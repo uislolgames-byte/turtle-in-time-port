@@ -174,6 +174,8 @@ def main():
         assert '"vector_7ffa" -> "$008010" [style=dotted,label="entry only"]' in vector_cfg
         assert '"vector_7fea" -> "$008020" [style=dotted,label="entry only"]' in vector_cfg
         assert '"vector_7fea" [shape=box,label="Native NMI"]' in vector_cfg
+        assert '"$008010" [peripheries=2]' in vector_cfg
+        assert '"$008020" [peripheries=2]' in vector_cfg
         # Vector targets are annotated, not traversed without a known CPU state.
         assert '"$008010" -> ' not in vector_cfg, vector_cfg
         cfg_output = check([cfg, str(branch)], 0)
