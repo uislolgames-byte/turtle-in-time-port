@@ -63,7 +63,7 @@ int main(int argc, char** argv) {
         case 0xa9: bytes=s.m8?1:2; break;
         case 0x20: case 0x4c: case 0x8d: case 0x9c: bytes=2; break;
         case 0x22: case 0x5c: bytes=3; break;
-        case 0x80: case 0xd0: case 0xf0: bytes=1; break;
+        case 0x80: case 0x10: case 0x30: case 0x50: case 0x70:\n        case 0x90: case 0xb0: case 0xd0: case 0xf0: bytes=1; break;
         case 0x82: bytes=2; break;
         case 0x78: case 0xd8: case 0x9a: case 0xea: break;
         case 0x60: case 0x6b: case 0xdb: case 0x00: terminal=true; break;
@@ -92,7 +92,7 @@ int main(int argc, char** argv) {
         try { (void)rom.lorom(target); pending.push({target,s.e,s.carry,s.m8,s.x8}); }
         catch(const std::out_of_range&) { ++unresolved; }
       };
-      if(op==0x80 || op==0x82 || op==0xd0 || op==0xf0) {
+      if(op==0x80 || op==0x82 || op==0x10 || op==0x30 ||\n         op==0x50 || op==0x70 || op==0x90 || op==0xb0 ||\n         op==0xd0 || op==0xf0) {
         const int delta=bytes==1 ? int(int8_t(operand)) : int(int16_t(operand));
         const unsigned target=(from&0xff0000u)|((next+delta)&0xffffu);
         enqueue(target,op==0x80?"BRA":op==0x82?"BRL":op==0xd0?"BNE":"BEQ");
