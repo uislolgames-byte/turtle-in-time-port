@@ -2,6 +2,9 @@
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
+#include <map>
+#include <vector>
+#include <algorithm>
 #include <queue>
 #include <set>
 #include <sstream>
@@ -31,14 +34,15 @@ struct Edge {
 };
 int main(int argc, char** argv) {
   if (argc < 2 || argc > 4) {
-    std::cerr << "Usage: tmnt_cfg ROM.sfc [limit] [--inventory]\n"; return 2;
+    std::cerr << "Usage: tmnt_cfg ROM.sfc [limit] [--inventory|--hotspots]\n"; return 2;
   }
   try {
     Rom rom(argv[1]);
     if (rom.reset() < 0x8000)
       throw std::runtime_error("Reset vector is not in LoROM ROM space");
     const bool inventory = argc == 4 && std::string(argv[3]) == "--inventory";
-    if (argc == 4 && !inventory) return 2;
+    const bool hotspots = argc == 4 && std::string(argv[3]) == "--hotspots";
+    if (argc == 4 && !inventory && !hotspots) return 2;
     const int limit = argc >= 3 ? std::atoi(argv[2]) : 512;
     if (limit < 1 || limit > 100000) return 2;
     std::queue<State> pending;
@@ -165,6 +169,27 @@ int main(int argc, char** argv) {
       } else if(!terminal) {
         enqueue(next,"next");
       }
+    }
+    if (hotspots) {
+      // Counts are static call sites discovered by the bounded CFG, not runtime frequency.
+      std::map<unsigned, unsigned> counts;
+      for (const auto& call : calls) ++counts[call.to];
+      std::vector<std::pair<unsigned, unsigned>> ranked(counts.begin(), counts.end());
+      std::sort(ranked.begin(), ranked.end(), [](const auto& a, const auto& b) {
+        if (a.second != b.second) return a.second > b.second;
+        return a.first < b.first;
+      });
+      std::cout << "address,incoming_calls,status,rom_offset\n";
+      for (const auto& entry : ranked) {
+        size_t offset = 0;
+        bool mapped = true;
+        try { offset = rom.lorom(entry.first); }
+        catch (const std::out_of_range&) { mapped = false; }
+        std::cout << hx(entry.first) << "," << entry.second << ","
+                  << (mapped ? "candidate" : "unmapped") << ","
+                  << (mapped ? hx(static_cast<unsigned>(offset)) : "") << "\n";
+      }
+      return 0;
     }
     if (inventory) {
       auto preview = [&](unsigned target) {

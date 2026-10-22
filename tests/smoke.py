@@ -134,6 +134,13 @@ def main():
         assert '$125678,call,$008003,JSL,unmapped,,"",unmapped,unmapped,1' in inventory.splitlines(), inventory
         assert '$008020,vector,$007FEA,"Native NMI",entry_only,$000020,"' in inventory, inventory
         assert 'digraph' not in inventory, inventory
+        hotspots = check([cfg, str(calls_path), '512', '--hotspots'], 0)
+        assert hotspots.splitlines() == [
+            'address,incoming_calls,status,rom_offset',
+            '$009234,1,candidate,$001234',
+            '$125678,1,unmapped,',
+        ], hotspots
+        assert 'digraph' not in hotspots, hotspots
         check([cfg, str(calls_path), '512', '--unknown'], 2)
         cfg_calls_output = check([cfg, str(calls_path)], 0)
         assert '"$008000" -> "$009234" [label="JSR",style=dashed]' in cfg_calls_output, cfg_calls_output
