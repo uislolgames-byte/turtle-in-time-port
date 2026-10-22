@@ -180,10 +180,32 @@ int main(int argc, char** argv) {
         }
         return out.str();
       };
-      std::cout << "address,origin,source,kind,status,rom_offset,first_bytes\n";
+      auto first_opcode = [&](unsigned target) {
+        size_t offset;
+        try { offset = rom.lorom(target); }
+        catch (const std::out_of_range&) { return std::string("unmapped"); }
+        switch (rom.byte(offset)) {
+          case 0x78: return std::string("SEI");
+          case 0x18: return std::string("CLC");
+          case 0x38: return std::string("SEC");
+          case 0xFB: return std::string("XCE");
+          case 0xC2: return std::string("REP");
+          case 0xE2: return std::string("SEP");
+          case 0x20: return std::string("JSR");
+          case 0x22: return std::string("JSL");
+          case 0x4C: return std::string("JMP");
+          case 0x5C: return std::string("JML");
+          case 0x60: return std::string("RTS");
+          case 0x6B: return std::string("RTL");
+          case 0xEA: return std::string("NOP");
+          case 0xDB: return std::string("STP");
+          default: return std::string("unknown");
+        }
+      };
+      std::cout << "address,origin,source,kind,status,rom_offset,first_bytes,first_opcode\n";
       for (const auto& v : vector_edges)
         std::cout << hx(v.to) << ",vector," << hx(v.from)
-                  << ",\""<< v.label << "\",entry_only," << hx(static_cast<unsigned>(rom.lorom(v.to))) << ",\"" << preview(v.to) << "\"\n";
+                  << ",\""<< v.label << "\",entry_only," << hx(static_cast<unsigned>(rom.lorom(v.to))) << ",\"" << preview(v.to) << "\"," << first_opcode(v.to) << "\n";
       for (const auto& c : calls) {
         bool mapped = true;
         size_t offset = 0;
@@ -192,7 +214,7 @@ int main(int argc, char** argv) {
         std::cout << hx(c.to) << ",call," << hx(c.from) << ","
                   << c.label << "," << (mapped ? "candidate" : "unmapped")
                   << "," << (mapped ? hx(static_cast<unsigned>(offset)) : "")
-                  << ",\"" << preview(c.to) << "\"\n";
+                  << ",\"" << preview(c.to) << "\"," << first_opcode(c.to) << "\n";
       }
       return 0;
     }
