@@ -179,7 +179,7 @@ int main(int argc, char** argv) {
         if (a.second != b.second) return a.second > b.second;
         return a.first < b.first;
       });
-      std::cout << "address,incoming_calls,jsr_sites,jsl_sites,status,rom_offset,first_opcode,first_bytes\n";
+      std::cout << "address,incoming_calls,jsr_sites,jsl_sites,status,rom_offset,first_opcode,first_bytes,second_opcode\n";
       for (const auto& entry : ranked) {
         unsigned jsr_sites = 0, jsl_sites = 0;
         for (const auto& call : calls) {
@@ -216,11 +216,45 @@ int main(int argc, char** argv) {
                   << std::setfill('0') << unsigned(rom.byte(offset + i));
           }
         }
+        // Only decode a second instruction when the first has a fixed,
+        // known length independent of M/X and there is room in this bank.
+        std::string second = "unknown";
+        if (mapped) {
+          const unsigned op = rom.byte(offset);
+          size_t length = 0;
+          switch (op) {
+            case 0x18: case 0x38: case 0x78: case 0xEA:
+            case 0x60: case 0x6B: case 0xDB: length = 1; break;
+            case 0xC2: case 0xE2: length = 2; break;
+            case 0x20: case 0x4C: length = 3; break;
+            case 0x22: case 0x5C: length = 4; break;
+            default: break;
+          }
+          if (length && offset + length < rom.data.size() &&
+              (offset % 0x8000) + length < 0x8000) {
+            switch (rom.byte(offset + length)) {
+              case 0x18: second = "CLC"; break;
+              case 0x38: second = "SEC"; break;
+              case 0x78: second = "SEI"; break;
+              case 0xEA: second = "NOP"; break;
+              case 0xC2: second = "REP"; break;
+              case 0xE2: second = "SEP"; break;
+              case 0x20: second = "JSR"; break;
+              case 0x22: second = "JSL"; break;
+              case 0x4C: second = "JMP"; break;
+              case 0x5C: second = "JML"; break;
+              case 0x60: second = "RTS"; break;
+              case 0x6B: second = "RTL"; break;
+              case 0xDB: second = "STP"; break;
+              default: break;
+            }
+          }
+        }
         std::cout << hx(entry.first) << "," << entry.second << ","
                   << jsr_sites << "," << jsl_sites << ","
                   << (mapped ? "candidate" : "unmapped") << ","
                   << (mapped ? hx(static_cast<unsigned>(offset)) : "")
-                  << "," << opcode << ",\"" << bytes.str() << "\"\n";
+                  << "," << opcode << ",\"" << bytes.str() << "\"," << second << "\n";
       }
       return 0;
     }
