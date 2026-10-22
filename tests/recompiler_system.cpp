@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <iostream>
 #include <tuple>
+#include <memory>
 
 static void check(bool ok, const char* message) {
   if (!ok) throw std::runtime_error(message);
@@ -15,6 +16,65 @@ static std::vector<uint8_t> cartridge() {
   rom[0x7ffc] = 0; rom[0x7ffd] = 0x80;
   return rom;
 }
+static void event_tests(const unsigned* pcs, const unsigned* acc, const unsigned* flags) {
+  using namespace recompiled;
+  using system816::Signal;
+  // Heap allocation keeps the additional WRAM off the small Windows stack.
+  auto bus = std::make_unique<system816::Bus>(cartridge());
+  State state;
+  for (unsigned tick = 0; tick < 10; ++tick) {
+    bus->clear_ram(); reset_cpu(state, *bus);
+    state.clock.schedule(tick, Signal::nmi);
+    check(!run_generated(state, 40) && state.stop == Stop::interrupt && state.steps == tick &&
+          state.pc == pcs[tick] && state.a == acc[tick] && state.p == flags[tick] &&
+          state.clock.now() == tick && state.clock.nmi_pending() &&
+          state.s == ((tick == 7 || tick == 8) ? 0x1fd : 0x1ff), "NMI boundary trace");
+    check(state.diagnostic.find("NMI") != std::string::npos &&
+          state.diagnostic.find(tick < 2 ? "fffa" : "ffea") != std::string::npos, "NMI vector diagnostic");
+    check(bus->read8(0x7e1000) == (tick >= 5 ? 0x34 : 0) &&
+          bus->read8(0x7e1002) == (tick >= 8 ? 0xef : 0), "NMI allowed later writes");
+  }
+  reset_cpu(state, *bus); state.clock.schedule(0, Signal::irq_on);
+  check(run_generated(state, 40) && state.stop == Stop::stp && state.clock.irq_asserted() &&
+        state.clock.now() == 10, "masked IRQ interrupted execution");
+  for (unsigned tick : {0u, 1u, 2u}) {
+    reset_cpu(state, *bus); state.p = 0x30;
+    state.clock.schedule(tick, Signal::irq_on);
+    check(!run_generated(state, 40) && state.stop == Stop::interrupt && state.steps == tick &&
+          state.pc == pcs[tick] && state.clock.now() == tick &&
+          state.diagnostic.find("IRQ") != std::string::npos &&
+          state.diagnostic.find(tick < 2 ? "fffe" : "ffee") != std::string::npos, "unmasked IRQ boundary");
+  }
+  reset_cpu(state, *bus); state.p = 0x30;
+  state.clock.schedule(0, Signal::irq_on); state.clock.schedule(0, Signal::nmi);
+  check(!run_generated(state, 40) && state.diagnostic.find("NMI") != std::string::npos,
+        "NMI did not take priority over IRQ");
+  reset_cpu(state, *bus);
+  state.clock.schedule(0, Signal::irq_on); state.clock.schedule(3, Signal::irq_off);
+  check(run_generated(state, 40) && !state.clock.irq_asserted(), "IRQ release lost while masked");
+  reset_cpu(state, *bus); state.clock.schedule(0, Signal::nmi);
+  check(!run_generated(state, 0) && state.stop == Stop::limit && !state.clock.nmi_pending() &&
+        state.clock.now() == 0, "zero budget delivered event");
+  check(!run_generated(state, 40) && state.stop == Stop::interrupt && state.steps == 0,
+        "event lost after zero budget");
+  reset_cpu(state, *bus); state.db = 0x40;
+  check(!run_generated(state, 40) && state.stop == Stop::memory && state.clock.now() == 4,
+        "faulting store advanced clock");
+  reset_cpu(state, *bus); state.clock.schedule(10, Signal::nmi);
+  check(run_generated(state, 40) && state.stop == Stop::stp && state.clock.nmi_pending() &&
+        state.clock.now() == 10, "STP incorrectly continued to interrupt boundary");
+  state.clock.schedule(20, Signal::irq_on);
+  bus->write8(0x7e1004, 73);
+  reset_cpu(state, *bus);
+  check(state.clock.now() == 0 && !state.clock.nmi_pending() && !state.clock.irq_asserted() &&
+        bus->read8(0x7e1004) == 73, "RESET clock/signals/RAM policy");
+  check(run_generated(state, 40), "RESET retained pending NMI");
+  state.clock.advance(10);
+  check(!state.clock.irq_asserted(), "RESET retained future event queue");
+  reset_cpu(state, *bus); state.clock.advance(std::numeric_limits<uint64_t>::max());
+  check(!run_generated(state, 40) && state.stop == Stop::contract && state.steps == 0 &&
+        state.a == 0 && state.pc == 0x8000, "clock overflow mutated instruction state");
+}
 int main() {
   using namespace recompiled;
   try {
@@ -22,6 +82,7 @@ int main() {
     const unsigned pcs[] = {0x8000,0x8001,0x8002,0x8004,0x8007,0x800a,0x800d,0x8011,0x8014,0x8010,0x8011};
     const unsigned acc[] = {0,0,0,0,0x1234,0x1234,0xbeef,0xbeef,0xbeef,0xbeef,0xbeef};
     const unsigned flags[] = {0x34,0x34,0x35,0x15,0x15,0x15,0x95,0x95,0x95,0x95,0x95};
+    event_tests(pcs, acc, flags);
     unsigned cases = 0;
     for (unsigned bank : {0u, 0x7eu, 0x7fu, 0x80u}) {
       for (unsigned budget = 0; budget <= 12; ++budget) {
@@ -38,7 +99,7 @@ int main() {
         check(state.pc == pcs[n] && state.a == acc[n] && state.p == flags[n] &&
               state.x == 0 && state.y == 0 && state.e == (n < 2) && state.steps == n &&
               state.s == ((n == 7 || n == 8) ? 0x1fd : 0x1ff) && state.db == bank &&
-              state.bus == &bus, "compiled system trace differs");
+              state.bus == &bus && state.clock.now() == n, "compiled system trace differs");
         check(stopped == (n == 10) && state.stop == (n == 10 ? Stop::stp : Stop::limit), "budget/stop mismatch");
         check(state.diagnostic.empty(), "unexpected diagnostic");
         const unsigned offset = bank == 0x7f ? 0x10000 : 0;

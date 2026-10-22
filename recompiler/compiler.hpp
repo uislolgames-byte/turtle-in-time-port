@@ -91,7 +91,7 @@ inline std::string compile(const std::vector<uint8_t>& code) {
   auto emit = [&](const Instruction& n) {
     const auto pc = n.pc, op = n.op, v = n.value, next = pc+n.length;
     const bool m = n.mode.m, x = n.mode.x;
-    out << "L" << pc << ":\n if(s.steps>=limit){s.stop=Stop::limit;return false;}\n";
+    out << "L" << pc << ":\n if(!begin_instruction(s,limit))return false;\n";
     if (op == 0xa9) out << "s.a=" << (m ? "(s.a&65280)|" : "") << v << ";nz(s,s.a," << m << ");\n";
     if (op == 0xa2 || op == 0xa0) out << "s." << (op==0xa2?'x':'y') << "=" << v << ";nz(s," << v << "," << x << ");\n";
     if (op == 0xe8 || op == 0xca) out << "s.x=(s.x+" << (op==0xe8?1:65535) << ")&" << (x?255:65535) << ";nz(s,s.x," << x << ");\n";
@@ -103,12 +103,12 @@ inline std::string compile(const std::vector<uint8_t>& code) {
     if (op == 0x8d) out << "if(!store(s,(s.db<<16)|" << v << ",s.a," << m << "))return false;\n";
     if (op == 0xad) out << "if(!load(s,(s.db<<16)|" << v << "," << m << "))return false;\n";
     if (op == 0x20) {
-      out << "if(!push_return(s," << next-1 << "))return false;s.pc=" << v << ";++s.steps;\n"
+      out << "if(!push_return(s," << next-1 << "))return false;s.pc=" << v << ";complete_instruction(s);\n"
           << "if(!leaf" << v << "(s,limit," << next << "))return false;goto L" << next << ";\n";
       return;
     }
-    if (op == 0x60) { out << "++s.steps;return pop_return(s,expected);\n"; return; }
-    out << "s.pc=" << (next & 65535) << ";++s.steps;\n";
+    if (op == 0x60) { out << "complete_instruction(s);return pop_return(s,expected);\n"; return; }
+    out << "s.pc=" << (next & 65535) << ";complete_instruction(s);\n";
     if (op == 0xdb) { out << "s.stop=Stop::stp;return true;\n"; return; }
     if (op == 0x80 || branch(op)) {
       const unsigned target = pc+n.length+(v < 128 ? int(v) : int(v)-256);

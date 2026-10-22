@@ -127,7 +127,7 @@ int main(int argc, char** argv) {
         const bool halted = recompiled::run_generated(actual,limit);
         if (std::tie(actual.a,actual.x,actual.y,actual.pc,actual.s,actual.p,actual.e,actual.steps,actual.stop,actual.ram) !=
             std::tie(expected.a,expected.x,expected.y,expected.pc,expected.s,expected.p,expected.e,expected.steps,expected.stop,expected.ram) ||
-            halted != (expected.stop == recompiled::Stop::stp)) {
+            halted != (expected.stop == recompiled::Stop::stp) || actual.clock.now() != expected.steps) {
           std::cerr << argv[1] << " flags=" << flags << " limit=" << limit << " actual PC=" << actual.pc
                     << " expected PC=" << expected.pc << " steps=" << actual.steps << '\n'; return 1;
         }

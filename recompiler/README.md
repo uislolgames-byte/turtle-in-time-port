@@ -23,7 +23,8 @@ O gerador recebe entrada/saída como argumentos, retorna 2 em erro de uso e 1
 em erro de arquivo ou tradução. Valida a entrada antes de abrir a saída.
 O runtime é `runtime.hpp`; o chamador cria `recompiled::State` e chama
 `run_generated(state, limit)`. O bool retornado indica STP. `state.stop` distingue
-limite, STP, memória fora do subconjunto, pilha/retorno inválido e contrato inicial.
+limite, STP, memória fora do subconjunto, pilha/retorno inválido, contrato inicial
+e interrupção solicitada cujo handler ainda não é suportado.
 Mantenha as pastas `recompiler/` e `system/` lado a lado ao distribuir os headers.
 O barramento opcional e `reset_cpu` estão descritos em [system/](../system/README.md).
 
@@ -48,6 +49,9 @@ O barramento opcional e `reset_cpu` estão descritos em [system/](../system/READ
   cruzando limite de banco são rejeitadas. O barramento é um subconjunto SNES.
 - O limite é verificado antes de cada instrução, inclusive JSR, RTS e loops.
   Uma chamada da função começa na entrada; não há retomada após parada parcial.
+- Um relógio lógico conta um tick por instrução contabilizada. Eventos sintéticos
+  NMI/IRQ são verificados entre instruções; pedidos aceitos param com diagnóstico,
+  sem executar handler ou RTI. Ainda não há temporização em ciclos do SNES.
 - A análise segue os dois caminhos de cada desvio condicional e os destinos de
   chamadas. Rejeita alvos fora da entrada, instruções truncadas, sobreposição e
   entradas no meio de operandos. Bytes inalcançáveis não são traduzidos.
@@ -62,6 +66,7 @@ de emulação, chamadas nativas/emulação, vários locais de
 chamada, retorno corrompido, desvios, loop infinito e erro de RAM.
 Cada um usa 64 combinações válidas de P e 40 limites (0..39): 20480 comparações.
 São comparados A/X/Y, P/E, PC, S, passos, parada e todos os 8192 bytes de RAM.
+Também é conferido o relógio lógico contra a contagem de passos da referência.
 Há resultados fixos escritos à mão para conferir os dois executores, além de
 casos inválidos do contrato inicial que devem parar antes de alterar a RAM.
 Os testes anteriores continuam no alvo `check` e no CI Windows/Linux.

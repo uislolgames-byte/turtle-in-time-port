@@ -4,9 +4,10 @@
 #include <string>
 #include <sstream>
 #include "../system/bus.hpp"
+#include "../system/events.hpp"
 
 namespace recompiled {
-enum class Stop { limit, stp, memory, stack, contract };
+enum class Stop { limit, stp, memory, stack, contract, interrupt };
 struct State {
   unsigned a = 0, x = 0, y = 0, pc = 0x8000, s = 0x1ff, p = 0x34, steps = 0;
   bool e = true;
@@ -16,7 +17,31 @@ struct State {
   system816::Bus* bus = nullptr;
   unsigned db = 0;
   std::string diagnostic;
+  system816::EventClock clock;
 };
+inline bool begin_instruction(State& s, unsigned limit) {
+  // Budget zero must leave scheduled events untouched.
+  if (s.steps >= limit) { s.stop = Stop::limit; return false; }
+  if (!s.clock.can_tick()) {
+    s.stop = Stop::contract; s.diagnostic = "Logical event clock exhausted"; return false;
+  }
+  s.clock.advance(0);
+  const bool nmi = s.clock.nmi_pending();
+  if (nmi || (s.clock.irq_asserted() && !(s.p & 4))) {
+    s.stop = Stop::interrupt;
+    std::ostringstream out;
+    out << (nmi ? "NMI" : "IRQ") << " handler execution unsupported at PC $"
+        << std::hex << s.pc << "; vector $"
+        << (nmi ? (s.e ? 0xfffa : 0xffea) : (s.e ? 0xfffe : 0xffee));
+    s.diagnostic = out.str();
+    return false;
+  }
+  return true;
+}
+inline void complete_instruction(State& s) {
+  ++s.steps;
+  s.clock.advance(1);
+}
 // Deterministic host reset policy. Preserves the bus's RAM and immutable ROM.
 // Only bank-zero entry $8000 is currently compiled. No hardware reset cycles.
 inline bool reset_cpu(State& s, system816::Bus& bus) {
