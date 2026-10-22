@@ -137,8 +137,8 @@ int main(int argc, char** argv) {
       std::cout << "  \"" << hx(e.from) << "\" -> \"" << hx(e.to)
                 << "\" [label=\"" << e.label << "\"];\n";
     for(const auto& e:calls)
-      std::cout << "  \\"" << hx(e.from) << "\\" -> \\"" << hx(e.to)
-                << "\\" [label=\\"" << e.label << "\\",style=dashed];\n";
+      std::cout << "  \"" << hx(e.from) << "\" -> \"" << hx(e.to)
+                << "\" [label=\"" << e.label << "\",style=dashed];\n";
     std::cout << "}\n";
     std::cerr << "Decoded=" << decoded << " Edges=" << edges.size()
               << " Unresolved=" << unresolved
