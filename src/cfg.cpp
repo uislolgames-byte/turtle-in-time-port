@@ -202,10 +202,25 @@ int main(int argc, char** argv) {
           default: return std::string("unknown");
         }
       };
-      std::cout << "address,origin,source,kind,status,rom_offset,first_bytes,first_opcode\n";
+      auto hint = [&](unsigned target) {
+        size_t offset;
+        try { offset = rom.lorom(target); }
+        catch (const std::out_of_range&) { return std::string("unmapped"); }
+        switch (rom.byte(offset)) {
+          case 0x78: return std::string("interrupt_mask");
+          case 0xC2: case 0xE2: case 0xFB:
+            return std::string("cpu_mode_change");
+          case 0x20: case 0x22: return std::string("starts_with_call");
+          case 0x4C: case 0x5C: return std::string("starts_with_jump");
+          case 0x60: case 0x6B: return std::string("starts_with_return");
+          case 0xDB: return std::string("starts_with_stop");
+          default: return std::string("unclassified");
+        }
+      };
+      std::cout << "address,origin,source,kind,status,rom_offset,first_bytes,first_opcode,entry_hint\n";
       for (const auto& v : vector_edges)
         std::cout << hx(v.to) << ",vector," << hx(v.from)
-                  << ",\""<< v.label << "\",entry_only," << hx(static_cast<unsigned>(rom.lorom(v.to))) << ",\"" << preview(v.to) << "\"," << first_opcode(v.to) << "\n";
+                  << ",\""<< v.label << "\",entry_only," << hx(static_cast<unsigned>(rom.lorom(v.to))) << ",\"" << preview(v.to) << "\"," << first_opcode(v.to) << "," << hint(v.to) << "\n";
       for (const auto& c : calls) {
         bool mapped = true;
         size_t offset = 0;
@@ -214,7 +229,7 @@ int main(int argc, char** argv) {
         std::cout << hx(c.to) << ",call," << hx(c.from) << ","
                   << c.label << "," << (mapped ? "candidate" : "unmapped")
                   << "," << (mapped ? hx(static_cast<unsigned>(offset)) : "")
-                  << ",\"" << preview(c.to) << "\"," << first_opcode(c.to) << "\n";
+                  << ",\"" << preview(c.to) << "\"," << first_opcode(c.to) << "," << hint(c.to) << "\n";
       }
       return 0;
     }
