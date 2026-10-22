@@ -51,4 +51,5 @@ jobs:
             build/tmnt_entrydump
             build/tmnt_callscan
             build/tmnt_callgraph
+            build/tmnt_cfg
           if-no-files-found: error
