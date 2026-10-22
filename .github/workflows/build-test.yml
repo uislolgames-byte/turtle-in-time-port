@@ -48,4 +48,5 @@ jobs:
             build/tmnt_flow
             build/tmnt_hwscan
             build/tmnt_vectors
+            build/tmnt_entrydump
           if-no-files-found: error
