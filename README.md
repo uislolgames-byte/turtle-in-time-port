@@ -9,6 +9,11 @@ Experimento de engenharia reversa do **Teenage Mutant Ninja Turtles IV: Turtles 
 - `tmnt_disasm`: scanner de bytes com nomes de poucos opcodes; **não é um desmontador completo**.
 - `tmnt_flow`: scanner linear conservador; **não calcula um grafo de fluxo real**.
 - `tmnt_hwscan`: localiza padrões candidatos de escrita na PPU; pode gerar falsos positivos.
+- `tmnt_vectors`: lê os vetores de interrupção nativos e de emulação do 65C816, mostrando endereços e offsets LoROM quando aplicável.
+
+## Investigar os pontos de entrada
+
+Execute `tmnt_vectors caminho/para/sua_rom.sfc` para listar RESET, NMI, IRQ e outros vetores. O vetor de RESET indica por onde o processador começa a executar após reinicializar; NMI costuma ser importante para atualização gráfica a cada quadro. **Não é necessário enviar a ROM ao GitHub**.
 
 ## Compilar e testar
 ```sh
