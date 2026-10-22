@@ -49,6 +49,12 @@ int main(int argc, char** argv) {
         case 0xEA: name = "NOP"; break;
         case 0x78: name = "SEI"; break;
         case 0xD8: name = "CLD"; break;
+        case 0x69: name = "ADC_IMM"; width = m8 ? 2 : 3; carry_known = false; break;
+        case 0xE9: name = "SBC_IMM"; width = m8 ? 2 : 3; carry_known = false; break;
+        case 0xC9: name = "CMP_IMM"; width = m8 ? 2 : 3; carry_known = false; break;
+        case 0x29: name = "AND_IMM"; width = m8 ? 2 : 3; break;
+        case 0x09: name = "ORA_IMM"; width = m8 ? 2 : 3; break;
+        case 0x49: name = "EOR_IMM"; width = m8 ? 2 : 3; break;
         case 0x8D: name = "STA_ABS"; width = 3; break;
         case 0x60: name = "RTS"; stop = true; break;
         case 0x6B: name = "RTL"; stop = true; break;
@@ -78,7 +84,9 @@ int main(int argc, char** argv) {
         if (operand & 0x10) x8 = true;
       }
       if (stop) break;
-      pc = (pc & 0xff0000u) | ((pc + width) & 0xffffu);
+      // A reset-prefix lift must not silently wrap to a new address or bank.
+      if ((pc & 0xffffu) + width > 0xffffu) break;
+      pc += width;
       if ((pc & 0xffffu) < 0x8000u) break;
     }
     return 0;

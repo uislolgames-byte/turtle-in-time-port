@@ -99,6 +99,29 @@ def main():
         assert '$008000,UNKNOWN' in unknown_ir, unknown_ir
         assert len(unknown_ir.splitlines()) == 2, unknown_ir
         check([lift, str(valid), '0'], 2)
+        # Arithmetic invalidates carry; bitwise operations preserve it.
+        arithmetic_rom = bytearray(rom)
+        arithmetic_rom[:6] = bytes([0x18, 0x69, 0x01, 0xFB, 0xEA, 0xDB])
+        arithmetic_path = root / 'lift-arithmetic.sfc'
+        arithmetic_path.write_bytes(arithmetic_rom)
+        arithmetic_ir = check([lift, str(arithmetic_path)], 0)
+        assert '$008001,ADC_IMM,$01,1,8,8' in arithmetic_ir, arithmetic_ir
+        assert '$008003,UNKNOWN' in arithmetic_ir, arithmetic_ir
+        bitwise_rom = bytearray(rom)
+        bitwise_rom[:6] = bytes([0x18, 0x29, 0x01, 0xFB, 0xEA, 0xDB])
+        bitwise_path = root / 'lift-bitwise.sfc'
+        bitwise_path.write_bytes(bitwise_rom)
+        bitwise_ir = check([lift, str(bitwise_path)], 0)
+        assert '$008003,XCE,,0,8,8' in bitwise_ir, bitwise_ir
+        # Do not wrap the program counter across the 16-bit bank boundary.
+        boundary_ir_rom = bytearray(rom)
+        boundary_ir_rom[0x7fff] = 0xEA
+        boundary_ir_rom[0x7ffc:0x7ffe] = bytes([0xFF, 0xFF])
+        boundary_ir_path = root / 'lift-bank-boundary.sfc'
+        boundary_ir_path.write_bytes(boundary_ir_rom)
+        boundary_ir = check([lift, str(boundary_ir_path)], 0)
+        assert '$00FFFF,NOP' in boundary_ir, boundary_ir
+        assert len(boundary_ir.splitlines()) == 2, boundary_ir
         listing = check([disasm, str(valid), '10'], 0)
         for opcode in ('CLC', 'XCE', 'REP #$30', 'LDX #$1DFF',
                        'SEP #$10', 'LDX #$7F', 'STA $2100', 'STP'):
