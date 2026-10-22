@@ -99,7 +99,7 @@ inline std::string compile(const std::vector<uint8_t>& code) {
     if (op == 0x38) out << "s.p|=1;\n";
     if (op == 0xc2) out << "s.p&=~" << v << "u;if(s.e)s.p|=48;\n";
     if (op == 0xe2) out << "s.p|=" << v << ";if(s.p&16){s.x&=255;s.y&=255;}\n";
-    if (op == 0xfb) out << "{bool old=s.e;s.e=(s.p&1)!=0;s.p=(s.p&254)|old;if(s.e){s.p|=48;s.x&=255;s.y&=255;s.s=256|(s.s&255);}}\n";
+    if (op == 0xfb) out << "{bool old=s.e;s.e=(s.p&1)!=0;s.p=(s.p&254)|unsigned(old);if(s.e){s.p|=48;s.x&=255;s.y&=255;s.s=256|(s.s&255);}}\n";
     if (op == 0x8d) out << "if(!store(s," << v << ",s.a," << m << "))return false;\n";
     if (op == 0xad) out << "if(!load(s," << v << "," << m << "))return false;\n";
     if (op == 0x20) {
