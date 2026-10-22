@@ -76,6 +76,23 @@ def main():
         for opcode in ('CLC', 'XCE', 'REP #$30', 'LDX #$1DFF',
                        'SEP #$10', 'LDX #$7F', 'STA $2100', 'STP'):
             assert opcode in listing, (opcode, listing)
+        # Branch targets must use signed displacements and CPU addresses.
+        branch_rom = bytearray(rom)
+        branch_rom[:7] = bytes([0x80, 0x02, 0xEA, 0xEA, 0xD0, 0xFA, 0xDB])
+        branch = root / 'branches.sfc'
+        branch.write_bytes(branch_rom)
+        branch_listing = check([disasm, str(branch), '7'], 0)
+        assert '$008000: BRA $008004' in branch_listing, branch_listing
+        assert '$008004: BNE $008000' in branch_listing, branch_listing
+
+        # REP must not change index width while the CPU is in emulation mode.
+        emu_rom = bytearray(rom)
+        emu_rom[:5] = bytes([0xC2, 0x10, 0xA2, 0x7F, 0xDB])
+        emu = root / 'emulation.sfc'
+        emu.write_bytes(emu_rom)
+        emu_listing = check([disasm, str(emu), '3'], 0)
+        assert '$008002: LDX #$7F' in emu_listing, emu_listing
+        assert '$008004: STP' in emu_listing, emu_listing
         check([flow, str(valid), '20'], 0, 'Decoded=')
         check([hwscan, str(valid), '5'], 0, 'Total candidate byte patterns: 1')
         check([vectors, str(valid)], 0, 'Emulation RESET: $8000 [ROM offset $000000]')
