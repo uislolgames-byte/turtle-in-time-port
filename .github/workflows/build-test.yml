@@ -14,8 +14,8 @@ jobs:
         os: [ubuntu-24.04, windows-2022]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: Show toolchain
@@ -31,14 +31,14 @@ jobs:
         run: ctest --test-dir build -C Release --output-on-failure --output-junit ctest-results.xml
       - name: Upload test report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: test-report-${{ matrix.os }}
           path: build/ctest-results.xml
           if-no-files-found: warn
       - name: Upload binaries
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: tmnt-tools-${{ matrix.os }}
           path: |
