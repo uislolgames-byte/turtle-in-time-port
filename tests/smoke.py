@@ -15,9 +15,9 @@ def check(args, code, expected=None):
 
 
 def main():
-    assert len(sys.argv) == 6, "Expected five tool executables from CMake"
-    rominfo, disasm, flow, hwscan, vectors = sys.argv[1:]
-    tools = (rominfo, disasm, flow, hwscan, vectors)
+    assert len(sys.argv) == 7, "Expected six tool executables from CMake"
+    rominfo, disasm, flow, hwscan, vectors, entrydump = sys.argv[1:]
+    tools = (rominfo, disasm, flow, hwscan, vectors, entrydump)
     with tempfile.TemporaryDirectory() as directory:
         root = pathlib.Path(directory)
         rom = bytearray(32768)
@@ -80,6 +80,8 @@ def main():
         check([hwscan, str(valid), '5'], 0, 'Total candidate byte patterns: 1')
         check([vectors, str(valid)], 0, 'Emulation RESET: $8000 [ROM offset $000000]')
         check([vectors, str(valid)], 0, 'Native NMI: $8020 [ROM offset $000020]')
+        check([entrydump, str(valid)], 0, 'RESET $8000: 18 FB C2 30 A2 FF 1D')
+        check([entrydump, str(headered)], 0, 'RESET $8000: 18 FB')
         for exe in (disasm, flow, hwscan):
             check([exe, str(valid), '0'], 2)
             check([exe, str(valid), '-1'], 2)
