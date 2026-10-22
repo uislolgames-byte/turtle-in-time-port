@@ -39,7 +39,7 @@ endif()
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(RECOMPILER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/recompiler")
 set(RECOMPILER_RUNNERS)
-foreach(fixture synthetic branches loop boundaries)
+foreach(fixture synthetic branches loop boundaries logic)
   add_custom_command(
     OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/${fixture}.cpp" "${CMAKE_CURRENT_BINARY_DIR}/${fixture}.bin"
     COMMAND "${Python3_EXECUTABLE}" "${RECOMPILER_DIR}/fixture.py"

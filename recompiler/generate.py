@@ -16,7 +16,7 @@ def generate(data: bytes) -> str:
     offset = 0
     while offset < len(data):
         op = data[offset]
-        size = 2 if op in (0xA9, 0xA2, 0xA0, 0x80) or op in BRANCHES else 3 if op == 0x8D else 1
+        size = 2 if op in (0xA9, 0xA2, 0xA0, 0x80, 0xC9, 0x29, 0x09, 0x49) or op in BRANCHES else 3 if op == 0x8D else 1
         if offset + size > len(data):
             raise ValueError(f"truncated instruction at {offset:#x}")
         operand = int.from_bytes(data[offset + 1:offset + size], 'little')
@@ -25,6 +25,10 @@ def generate(data: bytes) -> str:
             0xA9: f's.a = (s.a & 0xff00) | {operand}; nz(s, s.a & 255);',
             0xA2: f's.x = {operand}; nz(s, s.x);',
             0xA0: f's.y = {operand}; nz(s, s.y);',
+            0xC9: f's.p = (s.p & 0xfe) | ((s.a & 255) >= {operand}); nz(s, static_cast<uint8_t>((s.a & 255) - {operand}));',
+            0x29: f's.a = (s.a & 0xff00) | ((s.a & 255) & {operand}); nz(s, s.a & 255);',
+            0x09: f's.a = (s.a & 0xff00) | ((s.a & 255) | {operand}); nz(s, s.a & 255);',
+            0x49: f's.a = (s.a & 0xff00) | ((s.a & 255) ^ {operand}); nz(s, s.a & 255);',
             0xE8: 's.x = static_cast<uint8_t>(s.x + 1); nz(s, s.x);',
             0xCA: 's.x = static_cast<uint8_t>(s.x - 1); nz(s, s.x);',
             0x8D: f's.ram[{operand}] = static_cast<uint8_t>(s.a);',

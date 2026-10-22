@@ -6,9 +6,11 @@ Nenhum arquivo comercial é usado ou distribuído. Isso não executa o jogo.
 
 Contrato: código em banco zero a partir de $8000, E=1 e M=X=1,
 A de 8 bits com B preservado, X/Y de 8 bits. Suporta LDA/LDX/LDY imediato,
-STA absoluto, INX, DEX, CLC, SEC, NOP, BRA e os oito desvios condicionais
+STA absoluto, CMP/AND/ORA/EOR imediato, INX, DEX, CLC, SEC, NOP, BRA e os oito desvios condicionais
 (BPL/BMI/BVC/BVS/BCC/BCS/BNE/BEQ), além de STP. N/Z são atualizadas nas cargas
-e INX/DEX; as demais flags são preservadas, salvo carry em CLC/SEC.
+e INX/DEX, CMP e operações lógicas. CMP compara o byte baixo de A sem alterar A/B,
+atualiza C/N/Z e preserva V. AND/ORA/EOR preservam B e todas as flags exceto N/Z.
+O bit decimal não altera essas quatro instruções. CLC/SEC alteram apenas carry.
 STP encerra a função; não modelamos interrupções, ciclos ou retomada.
 RAM plana de 64 KiB começa zerada; o fluxo de código é separado e imutável.
 Não há LoROM, barramento SNES, PPU, APU, DMA, pilha, chamadas, modo nativo,
@@ -36,9 +38,11 @@ ctest --test-dir build -C Release --output-on-failure
 O CMake gera os bytes e o C++ no diretório de build. O CTest compara o executável
 compilado com um interpretador Python independente em cada prefixo do programa,
 com estados iniciais determinísticos variados, flags, B, wraparound, limites e
-toda a memória modificada. São quatro programas: linear, desvios condicionais
-com loop finito, loop infinito e deslocamentos extremos (-128/+127). Cada um é
+toda a memória modificada. São cinco programas: linear, desvios condicionais
+com loop finito, loop infinito, deslocamentos extremos (-128/+127) e comparação/lógica. Cada um é
 comparado em 300 limites de execução. Há ainda uma tabela explícita com todas
 as 16 combinações de N/V/Z/C para conferir os caminhos tomados, além das
-rejeições e do contrato de entrada. Loops infinitos param pelo limite de instruções.
+rejeições e do contrato de entrada. CMP #$80 é verificado para todos os 256 valores
+de A baixo com dois estados de flags (incluindo decimal/V), e há resultados
+explícitos intermediários de AND/ORA/EOR. Loops infinitos param pelo limite de instruções.
 O CI existente executa esses testes junto aos anteriores em Windows e Linux.

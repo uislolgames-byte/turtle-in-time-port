@@ -26,6 +26,16 @@ def interpret(data, initial, limit):
                 x = value
             else:
                 y = value
+        elif op in (0xC9, 0x29, 0x09, 0x49):
+            operand = data[pc - 0x8000]
+            pc += 1
+            low = a % 256
+            if op == 0xC9:
+                value = (low - operand) % 256
+                p = (p | 1) if low >= operand else (p & ~1)
+            else:
+                value = (low & operand) if op == 0x29 else (low | operand) if op == 0x09 else (low ^ operand)
+                a = a - low + value
         elif op == 0x8D:
             address = data[pc - 0x8000] + 256 * data[pc - 0x7fff]
             ram[address] = a % 256
@@ -66,7 +76,7 @@ class RecompilerTests(unittest.TestCase):
                      b'\xc2\x20\xdb', b'\xea', b'\xdb\xea', b'\xea' * 32768 + b'\xdb',
                      bytes.fromhex('80'), bytes.fromhex('80fd db'),
                      bytes.fromhex('8001 a901 db'), bytes.fromhex('d07f db'),
-                     bytes.fromhex('8001 db')):
+                     bytes.fromhex('8001 db'), b'\xc9', b'\x29', b'\x09', b'\x49'):
             with self.subTest(data=data[:4]), self.assertRaises(ValueError):
                 generate(data)
 
@@ -108,6 +118,32 @@ class RecompilerTests(unittest.TestCase):
                         6 if p & 2 else 7: 0x34}
             with self.subTest(p=p):
                 self.assertEqual(ram, expected)
+
+    @unittest.skipUnless(RUNNERS, 'compiled runners required')
+    def test_cmp_exhaustive_and_logic_flags(self):
+        for low in range(256):
+            for initial_p in (0x34, 0xff):
+                # The first instruction is CMP #$80; A (including B) is unchanged.
+                output = subprocess.check_output(
+                    [RUNNERS['logic'], str(0xab00 + low), '17', '23', str(initial_p), '1', '32768'],
+                    text=True, timeout=5)
+                p = initial_p & ~0x83
+                if low >= 128:
+                    p |= 1
+                if low == 128:
+                    p |= 2
+                if low < 128:
+                    p |= 128
+                with self.subTest(a=low, p=initial_p):
+                    self.assertEqual(list(map(int, output.split())),
+                                     [0xab00 + low, 17, 23, p, 0x8002, 1, 0])
+        # Explicit intermediate logical results; all flags except N/Z stay set.
+        for limit, a, p in ((2, 0xab00, 0x7e), (3, 0xab80, 0xfc), (4, 0xab7f, 0x7c)):
+            output = subprocess.check_output(
+                [RUNNERS['logic'], str(0xab00), '17', '23', '255', str(limit), '32768'],
+                text=True, timeout=5)
+            self.assertEqual(list(map(int, output.split())),
+                             [a, 17, 23, p, 0x8000 + 2 * limit, limit, 0])
 
     @unittest.skipUnless(RUNNERS, 'compiled runners required')
     def test_entry_contract(self):

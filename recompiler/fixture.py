@@ -11,9 +11,9 @@ def program():
     data.extend(bytes.fromhex('a900 8d0000 a980 8dffff a2ff e8 ca a000 18 38 ea'))
     rng = random.Random(816)
     for _ in range(120):
-        op = rng.choice([0xA9, 0xA2, 0xA0, 0x8D, 0xE8, 0xCA, 0x18, 0x38, 0xEA])
+        op = rng.choice([0xA9, 0xA2, 0xA0, 0x8D, 0xE8, 0xCA, 0x18, 0x38, 0xEA, 0xC9, 0x29, 0x09, 0x49])
         data.append(op)
-        if op in (0xA9, 0xA2, 0xA0):
+        if op in (0xA9, 0xA2, 0xA0, 0xC9, 0x29, 0x09, 0x49):
             data.append(rng.randrange(256))
         elif op == 0x8D:
             data.extend(rng.randrange(65536).to_bytes(2, 'little'))
@@ -36,7 +36,8 @@ def boundaries():
 
 
 PROGRAMS = {'synthetic': program, 'branches': branches,
-            'loop': lambda: bytes.fromhex('80fe db'), 'boundaries': boundaries}
+            'loop': lambda: bytes.fromhex('80fe db'), 'boundaries': boundaries,
+            'logic': lambda: bytes.fromhex('c980 294f 0980 49ff db')}
 
 
 if __name__ == '__main__':
