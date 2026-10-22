@@ -182,6 +182,18 @@ def main():
         width_path.write_bytes(width_rom)
         width_output = check([cfg, str(width_path), '512', '--hotspots'], 0)
         assert ',"SEP REP ?"' in width_output, width_output
+        # CLC; XCE proves native mode, so REP can establish 16-bit M.
+        native_rom = bytearray(calls_rom)
+        native_rom[0x1234:0x123b] = bytes([0x18, 0xFB, 0xC2, 0x20, 0xA9, 0x34, 0x12])
+        native_path = root / 'hotspot-native.sfc'
+        native_path.write_bytes(native_rom)
+        native_output = check([cfg, str(native_path), '512', '--hotspots'], 0)
+        assert ',"CLC XCE REP LDA"' in native_output, native_output
+        # XCE without a known carry must stop rather than assume native mode.
+        native_rom[0x1234:0x1238] = bytes([0xFB, 0xC2, 0x20, 0xA9])
+        native_path.write_bytes(native_rom)
+        native_output = check([cfg, str(native_path), '512', '--hotspots'], 0)
+        assert ',"?"' in native_output, native_output
         # Fixed-width store instructions can be decoded without knowing M/X.
         store_rom = bytearray(calls_rom)
         store_rom[0x1234:0x123b] = bytes([0x78, 0x8D, 0x00, 0x21, 0xE8, 0x60, 0xEA])

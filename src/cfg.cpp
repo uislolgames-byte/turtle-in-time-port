@@ -262,6 +262,9 @@ int main(int argc, char** argv) {
         if (mapped) {
           size_t pos = offset;
           bool m8_known = false, x8_known = false;
+          bool m16_known = false, x16_known = false;
+          bool carry_known = false, carry_value = false;
+          bool native_known = false;
           for (int i = 0; i < 4 && pos < rom.data.size() &&
                (pos / 0x8000) == (offset / 0x8000); ++i) {
             const unsigned op = rom.byte(pos);
@@ -271,6 +274,7 @@ int main(int argc, char** argv) {
             switch (op) {
               case 0x18: name = "CLC"; width = 1; break;
               case 0x38: name = "SEC"; width = 1; break;
+              case 0xFB: name = "XCE"; width = carry_known ? 1 : 0; break;
               case 0x78: name = "SEI"; width = 1; break;
               case 0xEA: name = "NOP"; width = 1; break;
               case 0x58: name = "CLI"; width = 1; break;
@@ -290,9 +294,9 @@ int main(int argc, char** argv) {
               case 0x8C: name = "STY"; width = 3; break;
               case 0xC2: name = "REP"; width = 2; break;
               case 0xE2: name = "SEP"; width = 2; break;
-              case 0xA9: name = "LDA"; width = m8_known ? 2 : 0; break;
-              case 0xA2: name = "LDX"; width = x8_known ? 2 : 0; break;
-              case 0xA0: name = "LDY"; width = x8_known ? 2 : 0; break;
+              case 0xA9: name = "LDA"; width = m8_known ? 2 : (m16_known ? 3 : 0); break;
+              case 0xA2: name = "LDX"; width = x8_known ? 2 : (x16_known ? 3 : 0); break;
+              case 0xA0: name = "LDY"; width = x8_known ? 2 : (x16_known ? 3 : 0); break;
               case 0x20: name = "JSR"; width = 3; stop = true; break;
               case 0x22: name = "JSL"; width = 4; stop = true; break;
               case 0x4C: name = "JMP"; width = 3; stop = true; break;
@@ -312,12 +316,24 @@ int main(int argc, char** argv) {
             sequence << name;
             if (op == 0xE2) {
               const unsigned mask = rom.byte(pos + 1);
-              if (mask & 0x20) m8_known = true;
-              if (mask & 0x10) x8_known = true;
+              if (mask & 0x20) { m8_known = true; m16_known = false; }
+              if (mask & 0x10) { x8_known = true; x16_known = false; }
             } else if (op == 0xC2) {
               const unsigned mask = rom.byte(pos + 1);
-              if (mask & 0x20) m8_known = false;
-              if (mask & 0x10) x8_known = false;
+              if (mask & 0x20) { m8_known = !native_known; m16_known = native_known; }
+              if (mask & 0x10) { x8_known = !native_known; x16_known = native_known; }
+            }
+            if (op == 0x18 || op == 0x38) {
+              carry_known = true;
+              carry_value = op == 0x38;
+            } else if (op == 0xFB) {
+              // XCE exchanges C and E. Only the new E is provable here.
+              native_known = !carry_value;
+              if (!native_known) {
+                m8_known = x8_known = true;
+                m16_known = x16_known = false;
+              }
+              carry_known = false;
             }
             pos += width;
             if (stop) break;
