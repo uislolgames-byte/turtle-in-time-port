@@ -23,10 +23,10 @@ def main():
         assert name not in paths, f"Duplicate tool entry: {name}"
         paths[name] = path
     required = ("rominfo", "disasm", "flow", "hwscan",
-                "vectors", "entrydump", "callscan")
+                "vectors", "entrydump", "callscan", "callgraph")
     missing = set(required) - paths.keys()
     assert not missing, f"Missing required tools: {sorted(missing)}"
-    rominfo, disasm, flow, hwscan, vectors, entrydump, callscan = (
+    rominfo, disasm, flow, hwscan, vectors, entrydump, callscan, callgraph = (
         paths[name] for name in required
     )
     tools = tuple(paths.values())
@@ -121,6 +121,12 @@ def main():
         assert '$008000: JSR $009234' in calls_output, calls_output
         assert '$008003: JSL $125678' in calls_output, calls_output
         assert 'Calls=2' in calls_output, calls_output
+        graph_output = check([callgraph, str(calls_path)], 0)
+        assert '"$008000" -> "$009234" [label="JSR"]' in graph_output, graph_output
+        assert '"$008003" -> "$125678" [label="JSL"]' in graph_output, graph_output
+        assert 'digraph TMNT_calls {' in graph_output, graph_output
+        check([callgraph, str(invalid)], 1, 'Reset vector')
+        check([callgraph, str(valid), '0'], 2)
         check([callscan, str(invalid)], 1, 'Reset vector')
         check([callscan, str(valid), '0'], 2)
         for exe in (disasm, flow, hwscan):
