@@ -46,16 +46,22 @@ int main(int argc, char** argv) {
         case 0x9c: mnemonic="STZ"; bytes=2; break;
         default: mnemonic="DB "+hex(op,2); break;
       }
-      if (pc+bytes>r.data.size()) throw std::runtime_error("Truncated instruction");
+      if (pc+bytes>r.data.size() || (start % 0x8000) + 1 + bytes > 0x8000)
+        throw std::runtime_error("Truncated instruction at ROM bank boundary");
       for (int n=0;n<bytes;++n) operand|=unsigned(r.byte(pc++))<<(8*n);
       if (op==0xc2) { if (operand&0x20) m8=false; if (operand&0x10) x8=false; }
       if (op==0xe2) { if (operand&0x20) m8=true; if (operand&0x10) x8=true; }
       // Unknown opcodes are displayed as DB and consume exactly one byte.
       // Width flags are only tracked linearly; XCE and control flow need state analysis.
-      std::cout << hex(unsigned(start+0x8000),6) << ": " << mnemonic;
-      if (bytes) std::cout << " #" << hex(operand,bytes*2);
+      const unsigned cpu = (unsigned(start / 0x8000) << 16) | (0x8000u + unsigned(start % 0x8000));
+      std::cout << hex(cpu,6) << ": " << mnemonic;
+      if (bytes) {
+        const bool immediate = op==0xc2 || op==0xe2 || op==0xa2 || op==0xa9;
+        std::cout << (immediate ? " #" : " ") << hex(operand,bytes*2);
+      }
       std::cout << "\n";
       ++i;
+      if ((pc % 0x8000) == 0) break; // linear scan must not jump to another ROM bank
     }
     return 0;
   } catch(const std::exception& e) { return error(e); }
