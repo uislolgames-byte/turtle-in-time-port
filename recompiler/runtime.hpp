@@ -8,6 +8,10 @@
 
 namespace recompiled {
 enum class Stop { limit, stp, memory, stack, contract, interrupt };
+struct InterruptContext {
+  bool active = false, e = true;
+  unsigned pc = 0, p = 0, s = 0, frame_s = 0;
+};
 struct State {
   unsigned a = 0, x = 0, y = 0, pc = 0x8000, s = 0x1ff, p = 0x34, steps = 0;
   bool e = true;
@@ -18,6 +22,7 @@ struct State {
   unsigned db = 0;
   std::string diagnostic;
   system816::EventClock clock;
+  InterruptContext interrupt;
 };
 inline bool begin_instruction(State& s, unsigned limit) {
   // Budget zero must leave scheduled events untouched.
@@ -27,7 +32,7 @@ inline bool begin_instruction(State& s, unsigned limit) {
   }
   s.clock.advance(0);
   const bool nmi = s.clock.nmi_pending();
-  if (nmi || (s.clock.irq_asserted() && !(s.p & 4))) {
+  if (!s.interrupt.active && (nmi || (s.clock.irq_asserted() && !(s.p & 4)))) {
     s.stop = Stop::interrupt;
     std::ostringstream out;
     out << (nmi ? "NMI" : "IRQ") << " handler execution unsupported at PC $"
@@ -158,6 +163,62 @@ inline bool pop_return(State& s, unsigned expected) {
   s.pc &= 65535;
   if (s.pc != expected) { s.stop = Stop::stack; return false; }
   return true;
+}
+inline unsigned stack_next(unsigned address, bool e, bool pull) {
+  return e ? (0x100 | ((address + (pull ? 1 : 255)) & 255))
+           : ((address + (pull ? 1 : 65535)) & 65535);
+}
+inline bool enter_interrupt(State& s, unsigned target, bool nmi) {
+  if (!s.bus || s.interrupt.active) {
+    s.stop = Stop::contract; s.diagnostic = "Interrupt requires a bus and no active handler"; return false;
+  }
+  try {
+    const unsigned vector = nmi ? (s.e ? 0xfffa : 0xffea) : (s.e ? 0xfffe : 0xffee);
+    const unsigned actual = s.bus->read8(vector) | (unsigned(s.bus->read8(vector+1)) << 8);
+    if (actual != target) {
+      s.stop = Stop::contract; s.diagnostic = "Interrupt vector differs from compiled target"; return false;
+    }
+    const unsigned count = s.e ? 3 : 4;
+    const std::array<unsigned,4> values = s.e
+      ? std::array<unsigned,4>{s.pc >> 8, s.pc & 255, s.p & ~16u, 0}
+      : std::array<unsigned,4>{0, s.pc >> 8, s.pc & 255, s.p};
+    std::array<unsigned,4> addresses{};
+    unsigned next = s.s;
+    for (unsigned i = 0; i < count; ++i) {
+      addresses[i] = next; validate_write(s, next); next = stack_next(next, s.e, false);
+    }
+    for (unsigned i = 0; i < count; ++i) write_byte(s, addresses[i], static_cast<uint8_t>(values[i]));
+    s.interrupt = {true, s.e, s.pc, s.p, s.s, next};
+    s.s = next; s.pc = target; s.p = (s.p | 4) & ~8u;
+    if (nmi) s.clock.acknowledge_nmi();
+    s.stop = Stop::limit; s.diagnostic.clear();
+    return true;
+  } catch (const system816::BusError& e) {
+    s.stop = Stop::stack; s.diagnostic = e.what(); return false;
+  }
+}
+inline bool return_interrupt(State& s) {
+  const auto saved = s.interrupt;
+  if (!saved.active || s.e != saved.e || s.s != saved.frame_s) {
+    s.stop = Stop::stack; s.diagnostic = "RTI outside handler or changed stack/mode"; return false;
+  }
+  try {
+    unsigned cursor = s.s;
+    const auto pull = [&]() { cursor = stack_next(cursor, s.e, true); return unsigned(read_byte(s, cursor)); };
+    unsigned p = pull();
+    const unsigned low = pull(), high = pull();
+    const unsigned bank = s.e ? 0 : pull();
+    if (s.e) p |= 48;
+    if (p != saved.p || (low | (high << 8)) != saved.pc || bank != 0 || cursor != saved.s) {
+      s.stop = Stop::stack; s.diagnostic = "RTI frame differs from static continuation"; return false;
+    }
+    s.s = cursor; s.p = p; s.pc = saved.pc;
+    if (s.p & 16) { s.x &= 255; s.y &= 255; }
+    s.interrupt = InterruptContext{};
+    return true;
+  } catch (const system816::BusError& e) {
+    s.stop = Stop::stack; s.diagnostic = e.what(); return false;
+  }
 }
 bool run_generated(State& s, unsigned limit);
 }

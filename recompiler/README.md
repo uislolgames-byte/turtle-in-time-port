@@ -5,8 +5,9 @@ com entrada em $8000 no banco zero. A saída contém operações C++ literais,
 saltos diretos e funções para subrotinas. O executável gerado não contém os
 array de instruções nem um interpretador de opcodes. Com barramento conectado,
 constantes literais conferem a identidade do código antes de executar. Este é um primeiro subconjunto;
-não recompila o jogo; o gerador não lê cabeçalho/vetores de ROM SNES e não implementa
-hardware, ciclos ou interrupções. Não há gerador Python neste caminho.
+não recompila o jogo; o modo padrão não lê cabeçalho/vetores de ROM SNES.
+A opção `--interrupts` usa vetores de uma imagem sintética para rotinas restritas.
+Não implementa temporização do hardware. Não há gerador Python neste caminho.
 
 ## Uso
 
@@ -16,6 +17,8 @@ cmake --build build --config Release --target check --parallel
 # Windows: build/Release/tmnt_recompile.exe
 # Linux:
 build/tmnt_recompile synthetic.bin generated.cpp
+# Opcional: imagem sintética de 32 KiB com vetores/handlers originais
+build/tmnt_recompile synthetic-image.bin generated.cpp --interrupts
 # Compile generated.cpp junto com um chamador e inclua recompiler/ no include path.
 ```
 
@@ -56,7 +59,9 @@ O barramento opcional e `reset_cpu` estão descritos em [system/](../system/READ
   Uma chamada da função começa na entrada; não há retomada após parada parcial.
 - Um relógio lógico conta um tick por instrução contabilizada. Eventos sintéticos
   NMI/IRQ são verificados entre instruções; pedidos aceitos param com diagnóstico,
-  sem executar handler ou RTI. Ainda não há temporização em ciclos do SNES.
+  por padrão. Com `--interrupts`, handlers lineares são recompilados e retornam
+  por RTI validando a pilha. Entrada de interrupção também conta um tick lógico.
+  Novos pedidos durante handlers são adiados. Ainda não há ciclos do SNES.
 - A análise segue os dois caminhos de cada desvio condicional e os destinos de
   chamadas. Rejeita alvos fora da entrada, instruções truncadas, sobreposição e
   entradas no meio de operandos. Bytes inalcançáveis não são traduzidos.
@@ -79,6 +84,8 @@ O teste `recompiled_system` acrescenta integração com ROM/RAM, bancos, RESET,
 identidade do código e falhas, sem substituir as 20480 comparações anteriores.
 Seis testes `recompiled_move_*` compilam e executam MVN/MVP contra uma referência
 independente, incluindo M8/X8, M8/X16, M16/X16 e um bloco de 65536 bytes.
+Cinco testes `recompiled_irq_*` acrescentam 2200 comparações de entrada de NMI/IRQ,
+execução de handlers, RTI e continuidade, sem substituir os testes anteriores.
 
 O Marco 2 só pode ser marcado concluído após validação e integração desta etapa
 à main, conforme o roteiro de marcos. Ter o diagnóstico do Marco 1 não prova

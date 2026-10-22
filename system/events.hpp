@@ -14,6 +14,7 @@ public:
   uint64_t now() const { return now_; }
   bool nmi_pending() const { return nmi_; }
   bool irq_asserted() const { return irq_; }
+  void acknowledge_nmi() { nmi_ = false; }
   bool can_tick() const { return now_ != std::numeric_limits<uint64_t>::max(); }
   void schedule(uint64_t at, Signal signal) {
     if (at < now_) throw std::invalid_argument("Cannot schedule an event in the past");
