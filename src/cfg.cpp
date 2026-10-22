@@ -43,6 +43,7 @@ int main(int argc, char** argv) {
     std::set<State> seen;
     std::set<Edge> edges;
     std::set<Edge> calls;
+    std::set<unsigned> call_targets;
     std::set<unsigned> returns;
     std::set<unsigned> indirect_jumps;
     std::set<unsigned> stops;
@@ -152,6 +153,7 @@ int main(int argc, char** argv) {
       } else if(op==0x20 || op==0x22) {
         const unsigned target=op==0x20 ? ((from&0xff0000u)|operand) : operand;
         calls.insert({from,target,op==0x20?"JSR":"JSL"});
+        call_targets.insert(target);
         // The callee is not traversed: entry state and return state are unproven.
         enqueue(next,"return-assumed");
       } else if(op==0x4c || op==0x5c) {
@@ -177,6 +179,9 @@ int main(int argc, char** argv) {
     for(unsigned pc:stops)
       std::cout << "  \"" << hx(pc) << "\" [shape=octagon,label=\""
                 << hx(pc) << " stop/trap\"];\n";
+    // Direct call destinations are candidate routine entries, not proven code.
+    for (unsigned target : call_targets)
+      std::cout << "  \"" << hx(target) << "\" [shape=ellipse,style=dashed];\n";
     for (unsigned target : vector_targets)
       std::cout << "  \"" << hx(target) << "\" [peripheries=2];\n";
     for (const auto& v : vector_edges)
