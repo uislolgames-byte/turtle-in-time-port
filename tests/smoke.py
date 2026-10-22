@@ -148,6 +148,15 @@ def main():
             indirect_output = check([cfg, str(indirect_path)], 0)
             assert '"$008000" [shape=diamond,label="$008000 indirect jump"]' in indirect_output, indirect_output
             assert '"$008000" -> ' not in indirect_output, indirect_output
+        # STP and BRK are terminal trap/stop nodes in the partial CFG.
+        for opcode in (0xDB, 0x00):
+            stop_rom = bytearray(rom)
+            stop_rom[:3] = bytes([opcode, 0xEA, 0xEA])
+            stop_path = root / f'stop-{opcode:02x}.sfc'
+            stop_path.write_bytes(stop_rom)
+            stop_output = check([cfg, str(stop_path)], 0)
+            assert '"$008000" [shape=octagon,label="$008000 stop/trap"]' in stop_output, stop_output
+            assert '"$008000" -> ' not in stop_output, stop_output
         cfg_output = check([cfg, str(branch)], 0)
         assert '"$008000" -> "$008004" [label="BRA"]' in cfg_output, cfg_output
         assert '"$008004" -> "$008000" [label="BNE"]' in cfg_output, cfg_output
