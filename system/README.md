@@ -90,11 +90,14 @@ checks masked/unmasked IRQ, priority, STP, budget zero and reset of future event
 Six `recompiled_move_*` tests add 99 generated/reference comparisons, each checking
 all WRAM bytes, registers, flags, stops and ticks, plus hand-specified final states,
 NMI between bytes and fault/overlap checks. Five `recompiled_irq_*` tests add
-2,200 comparisons against an independent byte interpreter for handler entry,
-execution and RTI, including every WRAM byte and pending signals. `system_dma`
+4,400 comparisons against an independent byte interpreter for handler entry,
+execution and RTI, including every WRAM byte, pending signals and nominal cycles,
+with both step-based and cycle-based event schedules. `system_dma`
 adds 12 byte-array reference copies, a 65,536-byte copy, port/bank checks and
 negative cases. Two `recompiled_dma_*` tests add 16 fixed execution traces and
-full-WRAM checks through generated register writes. Total: 33 tests.
+full-WRAM checks through generated register writes. Two page-crossing fixtures
+extend the core suite to 25,600 compiled/reference comparisons, including cycles.
+Total: 35 tests.
 
 ## Optional channel-0 DMA to the WRAM data port
 
@@ -166,10 +169,51 @@ Reference for instruction behavior: upstream bsnes
 [block-move implementation](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-other.cpp).
 No upstream source code was copied.
 
-## Logical event timeline (preparation for timing/interrupt integration)
+## CPU cycles and event timelines
+
+`State::cycle_clock.now()` counts nominal W65C816 instruction cycles separately
+from instruction steps and DMA master clocks. The generator emits literal costs
+for the supported subset and conditional costs for branches. Based on the
+[W65C816S datasheet](https://www.westerndesigncenter.com/wdc/documentation/w65c816s.pdf),
+the current costs are:
+
+| Operation | CPU cycles |
+| --- | --- |
+| NOP, CLC/SEC, XCE, INX/DEX | 2 |
+| REP/SEP, STP entry | 3 |
+| Immediate LDA/LDX/LDY | 2 (8-bit), 3 (16-bit) |
+| Absolute LDA/STA | 4 (8-bit), 5 (16-bit) |
+| JSR/RTS | 6 |
+| MVN/MVP | 7 per transferred byte |
+| Conditional branch | 2 + 1 if taken + 1 for taken emulation page crossing |
+| BRA | 3 + 1 for emulation page crossing |
+| NMI/IRQ entry | 7 emulation, 8 native |
+| RTI | 6 emulation, 7 native |
+
+`cycle_clock.schedule(cycle, signal)` schedules requests in CPU-cycle units.
+Signals due during an instruction latch at its completion; service occurs at
+the next instruction boundary. No mid-instruction polling or hardware IRQ delay
+is modeled. Logical and cycle NMI requests coalesce and are acknowledged together
+on entry; independent IRQ levels are ORed, so releasing one source does not
+release the other. Both clocks/queues reset with `reset_cpu`.
+
+Cycle capacity is checked before register/memory effects, including a separate
+reservation for interrupt entry before pushing its frame or acknowledging NMI.
+Rejected loads/stores/JSR/RTI do not add cycles; RTS retains its historical
+count-before-return-validation policy. Unsupported/faulting accesses are
+diagnostic stops, not hardware fault timing. STP counts its entry but there is
+no accumulation of idle time after it stops.
+
+These are **nominal CPU cycles**, not SNES master clocks or seconds. DMA counters
+remain separate: variable memory-access speeds, CPU/DMA arbitration, refresh,
+PPU/APU synchronization and a shared master-clock scheduler are still absent.
+Generated C++ must be regenerated with this version of the tool/runtime, since
+the begin/complete helper calls now include cycle costs.
+
+### Existing logical timeline
 
 `State::clock` is a deterministic host timeline: **one tick per counted
-instruction**, not 65C816 cycles, SNES master clocks, scanlines, frames or seconds.
+instruction**, independent of `cycle_clock`, master clocks, frames or seconds.
 The generator calls `begin_instruction` at every main/leaf instruction boundary
 and `complete_instruction` on its existing step-count paths. Faulting loads,
 stores and JSR do not tick; RTS retains its previous count-before-return-check

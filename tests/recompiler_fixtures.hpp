@@ -4,6 +4,17 @@
 #include <vector>
 #include <cstdint>
 inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
+  if (name == "timing_emulation" || name == "timing_native") {
+    std::vector<uint8_t> code(0x103,0xea);
+    if (name == "timing_emulation") {
+      code[0] = 0x80; code[1] = 0x7d; code[0x7f] = 0x80; code[0x80] = 0x7f;
+    } else {
+      code[0] = 0x18; code[1] = 0xfb; code[2] = 0xc2; code[3] = 0x30;
+      code[4] = 0x80; code[5] = 0x7b; code[0x81] = 0x80; code[0x82] = 0x7d;
+    }
+    code[0xfe] = 0xdb; code[0x100] = 0xd0; code[0x101] = 0xfc; code[0x102] = 0xdb;
+    return code;
+  }
   if (name == "dma_wram" || name == "dma_fault") {
     std::vector<uint8_t> code;
     const auto write = [&](unsigned address, unsigned value) {

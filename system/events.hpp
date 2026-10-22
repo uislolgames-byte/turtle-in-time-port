@@ -8,7 +8,7 @@
 namespace system816 {
 enum class Signal { nmi, irq_on, irq_off };
 
-// Deterministic host timeline, not CPU cycles, scanlines or wall-clock time.
+// Ordered signal timeline. Its owner defines the units: steps or CPU cycles.
 class EventClock {
 public:
   uint64_t now() const { return now_; }
@@ -16,6 +16,7 @@ public:
   bool irq_asserted() const { return irq_; }
   void acknowledge_nmi() { nmi_ = false; }
   bool can_tick() const { return now_ != std::numeric_limits<uint64_t>::max(); }
+  bool can_advance(uint64_t ticks) const { return ticks <= std::numeric_limits<uint64_t>::max() - now_; }
   void schedule(uint64_t at, Signal signal) {
     if (at < now_) throw std::invalid_argument("Cannot schedule an event in the past");
     queue_[at].push_back(signal);

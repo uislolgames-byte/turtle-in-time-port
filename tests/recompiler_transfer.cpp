@@ -11,6 +11,7 @@ static void check(bool ok, const char* message) {
 struct Reference {
   unsigned a = 0x100, x = 0, y = 0, p = 0x34, pc = 0x8000, db = 0, steps = 0;
   bool e = true, stopped = false;
+  uint64_t cycles = 0;
   std::vector<uint8_t> ram = std::vector<uint8_t>(0x20000, 0xcc);
 };
 static Reference initial() {
@@ -27,6 +28,11 @@ static Reference reference(const std::vector<uint8_t>& code, const std::vector<u
   };
   while (r.steps < budget && !r.stopped) {
     unsigned pos = r.pc - 0x8000, op = code.at(pos), length = 1;
+    unsigned cycles = 2;
+    if (op == 0xc2 || op == 0xdb) cycles = 3;
+    if (op == 0xa9) cycles = (r.p & 32) ? 2 : 3;
+    if (op == 0xa2 || op == 0xa0) cycles = (r.p & 16) ? 2 : 3;
+    if (op == 0x44 || op == 0x54) cycles = 7;
     if (op == 0xc2) length = 2;
     if (op == 0xa9) length = (r.p & 32) ? 2 : 3;
     if (op == 0xa2 || op == 0xa0) length = (r.p & 16) ? 2 : 3;
@@ -64,7 +70,7 @@ static Reference reference(const std::vector<uint8_t>& code, const std::vector<u
       case 0xdb: r.stopped = true; break;
       default: throw std::runtime_error("reference opcode not implemented");
     }
-    r.pc = next; ++r.steps;
+    r.pc = next; ++r.steps; r.cycles += cycles;
   }
   return r;
 }
@@ -123,7 +129,7 @@ int main(int argc, char** argv) {
       const bool result = run_generated(state, budget);
       check(std::tie(state.a,state.x,state.y,state.p,state.pc,state.db,state.e,state.steps) ==
             std::tie(expected.a,expected.x,expected.y,expected.p,expected.pc,expected.db,expected.e,expected.steps) &&
-            state.s == 0x1ff && state.clock.now() == expected.steps && state.diagnostic.empty() &&
+            state.s == 0x1ff && state.clock.now() == expected.steps && state.cycle_clock.now() == expected.cycles && state.diagnostic.empty() &&
             result == expected.stopped && state.stop == (result ? Stop::stp : Stop::limit), "compiled/reference transfer state differs");
       for (unsigned i = 0; i < expected.ram.size(); ++i)
         check(bus->read8(0x7e0000 + i) == expected.ram[i], "compiled/reference WRAM differs");
@@ -142,7 +148,7 @@ int main(int argc, char** argv) {
     if (name == "move_mixed") check(final.x == 0x100 && final.y == 0x100 && final.p == 0xa5 &&
       final.steps == 265 && !final.e, "mixed M8/X16 golden state");
     if (name == "move_full") {
-      check(final.x == 0 && final.y == 0 && final.steps == 65543 && final.p == 7, "65536-byte golden state");
+      check(final.x == 0 && final.y == 0 && final.steps == 65543 && final.p == 7 && final.cycles == 458771, "65536-byte golden state");
       for (unsigned i = 0; i < 65536; ++i) check(final.ram[i] == seed.ram[65536+i], "full bank copy mismatch");
     }
     // Stop between repeated bytes, preserving the MVN/MVP PC and partial copy.

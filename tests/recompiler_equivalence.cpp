@@ -10,6 +10,15 @@ static recompiled::State reference(const std::vector<uint8_t>& code, recompiled:
   while (s.steps < limit) {
     const unsigned op = code.at(s.pc-0x8000);
     const bool m = (s.p & 32) != 0, x = (s.p & 16) != 0;
+    const bool emulation = s.e;
+    const unsigned before = s.pc;
+    unsigned cycles = 2;
+    if (op == 0xc2 || op == 0xe2 || op == 0xdb) cycles = 3;
+    if (op == 0xa9) cycles = m ? 2 : 3;
+    if (op == 0xa2 || op == 0xa0) cycles = x ? 2 : 3;
+    if (op == 0xad || op == 0x8d) cycles = m ? 4 : 5;
+    if (op == 0x20 || op == 0x60) cycles = 6;
+    bool branch_taken = false;
     unsigned length = 1;
     if (op == 0xa9) length = m ? 2 : 3;
     else if (op == 0xa2 || op == 0xa0) length = x ? 2 : 3;
@@ -60,7 +69,7 @@ static recompiled::State reference(const std::vector<uint8_t>& code, recompiled:
         s.s = s.e ? 256+(s.s+1)%256 : (s.s+1)%65536;
         next = (low+256*unsigned(s.ram.at(s.s))+1)%65536; break;
       }
-      case 0x80: next = unsigned(int(next)+(operand < 128 ? int(operand) : int(operand)-256)); break;
+      case 0x80: branch_taken = true; next = unsigned(int(next)+(operand < 128 ? int(operand) : int(operand)-256)); break;
       case 0xea: case 0xdb: break;
       default: {
         bool taken = false;
@@ -72,10 +81,13 @@ static recompiled::State reference(const std::vector<uint8_t>& code, recompiled:
           default: throw std::runtime_error("reference opcode unsupported");
         }
         if (taken) next = unsigned(int(next)+(operand < 128 ? int(operand) : int(operand)-256));
+        branch_taken = taken;
       }
     }
     if (update_nz) s.p = (s.p & ~130u) | (value == 0 ? 2 : 0) | (value >= (1u << (bits-1)) ? 128 : 0);
-    s.pc = next; ++s.steps;
+    if (op == 0x80 || (op & 31) == 16)
+      cycles = 2 + unsigned(branch_taken) + unsigned(branch_taken && emulation && (before+2)/256 != next/256);
+    s.pc = next; ++s.steps; s.cycle_clock.advance(cycles);
     if (op == 0x60) {
       if (returns.empty() || next != returns.back()) { s.stop = Stop::stack; return s; }
       returns.pop_back();
@@ -112,6 +124,10 @@ int main(int argc, char** argv) {
       if (name == "branches") ok = state.steps == 13 && state.pc == 0x8019 && state.stop == recompiled::Stop::stp;
       if (name == "memory") ok = state.steps == 3 && state.pc == 0x8008 && state.a == 0x80 &&
         state.ram[0x1fff] == 0x80 && state.stop == recompiled::Stop::memory;
+      if (name == "timing_emulation") ok = state.steps == 4 && state.pc == 0x80ff && state.e &&
+        state.cycle_clock.now() == 14 && state.stop == recompiled::Stop::stp;
+      if (name == "timing_native") ok = state.steps == 7 && state.pc == 0x80ff && !state.e &&
+        state.cycle_clock.now() == 19 && state.stop == recompiled::Stop::stp;
       if (!ok) throw std::runtime_error("hand-specified state mismatch: " + name);
     };
     verify(golden); verify(oracle);
@@ -127,7 +143,8 @@ int main(int argc, char** argv) {
         const bool halted = recompiled::run_generated(actual,limit);
         if (std::tie(actual.a,actual.x,actual.y,actual.pc,actual.s,actual.p,actual.e,actual.steps,actual.stop,actual.ram) !=
             std::tie(expected.a,expected.x,expected.y,expected.pc,expected.s,expected.p,expected.e,expected.steps,expected.stop,expected.ram) ||
-            halted != (expected.stop == recompiled::Stop::stp) || actual.clock.now() != expected.steps) {
+            halted != (expected.stop == recompiled::Stop::stp) || actual.clock.now() != expected.steps ||
+            actual.cycle_clock.now() != expected.cycle_clock.now()) {
           std::cerr << argv[1] << " flags=" << flags << " limit=" << limit << " actual PC=" << actual.pc
                     << " expected PC=" << expected.pc << " steps=" << actual.steps << '\n'; return 1;
         }

@@ -74,6 +74,21 @@ static void event_tests(const unsigned* pcs, const unsigned* acc, const unsigned
   reset_cpu(state, *bus); state.clock.advance(std::numeric_limits<uint64_t>::max());
   check(!run_generated(state, 40) && state.stop == Stop::contract && state.steps == 0 &&
         state.a == 0 && state.pc == 0x8000, "clock overflow mutated instruction state");
+  reset_cpu(state, *bus); state.cycle_clock.advance(std::numeric_limits<uint64_t>::max()-1);
+  check(!run_generated(state,40) && state.stop == Stop::contract && state.steps == 0 && state.a == 0 &&
+        state.pc == 0x8000 && state.p == 0x34 && state.clock.now() == 0,"cycle overflow mutated instruction state");
+  reset_cpu(state, *bus); state.cycle_clock.schedule(1,Signal::nmi);
+  check(!run_generated(state,40) && state.stop == Stop::interrupt && state.steps == 1 &&
+        state.pc == 0x8001 && state.cycle_clock.now() == 2 && state.cycle_clock.nmi_pending(),
+        "cycle event did not latch at instruction boundary");
+  reset_cpu(state, *bus); state.p = 0x30;
+  state.clock.schedule(0,Signal::irq_on); state.cycle_clock.schedule(0,Signal::nmi);
+  check(!run_generated(state,40) && state.diagnostic.find("NMI") != std::string::npos,
+        "cross-clock NMI priority lost");
+  reset_cpu(state, *bus); state.p = 0x30;
+  state.clock.schedule(0,Signal::irq_off); state.cycle_clock.schedule(0,Signal::irq_on);
+  check(!run_generated(state,40) && state.diagnostic.find("IRQ") != std::string::npos,
+        "one clock cleared another clock's IRQ level");
 }
 int main() {
   using namespace recompiled;
@@ -82,6 +97,7 @@ int main() {
     const unsigned pcs[] = {0x8000,0x8001,0x8002,0x8004,0x8007,0x800a,0x800d,0x8011,0x8014,0x8010,0x8011};
     const unsigned acc[] = {0,0,0,0,0x1234,0x1234,0xbeef,0xbeef,0xbeef,0xbeef,0xbeef};
     const unsigned flags[] = {0x34,0x34,0x35,0x15,0x15,0x15,0x95,0x95,0x95,0x95,0x95};
+    const unsigned cycles[] = {0,2,4,7,10,15,20,26,31,37,40};
     event_tests(pcs, acc, flags);
     unsigned cases = 0;
     for (unsigned bank : {0u, 0x7eu, 0x7fu, 0x80u}) {
@@ -99,7 +115,7 @@ int main() {
         check(state.pc == pcs[n] && state.a == acc[n] && state.p == flags[n] &&
               state.x == 0 && state.y == 0 && state.e == (n < 2) && state.steps == n &&
               state.s == ((n == 7 || n == 8) ? 0x1fd : 0x1ff) && state.db == bank &&
-              state.bus == &bus && state.clock.now() == n, "compiled system trace differs");
+              state.bus == &bus && state.clock.now() == n && state.cycle_clock.now() == cycles[n], "compiled system trace differs");
         check(stopped == (n == 10) && state.stop == (n == 10 ? Stop::stp : Stop::limit), "budget/stop mismatch");
         check(state.diagnostic.empty(), "unexpected diagnostic");
         const unsigned offset = bank == 0x7f ? 0x10000 : 0;
@@ -120,7 +136,7 @@ int main() {
           check(reset_cpu(state, bus), "warm RESET failed");
           check(state.a == 0 && state.x == 0 && state.y == 0 && state.db == 0 &&
                 state.pc == 0x8000 && state.s == 0x1ff && state.p == 0x34 && state.e &&
-                state.steps == 0 && state.stop == Stop::limit && state.diagnostic.empty(), "RESET policy mismatch");
+                state.steps == 0 && state.stop == Stop::limit && state.diagnostic.empty() && state.cycle_clock.now() == 0, "RESET policy mismatch");
           check(bus.read8(0x7e0000 + offset + 0x1000) == 0x34 && bus.read8(0x7e01fe) == 0x0f,
                 "warm RESET erased WRAM");
           bus.clear_ram();

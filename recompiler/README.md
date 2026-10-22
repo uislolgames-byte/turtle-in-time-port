@@ -62,6 +62,11 @@ O barramento opcional e `reset_cpu` estão descritos em [system/](../system/READ
   por padrão. Com `--interrupts`, handlers lineares são recompilados e retornam
   por RTI validando a pilha. Entrada de interrupção também conta um tick lógico.
   Novos pedidos durante handlers são adiados. Ainda não há ciclos do SNES.
+- `State::cycle_clock` conta ciclos nominais da CPU separadamente dos passos e
+  dos clocks DMA. Considera larguras, desvios tomados, cruzamento de página em
+  emulação, chamadas e interrupções. Também permite agendar NMI/IRQ por ciclo.
+  Ainda não há conversão/sincronização em master clocks SNES. Após atualizar
+  runtime/ferramenta, gere novamente o C++ para usar as chamadas com custo de ciclos.
 - A análise segue os dois caminhos de cada desvio condicional e os destinos de
   chamadas. Rejeita alvos fora da entrada, instruções truncadas, sobreposição e
   entradas no meio de operandos. Bytes inalcançáveis não são traduzidos.
@@ -84,11 +89,14 @@ O teste `recompiled_system` acrescenta integração com ROM/RAM, bancos, RESET,
 identidade do código e falhas, sem substituir as 20480 comparações anteriores.
 Seis testes `recompiled_move_*` compilam e executam MVN/MVP contra uma referência
 independente, incluindo M8/X8, M8/X16, M16/X16 e um bloco de 65536 bytes.
-Cinco testes `recompiled_irq_*` acrescentam 2200 comparações de entrada de NMI/IRQ,
+Cinco testes `recompiled_irq_*` executam 4400 comparações de entrada de NMI/IRQ,
 execução de handlers, RTI e continuidade, sem substituir os testes anteriores.
 Dois testes `recompiled_dma_*` configuram a porta WRAM e o canal 0 pelos registradores
 a partir do C++ gerado, com 16 rastros fixos, falhas e contagem parcial de clocks DMA.
 Esse MMIO exige `Bus(image, true)` e acessos de 8 bits; o modo padrão é preservado.
+Dois testes `recompiled_timing_*` acrescentam 5120 comparações, cobrindo desvios
+tomados/não tomados e páginas cruzadas em emulação/nativo. As referências
+independentes também conferem os ciclos das instruções/transferências/interrupções.
 
 O Marco 2 só pode ser marcado concluído após validação e integração desta etapa
 à main, conforme o roteiro de marcos. Ter o diagnóstico do Marco 1 não prova

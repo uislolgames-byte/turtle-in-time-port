@@ -13,17 +13,18 @@ struct Event { unsigned tick; Signal signal; };
 struct Reference {
   unsigned a = 0x1200, x = 255, y = 128, pc = 0x8000, s = 0x1ff, p = 0x34, db = 0, steps = 0;
   bool e = true, active = false, nmi = false, irq = false;
+  uint64_t cycles = 0;
   recompiled::Stop stop = recompiled::Stop::limit;
   unsigned return_pc = 0, return_p = 0, return_s = 0;
   std::vector<uint8_t> ram = std::vector<uint8_t>(0x20000, 0);
 };
 // Independent byte interpreter with direct reference arrays (no runtime helpers).
-static Reference reference(const std::vector<uint8_t>& image, std::vector<Event> events, unsigned p, unsigned limit) {
+static Reference reference(const std::vector<uint8_t>& image, std::vector<Event> events, unsigned p, unsigned limit, bool cycle_events) {
   Reference r; r.p = p;
   std::stable_sort(events.begin(), events.end(), [](const Event& a, const Event& b) { return a.tick < b.tick; });
   size_t delivered = 0;
   const auto poll = [&]() {
-    while (delivered < events.size() && events[delivered].tick <= r.steps) {
+    while (delivered < events.size() && events[delivered].tick <= (cycle_events ? r.cycles : r.steps)) {
       const auto signal = events[delivered++].signal;
       if (signal == Signal::nmi) r.nmi = true;
       else r.irq = signal == Signal::irq_on;
@@ -62,10 +63,18 @@ static Reference reference(const std::vector<uint8_t>& image, std::vector<Event>
       const unsigned vector = nmi ? (r.e ? 0xfffa : 0xffea) : (r.e ? 0xfffe : 0xffee);
       r.pc = read(vector) + 256*read(vector+1); r.active = true;
       if (nmi) r.nmi = false;
-      ++r.steps; poll(); continue;
+      ++r.steps; r.cycles += r.e ? 7 : 8; poll(); continue;
     }
     const unsigned op = image.at(r.pc-0x8000);
     const bool m = (r.p & 32) != 0, x = (r.p & 16) != 0;
+    unsigned cycles = 2;
+    if (op == 0xc2 || op == 0xdb) cycles = 3;
+    if (op == 0xa9) cycles = m ? 2 : 3;
+    if (op == 0xa2 || op == 0xa0) cycles = x ? 2 : 3;
+    if (op == 0xad || op == 0x8d) cycles = m ? 4 : 5;
+    if (op == 0x20 || op == 0x60) cycles = 6;
+    if (op == 0x54) cycles = 7;
+    if (op == 0x40) cycles = r.e ? 6 : 7;
     unsigned length = 1;
     if (op == 0xc2) length = 2;
     if (op == 0xa9) length = m ? 2 : 3;
@@ -112,7 +121,7 @@ static Reference reference(const std::vector<uint8_t>& image, std::vector<Event>
       case 0xdb: r.stop = recompiled::Stop::stp; break;
       default: throw std::runtime_error("reference opcode unsupported");
     }
-    r.pc = next; ++r.steps; poll();
+    r.pc = next; ++r.steps; r.cycles += cycles; poll();
     if (r.stop == recompiled::Stop::stp) return r;
   }
   return r;
@@ -160,18 +169,19 @@ int main(int argc, char** argv) {
     };
     auto bus = std::make_unique<system816::Bus>(image);
     unsigned cases = 0;
-    for (unsigned flags : {0x34u,0x38u}) for (const auto& scenario : scenarios) {
+    for (bool cycle_events : {false,true}) for (unsigned flags : {0x34u,0x38u}) for (const auto& scenario : scenarios) {
       for (unsigned choice = 0; choice < 22; ++choice) {
         const unsigned limit = choice == 21 ? 40 : choice;
         bus->clear_ram(); State actual; reset_cpu(actual,*bus);
         actual.a = 0x1200; actual.x = 255; actual.y = 128; actual.p = flags;
-        for (const auto& event : scenario) actual.clock.schedule(event.tick,event.signal);
-        const auto expected = reference(image,scenario,flags,limit);
+        for (const auto& event : scenario) (cycle_events ? actual.cycle_clock : actual.clock).schedule(event.tick,event.signal);
+        const auto expected = reference(image,scenario,flags,limit,cycle_events);
         const bool stopped = run_generated(actual,limit);
         if (std::tie(actual.a,actual.x,actual.y,actual.pc,actual.s,actual.p,actual.db,actual.e,actual.steps,actual.stop) !=
             std::tie(expected.a,expected.x,expected.y,expected.pc,expected.s,expected.p,expected.db,expected.e,expected.steps,expected.stop) ||
-            actual.interrupt.active != expected.active || actual.clock.now() != expected.steps ||
-            actual.clock.nmi_pending() != expected.nmi || actual.clock.irq_asserted() != expected.irq ||
+            actual.interrupt.active != expected.active || actual.clock.now() != expected.steps || actual.cycle_clock.now() != expected.cycles ||
+            (actual.clock.nmi_pending() || actual.cycle_clock.nmi_pending()) != expected.nmi ||
+            (actual.clock.irq_asserted() || actual.cycle_clock.irq_asserted()) != expected.irq ||
             stopped != (expected.stop == Stop::stp)) {
           std::cerr << argv[1] << " flags=" << flags << " scenario=" << (&scenario-&scenarios[0])
                     << " limit=" << limit << " actualPC=" << actual.pc << " expectedPC=" << expected.pc
@@ -185,12 +195,23 @@ int main(int argc, char** argv) {
     // Independent fixed expected state for one emulation NMI: entry + INX + RTI.
     if (std::string(argv[1]) == "irq_emulation") {
       bus->clear_ram(); State s; reset_cpu(s,*bus); s.clock.schedule(1,Signal::nmi);
-      check(run_generated(s,20) && s.steps == 6 && s.clock.now() == 6 && s.x == 1 &&
+      check(run_generated(s,20) && s.steps == 6 && s.clock.now() == 6 && s.cycle_clock.now() == 22 && s.x == 1 &&
             s.pc == 0x8003 && s.s == 0x1ff && s.p == 0x34 && !s.interrupt.active &&
             bus->read8(0x1ff) == 0x80 && bus->read8(0x1fe) == 1 && bus->read8(0x1fd) == 0x24,
             "hand-specified NMI/RTI state differs");
     }
     frame_tests(image);
+    if (std::string(argv[1]) == "irq_emulation" || std::string(argv[1]) == "irq_native") {
+      const bool native = std::string(argv[1]) == "irq_native";
+      bus->clear_ram(); State s; reset_cpu(s,*bus);
+      const auto maximum = std::numeric_limits<uint64_t>::max();
+      s.cycle_clock.advance(maximum - (native ? 14 : 6));
+      s.cycle_clock.schedule(maximum - (native ? 7 : 6),Signal::nmi);
+      check(!run_generated(s,20) && s.stop == Stop::contract && s.steps == (native ? 3u : 0u) &&
+            s.pc == (native ? 0x8004u : 0x8000u) && s.s == 0x1ff && !s.interrupt.active &&
+            s.cycle_clock.nmi_pending() && bus->read8(0x1ff) == 0 && bus->read8(0x1fe) == 0,
+            "interrupt cycle overflow pushed a partial frame or acknowledged NMI");
+    }
     State legacy;
     check(!run_generated(legacy,20) && legacy.stop == Stop::contract,"compiled handler accepted absent bus");
     auto changed = image; changed[0x7ffa] ^= 1;

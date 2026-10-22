@@ -22,17 +22,29 @@ struct State {
   unsigned db = 0;
   std::string diagnostic;
   system816::EventClock clock;
+  system816::EventClock cycle_clock;
   InterruptContext interrupt;
 };
-inline bool begin_instruction(State& s, unsigned limit) {
+inline bool reserve_cycles(State& s, unsigned cycles) {
+  if (!s.cycle_clock.can_advance(cycles)) {
+    s.stop = Stop::contract; s.diagnostic = "CPU cycle clock exhausted"; return false;
+  }
+  return true;
+}
+inline bool pending_nmi(const State& s) {
+  return s.clock.nmi_pending() || s.cycle_clock.nmi_pending();
+}
+inline bool begin_instruction(State& s, unsigned limit, unsigned cycles) {
   // Budget zero must leave scheduled events untouched.
   if (s.steps >= limit) { s.stop = Stop::limit; return false; }
   if (!s.clock.can_tick()) {
     s.stop = Stop::contract; s.diagnostic = "Logical event clock exhausted"; return false;
   }
+  if (!reserve_cycles(s, cycles)) return false;
   s.clock.advance(0);
-  const bool nmi = s.clock.nmi_pending();
-  if (!s.interrupt.active && (nmi || (s.clock.irq_asserted() && !(s.p & 4)))) {
+  s.cycle_clock.advance(0);
+  const bool nmi = pending_nmi(s);
+  if (!s.interrupt.active && (nmi || ((s.clock.irq_asserted() || s.cycle_clock.irq_asserted()) && !(s.p & 4)))) {
     s.stop = Stop::interrupt;
     std::ostringstream out;
     out << (nmi ? "NMI" : "IRQ") << " handler execution unsupported at PC $"
@@ -43,9 +55,10 @@ inline bool begin_instruction(State& s, unsigned limit) {
   }
   return true;
 }
-inline void complete_instruction(State& s) {
+inline void complete_instruction(State& s, unsigned cycles) {
   ++s.steps;
   s.clock.advance(1);
+  s.cycle_clock.advance(cycles);
 }
 // Deterministic host reset policy. Preserves the bus's RAM and immutable ROM.
 // Only bank-zero entry $8000 is currently compiled. No hardware reset cycles.
@@ -206,7 +219,7 @@ inline bool enter_interrupt(State& s, unsigned target, bool nmi) {
     for (unsigned i = 0; i < count; ++i) write_byte(s, addresses[i], static_cast<uint8_t>(values[i]));
     s.interrupt = {true, s.e, s.pc, s.p, s.s, next};
     s.s = next; s.pc = target; s.p = (s.p | 4) & ~8u;
-    if (nmi) s.clock.acknowledge_nmi();
+    if (nmi) { s.clock.acknowledge_nmi(); s.cycle_clock.acknowledge_nmi(); }
     s.stop = Stop::limit; s.diagnostic.clear();
     return true;
   } catch (const system816::BusError& e) {

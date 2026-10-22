@@ -139,12 +139,30 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
   auto emit = [&](const Instruction& n) {
     const auto pc = n.pc, op = n.op, v = n.value, next = pc+n.length;
     const bool m = n.mode.m, x = n.mode.x;
+    unsigned base_cycles = 2;
+    if (op == 0xc2 || op == 0xe2 || op == 0xdb) base_cycles = 3;
+    if (op == 0xa9) base_cycles = m ? 2 : 3;
+    if (op == 0xa2 || op == 0xa0) base_cycles = x ? 2 : 3;
+    if (op == 0xad || op == 0x8d) base_cycles = m ? 4 : 5;
+    if (op == 0x20 || op == 0x60) base_cycles = 6;
+    if (op == 0x44 || op == 0x54) base_cycles = 7;
+    if (op == 0x40) base_cycles = n.mode.e ? 6 : 7;
+    std::string condition;
+    unsigned target = 0;
+    std::string cycles = std::to_string(base_cycles);
+    if (op == 0x80 || branch(op)) {
+      target = pc+n.length+(v < 128 ? int(v) : int(v)-256);
+      const unsigned mask = (op & 0xc0)==0 ? 128 : (op & 0xc0)==0x40 ? 64 : (op & 0xc0)==0x80 ? 1 : 2;
+      condition = op == 0x80 ? "true" : "(s.p&"+std::to_string(mask)+")"+((op&32)?"!=":"==")+"0";
+      const unsigned penalty = 1 + unsigned(n.mode.e && ((next & 0xff00) != (target & 0xff00)));
+      cycles = op == 0x80 ? std::to_string(2+penalty) : "(2+("+condition+"?"+std::to_string(penalty)+":0))";
+    }
     out << "L" << pc << ":\n";
     if (interrupts && n.leaf != -2)
-      out << "while(!begin_instruction(s,limit)){if(s.stop!=Stop::interrupt||!interrupt_mode"
+      out << "while(!begin_instruction(s,limit," << cycles << ")){if(s.stop!=Stop::interrupt||!interrupt_mode"
           << mode_id(n.mode) << "(s,limit))return false;}\n";
-    else out << "if(!begin_instruction(s,limit))return false;\n";
-    if (op == 0x40) { out << "if(!return_interrupt(s))return false;complete_instruction(s);return true;\n"; return; }
+    else out << "if(!begin_instruction(s,limit," << cycles << "))return false;\n";
+    if (op == 0x40) { out << "if(!return_interrupt(s))return false;complete_instruction(s," << cycles << ");return true;\n"; return; }
     if (op == 0xa9) out << "s.a=" << (m ? "(s.a&65280)|" : "") << v << ";nz(s,s.a," << m << ");\n";
     if (op == 0xa2 || op == 0xa0) out << "s." << (op==0xa2?'x':'y') << "=" << v << ";nz(s," << v << "," << x << ");\n";
     if (op == 0xe8 || op == 0xca) out << "s.x=(s.x+" << (op==0xe8?1:65535) << ")&" << (x?255:65535) << ";nz(s,s.x," << x << ");\n";
@@ -157,25 +175,20 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
     if (op == 0xad) out << "if(!load(s,(s.db<<16)|" << v << "," << m << "))return false;\n";
     if (op == 0x44 || op == 0x54) {
       out << "if(!move_byte(s," << (v & 255) << "," << (v >> 8) << "," << x << "," << (op == 0x44) << "))return false;\n"
-          << "s.pc=s.a==65535?" << next << ":" << pc << ";complete_instruction(s);\n"
+          << "s.pc=s.a==65535?" << next << ":" << pc << ";complete_instruction(s," << cycles << ");\n"
           << "if(s.a!=65535)goto L" << pc << ";goto L" << next << ";\n";
       return;
     }
     if (op == 0x20) {
-      out << "if(!push_return(s," << next-1 << "))return false;s.pc=" << v << ";complete_instruction(s);\n"
+      out << "if(!push_return(s," << next-1 << "))return false;s.pc=" << v << ";complete_instruction(s," << cycles << ");\n"
           << "if(!leaf" << v << "(s,limit," << next << "))return false;goto L" << next << ";\n";
       return;
     }
-    if (op == 0x60) { out << "complete_instruction(s);return pop_return(s,expected);\n"; return; }
-    out << "s.pc=" << (next & 65535) << ";complete_instruction(s);\n";
+    if (op == 0x60) { out << "complete_instruction(s," << cycles << ");return pop_return(s,expected);\n"; return; }
+    out << "s.pc=" << (next & 65535) << ";complete_instruction(s," << cycles << ");\n";
     if (op == 0xdb) { out << "s.stop=Stop::stp;return true;\n"; return; }
     if (op == 0x80 || branch(op)) {
-      const unsigned target = pc+n.length+(v < 128 ? int(v) : int(v)-256);
-      unsigned mask = (op & 0xc0)==0 ? 128 : (op & 0xc0)==0x40 ? 64 : (op & 0xc0)==0x80 ? 1 : 2;
-      out << "if(";
-      if (op == 0x80) out << "true";
-      else out << "(s.p&" << mask << ")" << ((op&32)?"!=":"==") << "0";
-      out << "){s.pc=" << target << ";goto L" << target << ";}\n";
+      out << "if(" << condition << "){s.pc=" << target << ";goto L" << target << ";}\n";
       if (op == 0x80) return;
     }
     out << "goto L" << next << ";\n";
@@ -188,9 +201,10 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
   }
   for (const auto& variant : targets) {
     const auto nmi = variant.second[0], irq = variant.second[1];
+    const unsigned entry_cycles = handler_modes.at(variant.first).e ? 7 : 8;
     out << "static bool interrupt_mode" << variant.first << "(State& s,unsigned limit){\n"
-        << "bool nmi=s.clock.nmi_pending();if(!enter_interrupt(s,nmi?" << nmi << ":" << irq << ",nmi))return false;\n"
-        << "complete_instruction(s);return nmi?handler" << variant.first << "_" << nmi
+        << "if(!reserve_cycles(s," << entry_cycles << "))return false;bool nmi=pending_nmi(s);if(!enter_interrupt(s,nmi?" << nmi << ":" << irq << ",nmi))return false;\n"
+        << "complete_instruction(s," << entry_cycles << ");return nmi?handler" << variant.first << "_" << nmi
         << "(s,limit):handler" << variant.first << "_" << irq << "(s,limit);}\n";
   }
   for (const auto& leaf : leaves) {

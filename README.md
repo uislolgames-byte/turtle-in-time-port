@@ -12,6 +12,8 @@ Experimento de engenharia reversa do **Teenage Mutant Ninja Turtles IV: Turtles 
   do canal 0 para a porta WRAM, com contagem parcial de clocks. A opção `--interrupts`
   recompila handlers lineares com RTI validado. MVN/MVP já
   transferem blocos entre bancos no código recompilado, com testes sintéticos.
+- O runtime também conta ciclos nominais da CPU e aceita eventos NMI/IRQ por
+  ciclo. A sincronização em master clocks com os dispositivos SNES ainda falta.
 - `tmnt_recompile`: primeira tradução estática **escrita em C++** de programas
   sintéticos para C++ compilável, com modos, fluxo e chamadas folha JSR/RTS.
   Veja [recompiler/](recompiler/README.md) para o subconjunto e os testes.

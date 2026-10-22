@@ -30,9 +30,11 @@ int main(int argc, char** argv) {
       const unsigned a = steps == 0 || steps == 20 ? 0 : steps == 1 ? 0xfe : steps >= 23 ? 4 : 1;
       const unsigned flags = steps == 1 ? 0xb4 : steps == 20 ? 0x36 : 0x34;
       const Stop stop = fault && attempted ? Stop::memory : steps == 24 ? Stop::stp : Stop::limit;
+      const unsigned cycles = steps == 0 ? 0 : steps == 1 ? 2 : steps == 20 ? 60 : steps == 21 ? 62 :
+                              steps == 22 ? 66 : steps == 23 ? 70 : 73;
       check(state.steps == steps && state.pc == pc && state.a == a && state.p == flags &&
             state.x == 0 && state.y == 0 && state.db == 0 && state.s == 0x1ff && state.e &&
-            state.clock.now() == steps && state.stop == stop && result == (stop == Stop::stp),
+            state.clock.now() == steps && state.cycle_clock.now() == cycles && state.stop == stop && result == (stop == Stop::stp),
             "compiled DMA state differs from hand-specified trace");
       check(state.diagnostic.empty() == !(fault && attempted),"DMA failure diagnostic missing");
       check(bus->dma_bytes() == (copied ? 4u : 0u) &&
