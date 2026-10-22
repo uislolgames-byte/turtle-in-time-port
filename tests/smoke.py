@@ -667,6 +667,43 @@ def main():
         empty_plx_path.write_bytes(empty_plx_rom)
         empty_plx_output = check([executor, str(empty_plx_path), '10'], 0)
         assert 'reason=stack' in empty_plx_output, empty_plx_output
+        # PHY/PLY round-trip in 8-bit index mode restores Y.
+        phy8_rom = bytearray(rom)
+        phy8_program = bytes([0xA0, 0x80, 0x5A, 0xA0, 0x00, 0x7A, 0xDB])
+        phy8_rom[:len(phy8_program)] = phy8_program
+        phy8_path = root / 'execute-phy-ply8.sfc'
+        phy8_path.write_bytes(phy8_rom)
+        phy8_output = check([executor, str(phy8_path), '20'], 0)
+        assert 'reason=stp' in phy8_output and 'y=$0080' in phy8_output, phy8_output
+        assert 'sp=$01FF' in phy8_output and 'n=1' in phy8_output, phy8_output
+        # Native 16-bit PHY/PLY preserves both bytes of Y.
+        phy16_rom = bytearray(rom)
+        phy16_program = bytes([
+            0x18, 0xFB, 0xC2, 0x10, 0xA0, 0x34, 0x12, 0x5A,
+            0xA0, 0x00, 0x00, 0x7A, 0xDB,
+        ])
+        phy16_rom[:len(phy16_program)] = phy16_program
+        phy16_path = root / 'execute-phy-ply16.sfc'
+        phy16_path.write_bytes(phy16_rom)
+        phy16_output = check([executor, str(phy16_path), '20'], 0)
+        assert 'reason=stp' in phy16_output and 'y=$1234' in phy16_output, phy16_output
+        assert 'sp=$01FF' in phy16_output and 'xbits=16' in phy16_output, phy16_output
+        # PHY preserves carry; PLY sets Z after restoring zero.
+        phy_flags_rom = bytearray(rom)
+        phy_flags_program = bytes([0x38, 0xA0, 0x00, 0x5A, 0xA0, 0x01, 0x7A, 0xDB])
+        phy_flags_rom[:len(phy_flags_program)] = phy_flags_program
+        phy_flags_path = root / 'execute-phy-flags.sfc'
+        phy_flags_path.write_bytes(phy_flags_rom)
+        phy_flags_output = check([executor, str(phy_flags_path), '20'], 0)
+        assert 'y=$0000' in phy_flags_output and 'z=1' in phy_flags_output, phy_flags_output
+        assert 'c=1' in phy_flags_output, phy_flags_output
+        # Empty PLY must stop instead of reading uninitialized stack.
+        empty_ply_rom = bytearray(rom)
+        empty_ply_rom[0] = 0x7A
+        empty_ply_path = root / 'execute-empty-ply.sfc'
+        empty_ply_path.write_bytes(empty_ply_rom)
+        empty_ply_output = check([executor, str(empty_ply_path), '10'], 0)
+        assert 'reason=stack' in empty_ply_output, empty_ply_output
         check([executor, str(valid), '0'], 2)
         unsupported_rom = bytearray(rom)
         unsupported_rom[0] = 0xFF
