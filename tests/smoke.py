@@ -175,6 +175,14 @@ def main():
         plp_path.write_bytes(plp_rom)
         plp_output = check([cfg, str(plp_path)], 0)
         assert '"$008000" -> "$008001"' not in plp_output
+        # Index increments must preserve carry, so XCE remains decodable.
+        index_rom = bytearray(rom)
+        index_rom[:6] = bytes([0x18, 0xE8, 0xFB, 0xA9, 0x12, 0xDB])
+        index_path = root / 'index-carry.sfc'
+        index_path.write_bytes(index_rom)
+        index_output = check([cfg, str(index_path)], 0)
+        assert '"$008002" -> "$008003" [label="next"]' in index_output, index_output
+        assert '"$008003" -> "$008005" [label="next"]' in index_output, index_output
         check([cfg, str(invalid)], 1, 'Reset vector')
         check([cfg, str(valid), '0'], 2)
         check([callgraph, str(invalid)], 1, 'Reset vector')
