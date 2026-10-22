@@ -36,8 +36,9 @@ int main(int argc, char** argv) {
                        op == 0x29 || op == 0x09 || op == 0x49)
                       ? (m8 ? 2 : 3) : (x8 ? 2 : 3));
           break;
-        case 0x8D: case 0xAD: width = 3; break;
-        case 0x85: case 0xA5: width = 2; break;
+        case 0x8D: case 0xAD: case 0x9D: case 0x99:
+        case 0xBD: case 0xB9: width = 3; break;
+        case 0x85: case 0xA5: case 0x95: case 0xB5: width = 2; break;
         case 0x80: case 0xF0: case 0xD0: case 0x30: case 0x10:
         case 0x70: case 0x50: width = 2; break;
         case 0x18: case 0x38: case 0xB8: case 0xFB: case 0xEA: case 0xDB:
@@ -56,9 +57,20 @@ int main(int argc, char** argv) {
       }
       const unsigned value = width == 1 ? 0 :
           width == 2 ? rom.byte(offset + 1) : rom.word(offset + 1);
-      const unsigned address = (op == 0x85 || op == 0xA5)
-          ? ((d + value) & 0xffffu) : value;
-      if ((op == 0x8D || op == 0xAD || op == 0x85 || op == 0xA5) &&
+      const bool dp = op == 0x85 || op == 0xA5 || op == 0x95 || op == 0xB5;
+      const bool indexed_x = op == 0x95 || op == 0xB5 || op == 0x9D || op == 0xBD;
+      const bool indexed_y = op == 0x99 || op == 0xB9;
+      const bool memory_op = dp || op == 0x8D || op == 0xAD ||
+                             op == 0x9D || op == 0x99 || op == 0xBD || op == 0xB9;
+      // In emulation mode with D low byte zero, direct-page indexing wraps
+      // inside the 256-byte page. Native mode uses full 16-bit addition.
+      const unsigned index = indexed_x ? x : (indexed_y ? y : 0u);
+      const unsigned address = dp
+          ? ((e && (d & 0xffu) == 0 && indexed_x)
+                 ? ((d & 0xff00u) | ((value + index) & 0xffu))
+                 : ((d + value + index) & 0xffffu))
+          : ((value + index) & 0xffffu);
+      if (memory_op &&
           (address >= wram.size() || (!m8 && address + 1 >= wram.size()))) {
         // $2100 and other hardware registers require a modeled SNES bus.
         reason = "unsupported";
@@ -137,7 +149,7 @@ int main(int argc, char** argv) {
         }
         case 0xA2: x = value; zero = x == 0; negative = (x & (x8 ? 0x80u : 0x8000u)) != 0; break;
         case 0xA0: y = value; zero = y == 0; negative = (y & (x8 ? 0x80u : 0x8000u)) != 0; break;
-        case 0xAD: case 0xA5: {
+        case 0xAD: case 0xA5: case 0xB5: case 0xBD: case 0xB9: {
           const unsigned loaded = m8 ? wram[address] :
               static_cast<unsigned>(wram[address] | (wram[address + 1] << 8));
           a = m8 ? ((a & 0xff00u) | loaded) : loaded;
@@ -186,7 +198,7 @@ int main(int argc, char** argv) {
           negative = (result & sign) != 0;
           break;
         }
-        case 0x8D: case 0x85:
+        case 0x8D: case 0x85: case 0x95: case 0x9D: case 0x99:
           wram[address] = static_cast<unsigned char>(a & 0xffu);
           if (!m8) {
             wram[address + 1] = static_cast<unsigned char>(a >> 8);

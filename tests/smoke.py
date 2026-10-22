@@ -438,6 +438,50 @@ def main():
         dp_oob_path.write_bytes(dp_oob_rom)
         dp_oob_output = check([executor, str(dp_oob_path), '30'], 0)
         assert 'reason=unsupported' in dp_oob_output, dp_oob_output
+        # Absolute indexed X/Y accesses to low WRAM.
+        idx_rom = bytearray(rom)
+        idx_program = bytes([
+            0xA2, 0x02, 0xA0, 0x03, 0xA9, 0x6B,
+            0x9D, 0x20, 0x00, 0xA9, 0x00,
+            0xB9, 0x1F, 0x00, 0xDB,
+        ])
+        idx_rom[:len(idx_program)] = idx_program
+        idx_path = root / 'execute-indexed.sfc'
+        idx_path.write_bytes(idx_rom)
+        idx_output = check([executor, str(idx_path), '30'], 0)
+        assert 'reason=stp' in idx_output and 'a=$006B' in idx_output, idx_output
+        assert 'last_addr=$0022' in idx_output, idx_output
+        # Direct-page indexed access with D set in native mode.
+        dpidx_rom = bytearray(rom)
+        dpidx_program = bytes([
+            0x18, 0xFB, 0xC2, 0x20, 0xA9, 0x00, 0x01,
+            0x5B, 0xE2, 0x20, 0xA2, 0x04, 0xA9, 0xAB,
+            0x95, 0x10, 0xA9, 0x00, 0xB5, 0x10, 0xDB,
+        ])
+        dpidx_rom[:len(dpidx_program)] = dpidx_program
+        dpidx_path = root / 'execute-dp-indexed.sfc'
+        dpidx_path.write_bytes(dpidx_rom)
+        dpidx_output = check([executor, str(dpidx_path), '30'], 0)
+        assert 'a=$01AB' in dpidx_output and 'last_addr=$0114' in dpidx_output, dpidx_output
+        # Emulation-mode direct-page indexed address wraps within its page.
+        wrap_rom = bytearray(rom)
+        wrap_program = bytes([
+            0xA2, 0x02, 0xA9, 0x55, 0x95, 0xFF,
+            0xA9, 0x00, 0xB5, 0xFF, 0xDB,
+        ])
+        wrap_rom[:len(wrap_program)] = wrap_program
+        wrap_path = root / 'execute-dp-wrap.sfc'
+        wrap_path.write_bytes(wrap_rom)
+        wrap_output = check([executor, str(wrap_path), '30'], 0)
+        assert 'a=$0055' in wrap_output and 'last_addr=$0001' in wrap_output, wrap_output
+        # Indexed accesses to unmodeled hardware are rejected.
+        idx_oob_rom = bytearray(rom)
+        idx_oob_program = bytes([0xA2, 0x01, 0xBD, 0xFF, 0x20, 0xDB])
+        idx_oob_rom[:len(idx_oob_program)] = idx_oob_program
+        idx_oob_path = root / 'execute-indexed-oob.sfc'
+        idx_oob_path.write_bytes(idx_oob_rom)
+        idx_oob_output = check([executor, str(idx_oob_path), '20'], 0)
+        assert 'reason=unsupported' in idx_oob_output, idx_oob_output
         check([executor, str(valid), '0'], 2)
         unsupported_rom = bytearray(rom)
         unsupported_rom[0] = 0xFF
