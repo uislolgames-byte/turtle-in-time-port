@@ -195,6 +195,43 @@ def main():
         hardware_path.write_bytes(hardware_rom)
         hardware_output = check([executor, str(hardware_path)], 0)
         assert 'reason=unsupported steps=0' in hardware_output, hardware_output
+        # ADC carry and zero wrap in 8-bit mode.
+        adc_rom = bytearray(rom)
+        adc_program = bytes([0xA9, 0xFF, 0x18, 0x69, 0x01, 0xDB])
+        adc_rom[:len(adc_program)] = adc_program
+        adc_path = root / 'execute-adc.sfc'
+        adc_path.write_bytes(adc_rom)
+        adc_output = check([executor, str(adc_path), '20'], 0)
+        assert 'reason=stp' in adc_output and 'a=$0000' in adc_output, adc_output
+        assert 'c=1 z=1' in adc_output, adc_output
+        # SBC borrows with carry clear and sets carry when no borrow occurs.
+        sbc_rom = bytearray(rom)
+        sbc_program = bytes([0xA9, 0x05, 0x38, 0xE9, 0x03, 0xDB])
+        sbc_rom[:len(sbc_program)] = sbc_program
+        sbc_path = root / 'execute-sbc.sfc'
+        sbc_path.write_bytes(sbc_rom)
+        sbc_output = check([executor, str(sbc_path), '20'], 0)
+        assert 'a=$0002' in sbc_output and 'c=1 z=0' in sbc_output, sbc_output
+        # CMP sets flags but does not overwrite A.
+        cmp_rom = bytearray(rom)
+        cmp_program = bytes([0xA9, 0x07, 0xC9, 0x07, 0xF0, 0x01, 0xFF, 0xDB])
+        cmp_rom[:len(cmp_program)] = cmp_program
+        cmp_path = root / 'execute-cmp.sfc'
+        cmp_path.write_bytes(cmp_rom)
+        cmp_output = check([executor, str(cmp_path), '20'], 0)
+        assert 'reason=stp' in cmp_output and 'a=$0007' in cmp_output, cmp_output
+        assert 'c=1 z=1' in cmp_output, cmp_output
+        # 16-bit ADC carries across the full accumulator.
+        adc16_rom = bytearray(rom)
+        adc16_program = bytes([
+            0x18, 0xFB, 0xC2, 0x20, 0xA9, 0xFF, 0xFF,
+            0x18, 0x69, 0x01, 0x00, 0xDB,
+        ])
+        adc16_rom[:len(adc16_program)] = adc16_program
+        adc16_path = root / 'execute-adc16.sfc'
+        adc16_path.write_bytes(adc16_rom)
+        adc16_output = check([executor, str(adc16_path), '20'], 0)
+        assert 'a=$0000' in adc16_output and 'c=1 z=1' in adc16_output, adc16_output
         check([executor, str(valid), '0'], 2)
         unsupported_rom = bytearray(rom)
         unsupported_rom[0] = 0xFF

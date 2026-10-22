@@ -30,8 +30,10 @@ int main(int argc, char** argv) {
       unsigned width = 1;
       switch (op) {
         case 0xC2: case 0xE2: case 0xA9: case 0xA2: case 0xA0:
+        case 0x69: case 0xE9: case 0xC9:
           width = (op == 0xC2 || op == 0xE2) ? 2 :
-                  (op == 0xA9 ? (m8 ? 2 : 3) : (x8 ? 2 : 3));
+                  ((op == 0xA9 || op == 0x69 || op == 0xE9 || op == 0xC9)
+                      ? (m8 ? 2 : 3) : (x8 ? 2 : 3));
           break;
         case 0x8D: case 0xAD: width = 3; break;
         case 0x80: case 0xF0: case 0xD0: width = 2; break;
@@ -84,6 +86,24 @@ int main(int argc, char** argv) {
           a = m8 ? ((a & 0xff00u) | value) : value;
           zero = (a & (m8 ? 0xffu : 0xffffu)) == 0;
           break;
+        case 0x69: case 0xE9: case 0xC9: {
+          const unsigned mask = m8 ? 0xffu : 0xffffu;
+          const unsigned lhs = a & mask;
+          const unsigned rhs = value & mask;
+          if (op == 0xC9) {
+            carry = lhs >= rhs;
+            zero = lhs == rhs;
+          } else {
+            const unsigned sum = op == 0x69
+                ? lhs + rhs + (carry ? 1u : 0u)
+                : lhs + (rhs ^ mask) + (carry ? 1u : 0u);
+            carry = sum > mask;
+            const unsigned result = sum & mask;
+            a = m8 ? ((a & 0xff00u) | result) : result;
+            zero = result == 0;
+          }
+          break;
+        }
         case 0xA2: x = value; zero = x == 0; break;
         case 0xA0: y = value; zero = y == 0; break;
         case 0xAD: {
