@@ -59,14 +59,21 @@ int main(int argc, char** argv) {
         case 0xfb: { bool old=s.e; s.e=s.carry; s.carry=old;
                      if(s.e) s.m8=s.x8=true; break; }
         case 0xc2: case 0xe2: bytes=1; break;
-        case 0xa2: bytes=s.x8?1:2; break;
-        case 0xa9: bytes=s.m8?1:2; break;
-        case 0x20: case 0x4c: case 0x8d: case 0x9c: bytes=2; break;
+        case 0xa2: case 0xa0: bytes=s.x8?1:2; break;
+        case 0xa9: case 0x69: case 0x29: case 0x09: case 0x49:
+        case 0xc9: case 0xe9: bytes=s.m8?1:2; break;
+        case 0x20: case 0x4c: case 0x8d: case 0x9c:
+        case 0x8e: case 0x8c: case 0xad: case 0xae: case 0xac:
+        case 0x2c: case 0x4d: bytes=2; break;
         case 0x22: case 0x5c: bytes=3; break;
         case 0x80: case 0x10: case 0x30: case 0x50: case 0x70:
         case 0x90: case 0xb0: case 0xd0: case 0xf0: bytes=1; break;
         case 0x82: bytes=2; break;
-        case 0x78: case 0xd8: case 0x9a: case 0xea: break;
+        case 0x78: case 0x58: case 0xd8: case 0xf8:
+        case 0x9a: case 0xea: case 0xaa: case 0xa8:
+        case 0x8a: case 0x98: case 0x5a: case 0x7a:
+        case 0x48: case 0x68: case 0x08: case 0x28:
+        case 0xe8: case 0xca: case 0xc8: case 0x88: break;
         case 0x60: case 0x6b: case 0xdb: case 0x00: terminal=true; break;
         default: unknown=true; break;
       }
