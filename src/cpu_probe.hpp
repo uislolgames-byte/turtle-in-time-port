@@ -58,6 +58,7 @@ inline CpuProbeResult probe_reset(const Rom& rom, unsigned limit = 32) {
       case 0x69: case 0xE9: length = m8 ? 2 : 3; break;
       case 0xA2: case 0xA0: case 0xE0: case 0xC0: length = x8 ? 2 : 3; break;
       case 0xAD: case 0x8D: case 0x8E: case 0x8C: case 0x9C: length = 3; break;
+      case 0xBD: case 0xB9: case 0x9D: case 0x99: length = 3; break;
       default:
         result.reason = "unsupported opcode";
         return result;
@@ -139,23 +140,27 @@ inline CpuProbeResult probe_reset(const Rom& rom, unsigned limit = 32) {
         break;
       case 0xA2: result.x = operand; nz(result.x, x8); break;
       case 0xA0: result.y = operand; nz(result.y, x8); break;
-      case 0xAD: case 0x8D: case 0x8E: case 0x8C: case 0x9C: {
+      case 0xAD: case 0x8D: case 0x8E: case 0x8C: case 0x9C:
+      case 0xBD: case 0xB9: case 0x9D: case 0x99: {
         const bool narrow = (op == 0x8E || op == 0x8C) ? x8 : m8;
         const unsigned width = narrow ? 1u : 2u;
+        const unsigned address = operand + ((op == 0xBD || op == 0x9D) ? result.x :
+                                            (op == 0xB9 || op == 0x99) ? result.y : 0u);
         // Check the whole transfer before reading or writing either byte.
-        if (operand + width > ram.size()) {
+        if (address + width > ram.size()) {
           result.reason = "address outside probe RAM";
           return result;
         }
-        if (op == 0xAD) {
-          unsigned value = ram[operand];
-          if (!narrow) value |= unsigned(ram[operand + 1]) << 8;
+        if (op == 0xAD || op == 0xBD || op == 0xB9) {
+          unsigned value = ram[address];
+          if (!narrow) value |= unsigned(ram[address + 1]) << 8;
           result.a = narrow ? ((result.a & 0xff00u) | value) : value;
           nz(result.a, narrow);
         } else {
-          const unsigned value = op == 0x8D ? result.a : op == 0x8E ? result.x : op == 0x8C ? result.y : 0u;
-          ram[operand] = static_cast<uint8_t>(value);
-          if (!narrow) ram[operand + 1] = static_cast<uint8_t>(value >> 8);
+          const unsigned value = (op == 0x8D || op == 0x9D || op == 0x99) ? result.a :
+                                 op == 0x8E ? result.x : op == 0x8C ? result.y : 0u;
+          ram[address] = static_cast<uint8_t>(value);
+          if (!narrow) ram[address + 1] = static_cast<uint8_t>(value >> 8);
         }
         break;
       }

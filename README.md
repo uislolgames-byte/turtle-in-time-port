@@ -103,3 +103,10 @@ Acesso fora dessa região (incluindo registradores de hardware e espaço ROM)
 para com `address outside probe RAM`. Isso ainda não é um barramento SNES.
 O teste de memória cobre larguras M/X independentes, fronteiras, flags, ordem dos
 bytes, isolamento entre chamadas e preservação da ROM original.
+
+LDA/STA absoluto indexado por X ou Y também usa a RAM de diagnóstico. O endereço
+efetivo soma base e índice, sem truncar o resultado para 16 bits; acessos que
+ultrapassem a região permitida param antes de acessar os dados. M define a largura
+da transferência, X define a largura dos índices. Os testes cruzam as quatro
+combinações M/X e verificam os endereços com acessos absolutos independentes,
+além de uma sequência que preenche e percorre um buffer com loop.
