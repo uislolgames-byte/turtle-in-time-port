@@ -22,3 +22,8 @@ if(BUILD_TESTING)
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke.py" ${TMNT_TEST_EXECUTABLES})
   set_tests_properties(tools_smoke PROPERTIES TIMEOUT 30)
 endif()
+
+if(WIN32)
+  add_executable(tmnt_native WIN32 src/native_windows.cpp)
+  target_link_libraries(tmnt_native PRIVATE comdlg32 user32 gdi32)
+endif()
