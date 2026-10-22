@@ -56,6 +56,8 @@ Sete programas cobrem larguras, chamadas nativas/emulação, vários locais de
 chamada, retorno corrompido, desvios, loop infinito e erro de RAM.
 Cada um usa 64 combinações válidas de P e 40 limites (0..39): 17920 comparações.
 São comparados A/X/Y, P/E, PC, S, passos, parada e todos os 8192 bytes de RAM.
+Há resultados fixos escritos à mão para conferir os dois executores, além de
+casos inválidos do contrato inicial que devem parar antes de alterar a RAM.
 Os testes anteriores continuam no alvo `check` e no CI Windows/Linux.
 
 O Marco 2 só pode ser marcado concluído após validação e integração desta etapa
