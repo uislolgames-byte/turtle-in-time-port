@@ -3,6 +3,7 @@
 #include <iomanip>
 #include <iostream>
 #include <stdexcept>
+#include <array>
 
 // Small, bounded 65C816 instruction-subset interpreter for synthetic tests.
 // This is not a SNES emulator: no bus, stack, interrupts, timing or PPU.
@@ -19,6 +20,8 @@ int main(int argc, char** argv) {
     if (limit < 1 || limit > 100000) return 2;
     unsigned pc = rom.reset(), a = 0, x = 0, y = 0;
     bool e = true, m8 = true, x8 = true, carry = false;
+    std::array<unsigned char, 0x2000> wram{};
+    unsigned stores = 0, last_store = 0, last_value = 0;
     int steps = 0;
     const char* reason = "limit";
     for (; steps < limit; ++steps) {
@@ -30,6 +33,8 @@ int main(int argc, char** argv) {
           width = (op == 0xC2 || op == 0xE2) ? 2 :
                   (op == 0xA9 ? (m8 ? 2 : 3) : (x8 ? 2 : 3));
           break;
+        case 0x8D: width = 3; break;
+        case 0x80: width = 2; break;
         case 0x18: case 0x38: case 0xFB: case 0xEA: case 0xDB:
           break;
         default: reason = "unsupported"; goto finished;
@@ -43,6 +48,11 @@ int main(int argc, char** argv) {
       }
       const unsigned value = width == 1 ? 0 :
           width == 2 ? rom.byte(offset + 1) : rom.word(offset + 1);
+      if (op == 0x8D && value >= wram.size()) {
+        // $2100 and other hardware registers require a modeled SNES bus.
+        reason = "unsupported";
+        break;
+      }
       switch (op) {
         case 0x18: carry = false; break;
         case 0x38: carry = true; break;
@@ -72,6 +82,26 @@ int main(int argc, char** argv) {
         case 0xA9: a = m8 ? ((a & 0xff00u) | value) : value; break;
         case 0xA2: x = value; break;
         case 0xA0: y = value; break;
+        case 0x8D:
+          wram[value] = static_cast<unsigned char>(a & 0xffu);
+          if (!m8) {
+            wram[(value + 1) & 0x1fffu] = static_cast<unsigned char>(a >> 8);
+          }
+          ++stores;
+          last_store = value;
+          last_value = a & (m8 ? 0xffu : 0xffffu);
+          break;
+        case 0x80: {
+          const int displacement = static_cast<int>(static_cast<signed char>(value));
+          const int target = static_cast<int>(pc & 0xffffu) + 2 + displacement;
+          if (target < 0x8000 || target > 0xffff) {
+            reason = "boundary";
+            goto finished;
+          }
+          // pc += width after this switch, so set it to target - width.
+          pc = (pc & 0xff0000u) | static_cast<unsigned>(target - 2);
+          break;
+        }
         case 0xDB: reason = "stp"; break;
         default: break;
       }
@@ -88,7 +118,12 @@ finished:
               << std::dec << " e=" << (e ? 1 : 0)
               << " m=" << (m8 ? 8 : 16)
               << " xbits=" << (x8 ? 8 : 16)
-              << " c=" << (carry ? 1 : 0) << '\n';
+              << " c=" << (carry ? 1 : 0)
+              << " stores=" << stores
+              << " last_addr=$" << std::uppercase << std::hex
+              << std::setw(4) << std::setfill('0') << last_store
+              << " last_value=$" << std::setw(4) << last_value
+              << std::dec << '\n';
     return 0;
   } catch (const std::exception& ex) { return error(ex); }
 }

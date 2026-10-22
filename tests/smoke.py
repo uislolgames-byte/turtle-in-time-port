@@ -138,6 +138,29 @@ def main():
         assert 'a=$1234' in execution and 'x=$0078' in execution, execution
         assert 'm=16 xbits=8' in execution, execution
         assert 'steps=7' in execution, execution
+        # STA to modeled low WRAM is permitted; hardware I/O is not.
+        memory_rom = bytearray(rom)
+        memory_rom[:9] = bytes([0xA9, 0xAB, 0x8D, 0x10, 0x00,
+                                 0x80, 0x01, 0xFF, 0xDB])
+        memory_path = root / 'execute-memory.sfc'
+        memory_path.write_bytes(memory_rom)
+        memory_output = check([executor, str(memory_path), '20'], 0)
+        assert 'reason=stp' in memory_output, memory_output
+        assert 'stores=1 last_addr=$0010 last_value=$00AB' in memory_output, memory_output
+        # BRA with a negative offset loops only up to the instruction limit.
+        loop_rom = bytearray(rom)
+        loop_rom[:2] = bytes([0x80, 0xFE])
+        loop_path = root / 'execute-loop.sfc'
+        loop_path.write_bytes(loop_rom)
+        loop_output = check([executor, str(loop_path), '5'], 0)
+        assert 'reason=limit steps=5 pc=$008000' in loop_output, loop_output
+        # A branch outside the ROM address window must stop safely.
+        escape_rom = bytearray(rom)
+        escape_rom[:2] = bytes([0x80, 0x80])
+        escape_path = root / 'execute-escape.sfc'
+        escape_path.write_bytes(escape_rom)
+        escape_output = check([executor, str(escape_path), '5'], 0)
+        assert 'reason=boundary' in escape_output, escape_output
         check([executor, str(valid), '0'], 2)
         unsupported_rom = bytearray(rom)
         unsupported_rom[0] = 0xFF
