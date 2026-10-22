@@ -27,7 +27,11 @@ struct Rom {
   size_t lorom(uint32_t address) const {
     if (address > 0xffffff || (address & 0x8000) == 0)
       throw std::out_of_range("Not a LoROM ROM address");
-    const size_t offset = ((address >> 16) & 0x7f) * 0x8000 + (address & 0x7fff);
+    const uint32_t bank = (address >> 16) & 0xff;
+    // Banks $7E-$7F are WRAM, even when the address has its high bit set.
+    if (bank == 0x7e || bank == 0x7f)
+      throw std::out_of_range("WRAM bank is not LoROM ROM space");
+    const size_t offset = (bank & 0x7f) * 0x8000 + (address & 0x7fff);
     if (offset >= data.size()) throw std::out_of_range("LoROM address beyond file");
     return offset;
   }
