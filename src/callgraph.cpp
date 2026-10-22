@@ -44,6 +44,13 @@ int main(int argc, char** argv) {
       const unsigned entry = pending.front(); pending.pop();
       unsigned cpu = entry;
       bool emulation = true, carry = false, m8 = true, x8 = true;
+      // The width flags of independently discovered routines are unknown.
+      // Only RESET has a guaranteed emulation-mode entry state.
+      if (entry != unsigned(rom.reset())) {
+        std::cerr << "Skipping unproven callee decoding at " << hex(entry)
+                  << " (CPU state at entry unknown)\n";
+        continue;
+      }
       while (decoded < limit && !visited.count(cpu)) {
         size_t offset;
         try { offset = rom.lorom(cpu); }
