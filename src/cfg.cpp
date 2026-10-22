@@ -16,10 +16,10 @@ static std::string hx(unsigned n) {
 }
 struct State {
   unsigned pc;
-  bool e, carry, m8, x8;
+  bool e, carry, carry_known, m8, x8;
   bool operator<(const State& b) const {
-    return std::tie(pc,e,carry,m8,x8) <
-           std::tie(b.pc,b.e,b.carry,b.m8,b.x8);
+    return std::tie(pc,e,carry,carry_known,m8,x8) <
+           std::tie(b.pc,b.e,b.carry,b.carry_known,b.m8,b.x8);
   }
 };
 struct Edge {
@@ -42,7 +42,7 @@ int main(int argc, char** argv) {
     std::queue<State> pending;
     std::set<State> seen;
     std::set<Edge> edges;
-    pending.push({rom.reset(),true,false,true,true});
+    pending.push({rom.reset(),true,false,false,true,true});
     int decoded=0, unresolved=0;
     while (!pending.empty() && decoded < limit) {
       State s=pending.front(); pending.pop();
@@ -54,9 +54,9 @@ int main(int argc, char** argv) {
       int bytes=0;
       bool terminal=false, unknown=false;
       switch(op) {
-        case 0x18: s.carry=false; break;
-        case 0x38: s.carry=true; break;
-        case 0xfb: { bool old=s.e; s.e=s.carry; s.carry=old;
+        case 0x18: s.carry=false; s.carry_known=true; break;
+        case 0x38: s.carry=true; s.carry_known=true; break;
+        case 0xfb: { if (!s.carry_known) { unknown=true; break; }\n                     bool old=s.e; s.e=s.carry; s.carry=old;
                      if(s.e) s.m8=s.x8=true; break; }
         case 0xc2: case 0xe2: bytes=1; break;
         case 0xa2: case 0xa0: bytes=s.x8?1:2; break;
@@ -72,8 +72,8 @@ int main(int argc, char** argv) {
         case 0x78: case 0x58: case 0xd8: case 0xf8:
         case 0x9a: case 0xea: case 0xaa: case 0xa8:
         case 0x8a: case 0x98: case 0x5a: case 0x7a:
-        case 0x48: case 0x68: case 0x08: case 0x28:
-        case 0xe8: case 0xca: case 0xc8: case 0x88: break;
+        case 0x48: case 0x68: case 0x08:
+        case 0xe8: case 0xca: case 0xc8: case 0x88: break;\n        case 0x28: unknown=true; break; // PLP restores unknown M/X/E-independent status
         case 0x60: case 0x6b: case 0xdb: case 0x00: terminal=true; break;
         default: unknown=true; break;
       }
@@ -92,12 +92,17 @@ int main(int argc, char** argv) {
         if(operand&0x20) s.m8=true;
         if(operand&0x10) s.x8=true;
       }
+      // Arithmetic and restored flags invalidate the known carry value.
+      // The next XCE must not assume the old carry.
+      if (op==0x69 || op==0xe9 || op==0xc9 || op==0x2c ||
+          op==0xe8 || op==0xca || op==0xc8 || op==0x88)
+        s.carry_known=false;
       ++decoded;
       const unsigned from=s.pc;
       const unsigned next=(from&0xff0000u)|((from+1u+unsigned(bytes))&0xffffu);
       auto enqueue=[&](unsigned target,const char* label) {
         edges.insert({from,target,label});
-        try { (void)rom.lorom(target); pending.push({target,s.e,s.carry,s.m8,s.x8}); }
+        try { (void)rom.lorom(target); pending.push({target,s.e,s.carry,s.carry_known,s.m8,s.x8}); }
         catch(const std::out_of_range&) { ++unresolved; }
       };
       if(op==0x80 || op==0x82 || op==0x10 || op==0x30 ||
