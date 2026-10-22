@@ -41,6 +41,7 @@ int main(int argc, char** argv) {
         case 0x70: case 0x50: width = 2; break;
         case 0x18: case 0x38: case 0xB8: case 0xFB: case 0xEA: case 0xDB:
         case 0xE8: case 0xCA: case 0xC8: case 0x88: case 0x1A: case 0x3A:
+        case 0xAA: case 0xA8: case 0x8A: case 0x98: case 0x9B: case 0xBB:
           break;
         default: reason = "unsupported"; goto finished;
       }
@@ -138,6 +139,22 @@ int main(int argc, char** argv) {
           a = m8 ? ((a & 0xff00u) | loaded) : loaded;
           zero = loaded == 0;
           negative = (loaded & (m8 ? 0x80u : 0x8000u)) != 0;
+          break;
+        }
+        case 0xAA: case 0xA8: case 0x8A: case 0x98:
+        case 0x9B: case 0xBB: {
+          const unsigned source = (op == 0xAA || op == 0xA8) ? a
+              : (op == 0x8A || op == 0x9B) ? x : y;
+          const bool dest_a = op == 0x8A || op == 0x98;
+          const unsigned mask = dest_a ? (m8 ? 0xffu : 0xffffu)
+                                       : (x8 ? 0xffu : 0xffffu);
+          const unsigned result = source & mask;
+          unsigned& dest = dest_a ? a :
+              (op == 0xAA || op == 0xBB ? x : y);
+          dest = dest_a && m8 ? ((dest & 0xff00u) | result) : result;
+          zero = result == 0;
+          negative = (result & (dest_a ? (m8 ? 0x80u : 0x8000u)
+                                      : (x8 ? 0x80u : 0x8000u))) != 0;
           break;
         }
         case 0xE8: case 0xCA: case 0xC8: case 0x88:

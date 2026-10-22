@@ -334,6 +334,49 @@ def main():
         dex16_output = check([executor, str(dex16_path), '20'], 0)
         assert 'x=$FFFF' in dex16_output and 'xbits=16' in dex16_output, dex16_output
         assert 'z=0 n=1' in dex16_output, dex16_output
+        # TAX truncates a 16-bit accumulator to an 8-bit X register.
+        tax_rom = bytearray(rom)
+        tax_program = bytes([
+            0x18, 0xFB, 0xC2, 0x20, 0xA9, 0x80, 0x12,
+            0xAA, 0xDB,
+        ])
+        tax_rom[:len(tax_program)] = tax_program
+        tax_path = root / 'execute-tax.sfc'
+        tax_path.write_bytes(tax_rom)
+        tax_output = check([executor, str(tax_path), '20'], 0)
+        assert 'reason=stp' in tax_output and 'a=$1280' in tax_output, tax_output
+        assert 'x=$0080' in tax_output and 'n=1' in tax_output, tax_output
+        # TXA into 8-bit A retains the hidden high accumulator byte.
+        txa_rom = bytearray(rom)
+        txa_program = bytes([
+            0x18, 0xFB, 0xC2, 0x20, 0xA9, 0x34, 0x12,
+            0xE2, 0x20, 0xA2, 0xFE, 0x8A, 0xDB,
+        ])
+        txa_rom[:len(txa_program)] = txa_program
+        txa_path = root / 'execute-txa.sfc'
+        txa_path.write_bytes(txa_rom)
+        txa_output = check([executor, str(txa_path), '20'], 0)
+        assert 'a=$12FE' in txa_output and 'n=1' in txa_output, txa_output
+        # TAY and TYX in 16-bit index mode preserve both bytes.
+        tyx_rom = bytearray(rom)
+        tyx_program = bytes([
+            0x18, 0xFB, 0xC2, 0x30, 0xA9, 0xEF, 0xBE,
+            0xA8, 0xBB, 0xDB,
+        ])
+        tyx_rom[:len(tyx_program)] = tyx_program
+        tyx_path = root / 'execute-tyx.sfc'
+        tyx_path.write_bytes(tyx_rom)
+        tyx_output = check([executor, str(tyx_path), '20'], 0)
+        assert 'x=$BEEF' in tyx_output and 'y=$BEEF' in tyx_output, tyx_output
+        assert 'xbits=16' in tyx_output and 'n=1' in tyx_output, tyx_output
+        # TXY and TYA round-trip in emulation mode.
+        txy_rom = bytearray(rom)
+        txy_program = bytes([0xA2, 0x42, 0x9B, 0x98, 0xDB])
+        txy_rom[:len(txy_program)] = txy_program
+        txy_path = root / 'execute-txy.sfc'
+        txy_path.write_bytes(txy_rom)
+        txy_output = check([executor, str(txy_path), '20'], 0)
+        assert 'a=$0042' in txy_output and 'y=$0042' in txy_output, txy_output
         check([executor, str(valid), '0'], 2)
         unsupported_rom = bytearray(rom)
         unsupported_rom[0] = 0xFF
