@@ -169,6 +169,13 @@ def main():
             wram_output = check([cfg, str(wram_path)], 0)
             assert f'"$008000" -> "${bank:02X}8000"' not in wram_output, wram_output
             assert 'Unresolved=1' in wram_output, wram_output
+        vector_cfg = check([cfg, str(valid)], 0)
+        assert '"vector_7ffc" -> "$008000" [style=dotted,label="entry only"]' in vector_cfg
+        assert '"vector_7ffa" -> "$008010" [style=dotted,label="entry only"]' in vector_cfg
+        assert '"vector_7fea" -> "$008020" [style=dotted,label="entry only"]' in vector_cfg
+        assert '"vector_7fea" [shape=box,label="Native NMI"]' in vector_cfg
+        # Vector targets are annotated, not traversed without a known CPU state.
+        assert '"$008010" -> ' not in vector_cfg, vector_cfg
         cfg_output = check([cfg, str(branch)], 0)
         assert '"$008000" -> "$008004" [label="BRA"]' in cfg_output, cfg_output
         assert '"$008004" -> "$008000" [label="BNE"]' in cfg_output, cfg_output
