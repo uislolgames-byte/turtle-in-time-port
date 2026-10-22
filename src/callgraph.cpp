@@ -159,7 +159,15 @@ int main(int argc, char** argv) {
           cpu=target;
           continue;
         }
-        if (op==0x5c || stop) break;
+        // JML long has a single 24-bit successor. Validate LoROM mapping
+        // before crossing program banks, preserving the known CPU flags.
+        if (op==0x5c) {
+          try { (void)rom.lorom(operand); }
+          catch (const std::out_of_range&) { break; }
+          cpu=operand;
+          continue;
+        }
+        if (stop) break;
         const unsigned next=(cpu&0xff0000u)|((cpu+1u+unsigned(bytes))&0xffffu);
         if ((next&0x8000u)==0 || (next&0xffffu)<(cpu&0xffffu)) break;
         cpu=next;
