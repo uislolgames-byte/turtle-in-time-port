@@ -4,6 +4,17 @@
 #include <vector>
 #include <cstdint>
 inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
+  if (name == "dma_wram" || name == "dma_fault") {
+    std::vector<uint8_t> code;
+    const auto write = [&](unsigned address, unsigned value) {
+      code.insert(code.end(), {0xa9,uint8_t(value),0x8d,uint8_t(address),uint8_t(address >> 8)});
+    };
+    write(0x2181,0xfe); write(0x2182,0xff); write(0x2183,1);
+    write(0x4300,0); write(0x4301,0x80); write(0x4302,0); write(0x4303,0x90);
+    write(0x4304,name == "dma_fault" ? 1 : 0); write(0x4305,4); write(0x4306,0);
+    write(0x420b,1); code.insert(code.end(), {0xad,2,0x43,0xdb});
+    return code;
+  }
   if (name == "irq_emulation" || name == "irq_native" || name == "irq_move" || name == "irq_leaf" || name == "irq_corrupt") {
     std::vector<uint8_t> image(32768, 0);
     std::vector<uint8_t> main = {0xea,0xea,0xdb};

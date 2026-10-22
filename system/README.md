@@ -2,7 +2,7 @@
 
 `bus.hpp` is a C++17 memory component optionally connected to the static
 recompiler runtime. The existing CPU probe and Windows application are unchanged.
-Hardware timing, general/nested interrupt handlers and DMA remain future work. This does not run the game or
+Full hardware timing, general/nested interrupt handlers and general DMA remain future work. This does not run the game or
 complete milestone 3.
 
 ## Explicit supported contract
@@ -22,12 +22,14 @@ WRAM banks take precedence over ROM mapping. Banks `$80–FF` mirror the
 corresponding lower ROM banks. The mapped offset must exist in the supplied
 cartridge; smaller ROMs do not wrap to fill unpopulated banks. Additional LoROM
 aliases in the lower half of banks are deliberately unsupported. No SRAM,
-MMIO, PPU/APU registers, open-bus behavior, cartridge chips or cycle timing.
+PPU/APU registers, open-bus behavior, cartridge chips or CPU cycle timing.
+MMIO is disabled by default; an explicit optional DMA/WRAM-port subset is below.
 The model is intentionally stricter and smaller than real SNES hardware.
 
 `read8`/`write8` are byte operations on checked 24-bit addresses. A ROM write,
 unmapped region, out-of-file ROM offset or oversized address throws `BusError`
-with a typed reason and the CPU address. Failed byte writes change no memory.
+with a typed reason and the CPU address. Failed ordinary byte writes change no
+memory; a DMA trigger may fail after some bytes have transferred (see below).
 Word accesses and their address wrapping policies will be defined with CPU
 integration; callers must not infer them from this byte API.
 
@@ -44,6 +46,7 @@ host CPU state: A/X/Y/DBR and steps zero, PC from RESET, S=$01FF, P=$34, E=1,
 no diagnostic, stop=limit. This is a deterministic subset policy, not a full
 hardware reset (no reset cycles or emulation of undefined register values).
 WRAM persists; `bus.clear_ram()` is the separate explicit operation to clear it.
+Reset also clears optional DMA registers/counters and the WRAM-port address.
 The function returns false with a contract diagnostic for RESET other than
 $8000. Generated code remains fixed to bank-zero entry $8000; no resuming.
 
@@ -59,7 +62,9 @@ load/store/JSR, recording the bus address/reason in `diagnostic`. The existing
 RTS accounting still counts RTS before reading/validating its return.
 Word loads/stores preflight all bytes and reject crossing a 64 KiB bank boundary;
 hardware wrapping is deliberately unsupported. Failed transfers do not partially
-write RAM or update A/P. There is no MMIO with read/write side effects.
+write RAM or update A/P. MMIO word accesses are rejected before side effects.
+Byte MMIO accesses can have effects as documented below; stack and MVN/MVP MMIO
+accesses are explicitly rejected in this subset.
 
 On every call, before any instructions, generated code compares every reachable
 instruction/operand byte at bank zero against literal expected bytes. A mismatch
@@ -86,7 +91,49 @@ Six `recompiled_move_*` tests add 99 generated/reference comparisons, each check
 all WRAM bytes, registers, flags, stops and ticks, plus hand-specified final states,
 NMI between bytes and fault/overlap checks. Five `recompiled_irq_*` tests add
 2,200 comparisons against an independent byte interpreter for handler entry,
-execution and RTI, including every WRAM byte and pending signals. Total: 30 tests.
+execution and RTI, including every WRAM byte and pending signals. `system_dma`
+adds 12 byte-array reference copies, a 65,536-byte copy, port/bank checks and
+negative cases. Two `recompiled_dma_*` tests add 16 fixed execution traces and
+full-WRAM checks through generated register writes. Total: 33 tests.
+
+## Optional channel-0 DMA to the WRAM data port
+
+Construct `Bus(image, true)` to enable this device subset. It is off by default.
+Supported CPU-bank aliases: $00–3F/$80–BF. Byte writes to $2181–2183 set a 17-bit
+WRAM address; $2180 reads/writes its byte and increments that address modulo
+128 KiB. Only bit 0 of $2183 is used. Address registers are write-only; reading
+$2180 requires a non-const bus because it advances state. The default bus still
+rejects these addresses.
+
+Channel-0 registers $4300–4306 are readable/writable: control, B-bus target,
+A-bus address low/high/bank and size low/high. A byte write of 1 to $420B starts
+the supported transfer synchronously. A zero mask does nothing; other channel
+masks are rejected. Only mode 0, A-to-B, target $80 (WRAM port) is implemented.
+Control $00 increments the source, $10 decrements it, $08/$18 fixes it. The
+16-bit source wraps without changing its bank. Count zero means 65,536 bytes.
+After each successful byte, source/size registers and the WRAM pointer advance.
+
+WRAM (including low mirrors) cannot be the source of this WRAM-port transfer.
+CPU/PPU I/O sources, unsupported mapping, other targets/directions/modes and HDMA
+are rejected with address/reason. A failure retains completed bytes and their
+register progress; the failing byte is not committed. Retrying requires explicit
+reconfiguration. Startup overhead remains counted on a data-source failure.
+
+`dma_clocks()` counts 16 master clocks of startup/channel overhead plus 8 for
+each successfully transferred byte; `dma_bytes()` counts successful bytes. A
+four-byte transfer therefore records 48 clocks. These are a **partial DMA
+timing model**, separate from `State::clock` (logical instruction ticks). CPU bus
+cycles, start alignment, refresh/arbitration, PPU/APU synchronization and hardware
+NMI/IRQ timing during DMA remain absent. DMA runs inside the trigger write;
+logical events are checked at the next CPU instruction boundary, not per DMA
+byte. This cannot establish frame timing or complete milestone 3.
+
+Runtime loads/stores involving MMIO must be 8-bit. Sixteen-bit MMIO, stack MMIO
+and MVN/MVP MMIO are rejected before effects. `reset_cpu` resets these devices
+and their counters while preserving WRAM. `clear_ram` only clears RAM. There are
+no video ports or image output yet. Reference for DMA ordering/byte overhead:
+upstream bsnes [DMA implementation](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/sfc/cpu/dma.cpp).
+No upstream source code was copied.
 
 ## MVN/MVP block transfers in generated code
 

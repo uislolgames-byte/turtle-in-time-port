@@ -53,5 +53,6 @@ jobs:
             build/tmnt_recompile
             build/tmnt_system_bus_tests
             build/tmnt_system_events_tests
+            build/tmnt_system_dma_tests
             build/tmnt_recompiled_*
           if-no-files-found: error

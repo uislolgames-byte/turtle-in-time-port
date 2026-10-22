@@ -86,6 +86,9 @@ Seis testes `recompiled_move_*` compilam e executam MVN/MVP contra uma referênc
 independente, incluindo M8/X8, M8/X16, M16/X16 e um bloco de 65536 bytes.
 Cinco testes `recompiled_irq_*` acrescentam 2200 comparações de entrada de NMI/IRQ,
 execução de handlers, RTI e continuidade, sem substituir os testes anteriores.
+Dois testes `recompiled_dma_*` configuram a porta WRAM e o canal 0 pelos registradores
+a partir do C++ gerado, com 16 rastros fixos, falhas e contagem parcial de clocks DMA.
+Esse MMIO exige `Bus(image, true)` e acessos de 8 bits; o modo padrão é preservado.
 
 O Marco 2 só pode ser marcado concluído após validação e integração desta etapa
 à main, conforme o roteiro de marcos. Ter o diagnóstico do Marco 1 não prova

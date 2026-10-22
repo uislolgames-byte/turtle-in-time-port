@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <utility>
 #include <vector>
+#include <limits>
 
 namespace system816 {
 enum class Fault { address, unmapped, rom_bounds, read_only };
@@ -24,25 +25,54 @@ private:
   }
 };
 
-// Deliberately strict LoROM subset. No open bus, SRAM, MMIO or ROM-size mirroring.
+// Strict LoROM subset. Optional channel-0 DMA/WRAM-port MMIO; no open bus/SRAM.
 class Bus {
 public:
-  explicit Bus(std::vector<uint8_t> rom) : rom_(std::move(rom)) {
+  explicit Bus(std::vector<uint8_t> rom, bool dma_io = false) : rom_(std::move(rom)), dma_io_(dma_io) {
     if (rom_.empty() || rom_.size() > 0x400000 || rom_.size() % 0x8000)
       throw std::invalid_argument("Bus requires headerless LoROM: 32 KiB blocks, at most 4 MiB");
   }
   uint8_t read8(uint32_t address) const {
+    const auto io = io_address(address);
+    if (dma_io_ && io >= 0x4300 && io <= 0x4306) return channel_[io-0x4300];
+    if (dma_io_ && io == 0x2180)
+      throw BusError(Fault::unmapped, address, "WRAM data-port read requires a mutable bus");
     const auto location = resolve(address);
     return location.ram ? ram_[location.offset] : rom_[location.offset];
   }
+  uint8_t read8(uint32_t address) {
+    if (dma_io_ && io_address(address) == 0x2180) {
+      const auto value = ram_[wram_address_];
+      wram_address_ = (wram_address_ + 1) & 0x1ffff;
+      return value;
+    }
+    return static_cast<const Bus&>(*this).read8(address);
+  }
   void write8(uint32_t address, uint8_t value) {
     validate_write8(address);
+    const auto io = io_address(address);
+    if (dma_io_ && writable_io(io)) { write_io(io, value, address); return; }
     ram_[resolve(address).offset] = value;
   }
-  // Preflight for atomic multi-byte transfers in the strict (no MMIO) runtime.
+  // Address-only preflight. Runtime word accesses involving MMIO are rejected.
   void validate_write8(uint32_t address) const {
+    if (dma_io_ && writable_io(io_address(address))) return;
     const auto location = resolve(address);
     if (!location.ram) throw BusError(Fault::read_only, address, "ROM write rejected");
+  }
+  bool is_mmio(uint32_t address) const {
+    const auto io = io_address(address);
+    return dma_io_ && ((io >= 0x2100 && io <= 0x21ff) || (io >= 0x4200 && io <= 0x437f));
+  }
+  void validate_word(uint32_t address) const {
+    if (is_mmio(address) || (address < 0xffffff && is_mmio(address+1)))
+      throw BusError(Fault::unmapped, address, "16-bit MMIO transfers unsupported");
+  }
+  uint32_t wram_address() const { return wram_address_; }
+  uint64_t dma_clocks() const { return dma_clocks_; }
+  uint64_t dma_bytes() const { return dma_bytes_; }
+  void reset_devices() {
+    channel_.fill(0); wram_address_ = 0; dma_clocks_ = 0; dma_bytes_ = 0;
   }
   uint16_t reset_vector() const {
     return static_cast<uint16_t>(read8(0x00fffc) | (unsigned(read8(0x00fffd)) << 8));
@@ -51,6 +81,50 @@ public:
   // Ordinary accesses and CPU resets leave this bus instance's RAM intact.
   void clear_ram() { ram_.fill(0); }
 private:
+  static uint32_t io_address(uint32_t address) {
+    if (address > 0xffffff || ((address >> 16) & 0x7f) >= 0x40) return 0;
+    return address & 0xffff;
+  }
+  static bool writable_io(uint32_t io) {
+    return (io >= 0x2180 && io <= 0x2183) || (io >= 0x4300 && io <= 0x4306) || io == 0x420b;
+  }
+  void write_io(uint32_t io, uint8_t value, uint32_t address) {
+    if (io >= 0x4300 && io <= 0x4306) { channel_[io-0x4300] = value; return; }
+    if (io == 0x2180) { ram_[wram_address_] = value; wram_address_ = (wram_address_+1) & 0x1ffff; }
+    if (io == 0x2181) wram_address_ = (wram_address_ & 0x1ff00) | value;
+    if (io == 0x2182) wram_address_ = (wram_address_ & 0x100ff) | (unsigned(value) << 8);
+    if (io == 0x2183) wram_address_ = (wram_address_ & 0xffff) | ((unsigned(value) & 1) << 16);
+    if (io == 0x420b) run_dma(value, address);
+  }
+  void run_dma(uint8_t mask, uint32_t trigger) {
+    if (mask == 0) return;
+    if (mask != 1 || (channel_[0] & ~0x18u) || channel_[1] != 0x80)
+      throw BusError(Fault::unmapped, trigger, "Only channel 0, mode 0, A-to-WRAM-port DMA is supported");
+    unsigned remaining = unsigned(channel_[5]) | (unsigned(channel_[6]) << 8);
+    if (remaining == 0) remaining = 65536;
+    const uint64_t maximum_cost = 16 + uint64_t(remaining)*8;
+    if (dma_clocks_ > std::numeric_limits<uint64_t>::max() - maximum_cost)
+      throw BusError(Fault::address, trigger, "DMA clock counter exhausted");
+    // Startup + channel overhead; alignment/refresh/arbitration are not modeled.
+    dma_clocks_ += 16;
+    while (remaining) {
+      const unsigned low = unsigned(channel_[2]) | (unsigned(channel_[3]) << 8);
+      const unsigned bank = channel_[4], source = (bank << 16) | low;
+      if (bank == 0x7e || bank == 0x7f || ((bank & 0x7f) < 0x40 && low < 0x2000))
+        throw BusError(Fault::unmapped, source, "WRAM-to-WRAM-port DMA unsupported");
+      if (io_address(source) >= 0x2100 && io_address(source) < 0x4380)
+        throw BusError(Fault::unmapped, source, "DMA source in CPU/PPU I/O unsupported");
+      const auto value = static_cast<const Bus&>(*this).read8(source);
+      ram_[wram_address_] = value; wram_address_ = (wram_address_+1) & 0x1ffff;
+      if (!(channel_[0] & 8)) {
+        const unsigned next = (low + ((channel_[0] & 16) ? 65535 : 1)) & 65535;
+        channel_[2] = static_cast<uint8_t>(next); channel_[3] = static_cast<uint8_t>(next >> 8);
+      }
+      --remaining;
+      channel_[5] = static_cast<uint8_t>(remaining); channel_[6] = static_cast<uint8_t>(remaining >> 8);
+      ++dma_bytes_; dma_clocks_ += 8;
+    }
+  }
   struct Location { bool ram; uint32_t offset; };
   Location resolve(uint32_t address) const {
     if (address > 0xffffff) throw BusError(Fault::address, address, "Address exceeds 24 bits");
@@ -64,5 +138,9 @@ private:
   }
   std::vector<uint8_t> rom_;
   std::array<uint8_t, 0x20000> ram_{};
+  bool dma_io_ = false;
+  std::array<uint8_t,7> channel_{};
+  uint32_t wram_address_ = 0;
+  uint64_t dma_clocks_ = 0, dma_bytes_ = 0;
 };
 }

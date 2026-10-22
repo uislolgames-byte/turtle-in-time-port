@@ -52,6 +52,7 @@ inline void complete_instruction(State& s) {
 inline bool reset_cpu(State& s, system816::Bus& bus) {
   s = State{};
   s.bus = &bus;
+  bus.reset_devices();
   s.pc = bus.reset_vector();
   if (s.pc != 0x8000) {
     s.stop = Stop::contract;
@@ -75,6 +76,16 @@ inline void write_byte(State& s, unsigned address, uint8_t value) {
   if (s.bus) s.bus->write8(address, value);
   else s.ram.at(address) = value;
 }
+inline void validate_stack_write(const State& s, unsigned address) {
+  if (s.bus && s.bus->is_mmio(address))
+    throw system816::BusError(system816::Fault::unmapped, address, "MMIO stack access unsupported");
+  validate_write(s, address);
+}
+inline uint8_t read_stack_byte(const State& s, unsigned address) {
+  if (s.bus && s.bus->is_mmio(address))
+    throw system816::BusError(system816::Fault::unmapped, address, "MMIO stack access unsupported");
+  return read_byte(s, address);
+}
 inline bool code_byte(State& s, unsigned address, unsigned expected) {
   try {
     if (s.bus->read8(address) == expected) return true;
@@ -94,6 +105,7 @@ inline void nz(State& s, unsigned value, bool narrow) {
 }
 inline bool store(State& s, unsigned address, unsigned value, bool narrow) {
   try {
+    if (s.bus && !narrow) s.bus->validate_word(address);
     if (s.bus && !narrow && (address & 65535) == 65535)
       throw system816::BusError(system816::Fault::unmapped, address, "Word across bank boundary unsupported");
     validate_write(s, address);
@@ -107,6 +119,7 @@ inline bool store(State& s, unsigned address, unsigned value, bool narrow) {
 }
 inline bool load(State& s, unsigned address, bool narrow) {
   try {
+    if (s.bus && !narrow) s.bus->validate_word(address);
     if (s.bus && !narrow && (address & 65535) == 65535)
       throw system816::BusError(system816::Fault::unmapped, address, "Word across bank boundary unsupported");
     const unsigned lo = read_byte(s, address);
@@ -125,6 +138,9 @@ inline bool move_byte(State& s, unsigned destination, unsigned source, bool narr
     s.stop = Stop::contract; s.diagnostic = "MVN/MVP requires a bus, valid banks and bounded registers"; return false;
   }
   try {
+    const unsigned from = (source << 16) | s.x, to = (destination << 16) | s.y;
+    if (s.bus->is_mmio(from) || s.bus->is_mmio(to))
+      throw system816::BusError(system816::Fault::unmapped, s.bus->is_mmio(from) ? from : to, "MVN/MVP MMIO unsupported");
     const auto value = s.bus->read8((source << 16) | s.x);
     s.bus->write8((destination << 16) | s.y, value);
   } catch (const system816::BusError& e) {
@@ -141,7 +157,7 @@ inline bool move_byte(State& s, unsigned destination, unsigned source, bool narr
 inline bool push_return(State& s, unsigned address) {
   const unsigned next = s.e ? (0x100 | ((s.s - 1) & 255)) : ((s.s - 1) & 65535);
   try {
-    validate_write(s, s.s); validate_write(s, next);
+    validate_stack_write(s, s.s); validate_stack_write(s, next);
     write_byte(s, s.s, static_cast<uint8_t>(address >> 8));
     write_byte(s, next, static_cast<uint8_t>(address));
   } catch (const system816::BusError& e) {
@@ -154,7 +170,7 @@ inline bool pop_return(State& s, unsigned expected) {
   const unsigned lo = s.e ? (0x100 | ((s.s + 1) & 255)) : ((s.s + 1) & 65535);
   const unsigned hi = s.e ? (0x100 | ((lo + 1) & 255)) : ((lo + 1) & 65535);
   unsigned low, high;
-  try { low = read_byte(s, lo); high = read_byte(s, hi); }
+  try { low = read_stack_byte(s, lo); high = read_stack_byte(s, hi); }
   catch (const system816::BusError& e) {
     s.stop = Stop::stack; s.diagnostic = e.what(); return false;
   }
@@ -185,7 +201,7 @@ inline bool enter_interrupt(State& s, unsigned target, bool nmi) {
     std::array<unsigned,4> addresses{};
     unsigned next = s.s;
     for (unsigned i = 0; i < count; ++i) {
-      addresses[i] = next; validate_write(s, next); next = stack_next(next, s.e, false);
+      addresses[i] = next; validate_stack_write(s, next); next = stack_next(next, s.e, false);
     }
     for (unsigned i = 0; i < count; ++i) write_byte(s, addresses[i], static_cast<uint8_t>(values[i]));
     s.interrupt = {true, s.e, s.pc, s.p, s.s, next};
@@ -204,7 +220,7 @@ inline bool return_interrupt(State& s) {
   }
   try {
     unsigned cursor = s.s;
-    const auto pull = [&]() { cursor = stack_next(cursor, s.e, true); return unsigned(read_byte(s, cursor)); };
+    const auto pull = [&]() { cursor = stack_next(cursor, s.e, true); return unsigned(read_stack_byte(s, cursor)); };
     unsigned p = pull();
     const unsigned low = pull(), high = pull();
     const unsigned bank = s.e ? 0 : pull();
