@@ -30,14 +30,16 @@ struct Edge {
   }
 };
 int main(int argc, char** argv) {
-  if (argc < 2 || argc > 3) {
-    std::cerr << "Usage: tmnt_cfg ROM.sfc [limit]\n"; return 2;
+  if (argc < 2 || argc > 4) {
+    std::cerr << "Usage: tmnt_cfg ROM.sfc [limit] [--inventory]\n"; return 2;
   }
   try {
     Rom rom(argv[1]);
     if (rom.reset() < 0x8000)
       throw std::runtime_error("Reset vector is not in LoROM ROM space");
-    const int limit = argc == 3 ? std::atoi(argv[2]) : 512;
+    const bool inventory = argc == 4 && std::string(argv[3]) == "--inventory";
+    if (argc == 4 && !inventory) return 2;
+    const int limit = argc >= 3 ? std::atoi(argv[2]) : 512;
     if (limit < 1 || limit > 100000) return 2;
     std::queue<State> pending;
     std::set<State> seen;
@@ -162,6 +164,21 @@ int main(int argc, char** argv) {
       } else if(!terminal) {
         enqueue(next,"next");
       }
+    }
+    if (inventory) {
+      std::cout << "address,origin,source,kind,status\n";
+      for (const auto& v : vector_edges)
+        std::cout << hx(v.to) << ",vector," << hx(v.from)
+                  << ",\""<< v.label << "\",entry_only\n";
+      for (const auto& c : calls) {
+        bool mapped = true;
+        try { (void)rom.lorom(c.to); }
+        catch (const std::out_of_range&) { mapped = false; }
+        std::cout << hx(c.to) << ",call," << hx(c.from) << ","
+                  << c.label << "," << (mapped ? "candidate" : "unmapped")
+                  << "\n";
+      }
+      return 0;
     }
     std::cout << "digraph TMNT_cfg {\n";
     for(const auto& e:edges)
