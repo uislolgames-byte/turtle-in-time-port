@@ -19,6 +19,7 @@ def main():
         rom[:4] = bytes([0x18, 0xfb, 0x78, 0xdb])
         rom[0x7fc0:0x7fc9] = b'T.M.N.T. 4'
         rom[0x7ffc:0x7ffe] = bytes([0, 0x80])
+        rom[0x7fdc:0x7fe0] = bytes([0x34, 0x12, 0xcb, 0xed])
         valid = p / 'synthetic.sfc'
         valid.write_bytes(rom)
         tiny = p / 'tiny.sfc'
@@ -28,6 +29,14 @@ def main():
             check([exe, str(p / 'missing.sfc')], 1, 'Cannot open ROM')
             check([exe, str(tiny)], 1, 'ROM too small')
         check([tools[0], str(valid)], 0, 'Reset vector: $8000')
+        check([tools[0], str(valid)], 0, 'Checksum pair: valid')
+        check([tools[0], str(valid)], 0, 'ROM version: 0')
+        headered = p / 'headered.smc'
+        headered.write_bytes(bytes(512) + rom)
+        check([tools[0], str(headered)], 0, 'Checksum pair: valid')
+        malformed = p / 'malformed.sfc'
+        malformed.write_bytes(rom + b'X')
+        check([tools[0], str(malformed)], 1, 'Unsupported ROM size')
         check([tools[1], str(valid), '3'], 0, 'CLC')
         check([tools[1], str(valid), '4'], 0, 'XCE')
         check([tools[2], str(valid), '5'], 0, 'Decoded=')
