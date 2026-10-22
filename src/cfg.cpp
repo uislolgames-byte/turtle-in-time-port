@@ -167,10 +167,23 @@ int main(int argc, char** argv) {
       }
     }
     if (inventory) {
-      std::cout << "address,origin,source,kind,status,rom_offset\n";
+      auto preview = [&](unsigned target) {
+        size_t offset;
+        try { offset = rom.lorom(target); }
+        catch (const std::out_of_range&) { return std::string(); }
+        std::ostringstream out;
+        for (size_t i = 0; i < 8 && offset + i < rom.data.size() &&
+             (offset % 0x8000) + i < 0x8000; ++i) {
+          if (i) out << ' ';
+          out << std::uppercase << std::hex << std::setw(2)
+              << std::setfill('0') << unsigned(rom.byte(offset + i));
+        }
+        return out.str();
+      };
+      std::cout << "address,origin,source,kind,status,rom_offset,first_bytes\n";
       for (const auto& v : vector_edges)
         std::cout << hx(v.to) << ",vector," << hx(v.from)
-                  << ",\""<< v.label << "\",entry_only," << hx(static_cast<unsigned>(rom.lorom(v.to))) << "\n";
+                  << ",\""<< v.label << "\",entry_only," << hx(static_cast<unsigned>(rom.lorom(v.to))) << ",\"" << preview(v.to) << "\"\n";
       for (const auto& c : calls) {
         bool mapped = true;
         size_t offset = 0;
@@ -178,7 +191,8 @@ int main(int argc, char** argv) {
         catch (const std::out_of_range&) { mapped = false; }
         std::cout << hx(c.to) << ",call," << hx(c.from) << ","
                   << c.label << "," << (mapped ? "candidate" : "unmapped")
-                  << "," << (mapped ? hx(static_cast<unsigned>(offset)) : "") << "\n";
+                  << "," << (mapped ? hx(static_cast<unsigned>(offset)) : "")
+                  << ",\"" << preview(c.to) << "\"\n";
       }
       return 0;
     }
