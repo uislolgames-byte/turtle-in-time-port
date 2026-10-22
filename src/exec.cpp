@@ -19,7 +19,7 @@ int main(int argc, char** argv) {
     const int limit = argc == 3 ? std::atoi(argv[2]) : 32;
     if (limit < 1 || limit > 100000) return 2;
     unsigned pc = rom.reset(), a = 0, x = 0, y = 0;
-    bool e = true, m8 = true, x8 = true, carry = false, zero = false;
+    bool e = true, m8 = true, x8 = true, carry = false, zero = false, negative = false, overflow = false;
     std::array<unsigned char, 0x2000> wram{};
     unsigned stores = 0, last_store = 0, last_value = 0;
     int steps = 0;
@@ -36,8 +36,9 @@ int main(int argc, char** argv) {
                       ? (m8 ? 2 : 3) : (x8 ? 2 : 3));
           break;
         case 0x8D: case 0xAD: width = 3; break;
-        case 0x80: case 0xF0: case 0xD0: width = 2; break;
-        case 0x18: case 0x38: case 0xFB: case 0xEA: case 0xDB:
+        case 0x80: case 0xF0: case 0xD0: case 0x30: case 0x10:
+        case 0x70: case 0x50: width = 2; break;
+        case 0x18: case 0x38: case 0xB8: case 0xFB: case 0xEA: case 0xDB:
           break;
         default: reason = "unsupported"; goto finished;
       }
@@ -59,6 +60,7 @@ int main(int argc, char** argv) {
       switch (op) {
         case 0x18: carry = false; break;
         case 0x38: carry = true; break;
+        case 0xB8: overflow = false; break;
         case 0xFB: {
           const bool old_e = e;
           e = carry;
@@ -68,6 +70,9 @@ int main(int argc, char** argv) {
         }
         case 0xC2:
           if (value & 0x01) carry = false;
+          if (value & 0x02) zero = false;
+          if (value & 0x40) overflow = false;
+          if (value & 0x80) negative = false;
           if (!e) {
             if (value & 0x20) m8 = false;
             if (value & 0x10) x8 = false;
@@ -75,6 +80,9 @@ int main(int argc, char** argv) {
           break;
         case 0xE2:
           if (value & 0x01) carry = true;
+          if (value & 0x02) zero = true;
+          if (value & 0x40) overflow = true;
+          if (value & 0x80) negative = true;
           if (value & 0x20) m8 = true;
           if (value & 0x10) {
             x8 = true;
@@ -85,6 +93,7 @@ int main(int argc, char** argv) {
         case 0xA9:
           a = m8 ? ((a & 0xff00u) | value) : value;
           zero = (a & (m8 ? 0xffu : 0xffffu)) == 0;
+          negative = (a & (m8 ? 0x80u : 0x8000u)) != 0;
           break;
         case 0x69: case 0xE9: case 0xC9: {
           const unsigned mask = m8 ? 0xffu : 0xffffu;
@@ -93,24 +102,31 @@ int main(int argc, char** argv) {
           if (op == 0xC9) {
             carry = lhs >= rhs;
             zero = lhs == rhs;
+            negative = ((lhs - rhs) & (m8 ? 0x80u : 0x8000u)) != 0;
           } else {
             const unsigned sum = op == 0x69
                 ? lhs + rhs + (carry ? 1u : 0u)
                 : lhs + (rhs ^ mask) + (carry ? 1u : 0u);
             carry = sum > mask;
             const unsigned result = sum & mask;
+            const unsigned sign = m8 ? 0x80u : 0x8000u;
+            overflow = op == 0x69
+                ? ((~(lhs ^ rhs) & (lhs ^ result) & sign) != 0)
+                : (((lhs ^ rhs) & (lhs ^ result) & sign) != 0);
+            negative = (result & sign) != 0;
             a = m8 ? ((a & 0xff00u) | result) : result;
             zero = result == 0;
           }
           break;
         }
-        case 0xA2: x = value; zero = x == 0; break;
-        case 0xA0: y = value; zero = y == 0; break;
+        case 0xA2: x = value; zero = x == 0; negative = (x & (x8 ? 0x80u : 0x8000u)) != 0; break;
+        case 0xA0: y = value; zero = y == 0; negative = (y & (x8 ? 0x80u : 0x8000u)) != 0; break;
         case 0xAD: {
           const unsigned loaded = m8 ? wram[value] :
               static_cast<unsigned>(wram[value] | (wram[value + 1] << 8));
           a = m8 ? ((a & 0xff00u) | loaded) : loaded;
           zero = loaded == 0;
+          negative = (loaded & (m8 ? 0x80u : 0x8000u)) != 0;
           break;
         }
         case 0x8D:
@@ -122,8 +138,11 @@ int main(int argc, char** argv) {
           last_store = value;
           last_value = a & (m8 ? 0xffu : 0xffffu);
           break;
-        case 0x80: case 0xF0: case 0xD0: {
-          if ((op == 0xF0 && !zero) || (op == 0xD0 && zero))
+        case 0x80: case 0xF0: case 0xD0: case 0x30: case 0x10:
+        case 0x70: case 0x50: {
+          if ((op == 0xF0 && !zero) || (op == 0xD0 && zero) ||
+              (op == 0x30 && !negative) || (op == 0x10 && negative) ||
+              (op == 0x70 && !overflow) || (op == 0x50 && overflow))
             break;
           const int displacement = static_cast<int>(static_cast<signed char>(value));
           const int target = static_cast<int>(pc & 0xffffu) + 2 + displacement;
@@ -153,6 +172,8 @@ finished:
               << " xbits=" << (x8 ? 8 : 16)
               << " c=" << (carry ? 1 : 0)
               << " z=" << (zero ? 1 : 0)
+              << " n=" << (negative ? 1 : 0)
+              << " v=" << (overflow ? 1 : 0)
               << " stores=" << stores
               << " last_addr=$" << std::uppercase << std::hex
               << std::setw(4) << std::setfill('0') << last_store

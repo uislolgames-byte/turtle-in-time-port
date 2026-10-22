@@ -232,6 +232,45 @@ def main():
         adc16_path.write_bytes(adc16_rom)
         adc16_output = check([executor, str(adc16_path), '20'], 0)
         assert 'a=$0000' in adc16_output and 'c=1 z=1' in adc16_output, adc16_output
+        # Signed overflow after 0x7F + 1, with BMI and BVS taken.
+        flags_rom = bytearray(rom)
+        flags_program = bytes([
+            0xA9, 0x7F, 0x18, 0x69, 0x01,
+            0x30, 0x01, 0xFF, 0x70, 0x01, 0xFF, 0xDB,
+        ])
+        flags_rom[:len(flags_program)] = flags_program
+        flags_path = root / 'execute-flags.sfc'
+        flags_path.write_bytes(flags_rom)
+        flags_output = check([executor, str(flags_path), '20'], 0)
+        assert 'reason=stp' in flags_output and 'a=$0080' in flags_output, flags_output
+        assert 'n=1 v=1' in flags_output, flags_output
+        # CLV clears overflow and BVC follows the cleared flag.
+        clv_rom = bytearray(rom)
+        clv_program = bytes([
+            0xA9, 0x7F, 0x18, 0x69, 0x01,
+            0xB8, 0x50, 0x01, 0xFF, 0xDB,
+        ])
+        clv_rom[:len(clv_program)] = clv_program
+        clv_path = root / 'execute-clv.sfc'
+        clv_path.write_bytes(clv_rom)
+        clv_output = check([executor, str(clv_path), '20'], 0)
+        assert 'reason=stp' in clv_output and 'n=1 v=0' in clv_output, clv_output
+        # BPL branches after a nonnegative load.
+        bpl_rom = bytearray(rom)
+        bpl_program = bytes([0xA9, 0x01, 0x10, 0x01, 0xFF, 0xDB])
+        bpl_rom[:len(bpl_program)] = bpl_program
+        bpl_path = root / 'execute-bpl.sfc'
+        bpl_path.write_bytes(bpl_rom)
+        bpl_output = check([executor, str(bpl_path), '20'], 0)
+        assert 'reason=stp' in bpl_output and 'n=0' in bpl_output, bpl_output
+        # CMP updates N without changing accumulator.
+        cmpneg_rom = bytearray(rom)
+        cmpneg_program = bytes([0xA9, 0x00, 0xC9, 0x01, 0xDB])
+        cmpneg_rom[:len(cmpneg_program)] = cmpneg_program
+        cmpneg_path = root / 'execute-cmp-negative.sfc'
+        cmpneg_path.write_bytes(cmpneg_rom)
+        cmpneg_output = check([executor, str(cmpneg_path), '20'], 0)
+        assert 'a=$0000' in cmpneg_output and 'c=0 z=0 n=1' in cmpneg_output, cmpneg_output
         check([executor, str(valid), '0'], 2)
         unsupported_rom = bytearray(rom)
         unsupported_rom[0] = 0xFF
