@@ -71,3 +71,8 @@ CMP/CPX/CPY imediato comparam A/X/Y em 8 ou 16 bits, estabelecendo C/N/Z
 sem alterar os registradores ou V. Isso permite diagnosticar loops de comparação
 com desvios condicionais. Os testes conferem os 256 valores de 8 bits contra $80,
 casos de 16 bits, preservação de V/B e operandos truncados no limite do banco.
+
+AND/ORA/EOR imediato também respeitam a largura M (8/16 bits), atualizando
+somente N/Z e preservando o byte B de A em modo de 8 bits. Os testes C++ cobrem
+todos os 256 valores de 8 bits com máscara $80, combinações de C/V, resultados
+explícitos de 16 bits, flags desconhecidas e truncamento no limite do banco.
