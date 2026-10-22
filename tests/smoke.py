@@ -170,6 +170,23 @@ def main():
             output = check([callgraph, str(known_path)], 0)
             assert f'"${source:06X}" -> "$008010" [label="JSR"]' in output, output
 
+        # BIT immediate follows accumulator width; memory forms have fixed sizes.
+        # All preserve carry, so a preceding CLC still proves XCE mode.
+        for name, bit_bytes in (
+            ('immediate', bytes([0x89, 0x34, 0x12])),
+            ('direct-page', bytes([0x24, 0x10])),
+            ('absolute', bytes([0x2C, 0x00, 0x21])),
+        ):
+            bit_rom = bytearray(rom)
+            prefix = bytes([0x18, 0xFB, 0xC2, 0x20]) + bit_bytes
+            program = prefix + bytes([0x20, 0x10, 0x80, 0xDB])
+            bit_rom[:len(program)] = program
+            bit_path = root / f'callgraph-bit-{name}.sfc'
+            bit_path.write_bytes(bit_rom)
+            output = check([callgraph, str(bit_path)], 0)
+            source = 0x8000 + len(prefix)
+            assert f'"${source:06X}" -> "$008010" [label="JSR"]' in output, output
+            assert 'Decoded=7 ' in output, output
         # Logical operations and index increments preserve a known carry.
         preserving_rom = bytearray(rom)
         preserving_program = bytes([
