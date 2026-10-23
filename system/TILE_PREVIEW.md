@@ -51,7 +51,7 @@ opt-in aceita escrita de byte nos aliases $00–$3F/$80–$BF; leituras CPU e pa
 MMIO permanecem rejeitadas. Escritas guardam inclusive configurações ainda não
 suportadas; é a captura que as diagnostica, antes de produzir qualquer imagem.
 
-A captura aceita somente BGMODE=0, BG1 8×8 e mapa 32×32 (BG1SC bits 0–1 zero),
+A captura aceita somente BGMODE=0, BG1 8×8 e os quatro tamanhos de mapa BG1SC,
 sem outras camadas ativas em TM. BG1SC bits 2–7 selecionam o mapa em passos de
 2048 bytes; BG12NBA bits 0–3 selecionam caracteres em passos de 8192 bytes,
 com wrap físico. O nibble BG2 é armazenado mas não participa desta captura.
@@ -88,8 +88,8 @@ portas, inspeção/captura e limpezas de memória preservam esse histórico. Res
 CPU/dispositivos limpa deslocamentos e os dois latches. Não há espelho Mode 7,
 pois esse modo permanece fora do subconjunto.
 
-A captura amostra `(x+HOFS, y+VOFS)` no mapa de 256×256 pixels com wrap nos dois
-eixos; deslocamentos separados por 256 são equivalentes neste mapa 32×32. O recorte
+A captura amostra `(x+HOFS, y+VOFS)` com wrap em cada dimensão do mapa
+(256 ou 512 pixels); no mapa 32×32, offsets separados por 256 são equivalentes. O recorte
 do host continua começando na origem da saída. Espelhamentos/paletas são aplicados
 nos tiles de origem, antes de brilho/blank. O snapshot é calculado da memória
 atual, sem simular a busca antecipada de pixels de uma PPU por scanlines.
@@ -108,10 +108,41 @@ O CI salva `preview-scroll-shift.bmp` (offset 3,5), `preview-scroll-wrap.bmp`
 Todos os pixels são comparados antes de escrever os arquivos, incluídos nos
 artefatos `synthetic-preview-*` e nos registros para comparação entre plataformas.
 
+## Mapas maiores e blocos de tela
+
+BG1SC bits 0–1 agora selecionam 32×32, 64×32, 32×64 ou 64×64 tiles, ou
+256×256, 512×256, 256×512 e 512×512 pixels. Cada bloco físico contém 32×32
+entradas (2048 bytes). A ordem física é A/B nos mapas largos, A/B nos altos e
+A/B na primeira linha, C/D na segunda, nos mapas 64×64. O mapa alto usa o
+segundo bloco físico na parte inferior, sem pular para o terceiro bloco.
+Bases e somas dão a volta nos 64 KiB de VRAM. O host continua escolhendo apenas
+uma janela de até 256×256 pixels, sem exportar o mapa inteiro de 512 pixels.
+A API original `render_2bpp_preview` continua com seu mapa físico 32×32.
+
+A captura por registradores agora busca diretamente o par de planos da linha
+do tile de origem de cada pixel. Assim o recorte e o scroll não exigem criar
+uma imagem RGB intermediária do mapa inteiro. Brilho, backdrop, blank,
+espelhamentos e o histórico de scroll mantêm a mesma semântica.
+Referência: [seleção de blocos no bsnes](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/sfc/ppu/background.cpp).
+
+`system_video_maps` verifica 44304 capturas e 4079616 pixels independentes:
+todas as 64 bases BG1SC e quatro geometrias, bordas de tile/bloco, offsets
+0–1023 e wrap físico, incluindo mapas começando em $F800. Duas fixtures
+recompiladas percorrem 98 limites cada, com 200704 comparações de pixels e
+checagem de CPU/flags/clocks/controles e toda VRAM/CGRAM/WRAM. O programa
+transfere 8288 bytes por DMA, altera os quatro tamanhos e termina com 95
+instruções, 285 ciclos nominais e 68534 master clocks (66352 de DMA).
+
+O CI salva `preview-maps-junction.bmp`, `preview-maps-horizontal.bmp`,
+`preview-maps-vertical.bmp` e `preview-maps-corner.bmp` nos limites 78, 80,
+82 e 92. Os blocos contêm padrões abstratos distintos e originais. A fixture
+faz o DMA do mapa de 8192 bytes atravessar o fim físico da VRAM. A seleção de
+geometria altera só a interpretação das mesmas entradas, sem reescrevê-las.
+
 ## Limite do avanço
 
 Esta é uma ferramenta de diagnóstico chamada pelo host depois da execução.
 A configuração agora pode vir do programa via MMIO, mas ainda faltam scanlines,
-outros modos/tamanhos, composição de camadas/sprites, janelas,
+outros modos/tamanhos de tile, composição de camadas/sprites, janelas,
 sincronização completa e apresentação pela interface. Não conclui os Marcos
 3 ou 4 e não significa que o jogo execute.

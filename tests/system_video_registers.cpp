@@ -67,7 +67,7 @@ int main() {
     b->write8(0x2100,15); b->write8(0x212c,1);
     for (unsigned mode = 1; mode < 256; ++mode) { b->write8(0x2105,uint8_t(mode)); invalid([&]{ capture_bg1_preview(*b,1,1); }); }
     b->write8(0x2105,0);
-    for (unsigned size : {1u,2u,3u}) { b->write8(0x2107,uint8_t(size)); invalid([&]{ capture_bg1_preview(*b,1,1); }); }
+    for (unsigned size : {1u,2u,3u}) { b->write8(0x2107,uint8_t(size)); check(capture_bg1_preview(*b,1,1).pixels.size() == 64,"map size capture rejected"); }
     b->write8(0x2107,0);
     for (unsigned layer = 2; layer < 32; ++layer) { b->write8(0x212c,uint8_t(layer)); invalid([&]{ capture_bg1_preview(*b,1,1); }); }
     b->write8(0x212c,1);

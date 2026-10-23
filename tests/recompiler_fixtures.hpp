@@ -84,6 +84,35 @@ inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
     for (unsigned i = 0; i < 4; ++i) code.insert(code.end(),{0xad,0x3b,0x21,0x8d,uint8_t(i),0x10});
     code.push_back(0xdb); return code;
   }
+  if (name == "bus_video_maps") return recompiler_fixture("video_maps");
+  if (name == "video_maps") {
+    auto image = recompiler_fixture("tile_preview");
+    std::vector<uint8_t> code;
+    const auto write = [&](unsigned at, unsigned value) {
+      code.insert(code.end(),{0xa9,uint8_t(value),0x8d,uint8_t(at),uint8_t(at >> 8)});
+    };
+    const auto dma = [&](unsigned target, unsigned source, unsigned count, unsigned mode) {
+      write(0x4300,mode); write(0x4301,target); write(0x4302,source&255); write(0x4303,source >> 8);
+      write(0x4304,0); write(0x4305,count&255); write(0x4306,count >> 8); write(0x420b,1);
+    };
+    write(0x2121,0); dma(0x22,0x9400,32,0);
+    write(0x2115,128); write(0x2116,0); write(0x2117,0x40); dma(0x18,0x9000,64,1);
+    write(0x2116,0); write(0x2117,0x7c); dma(0x18,0xa000,8192,1);
+    write(0x2105,0); write(0x2107,255); write(0x210b,4); write(0x212c,1); write(0x2100,15);
+    write(0x210d,255); write(0x210d,0); write(0x210e,255); write(0x210e,0);
+    write(0x2107,253); write(0x2107,254); write(0x2107,255);
+    write(0x210d,255); write(0x210d,1); write(0x210e,255); write(0x210e,1);
+    write(0x2107,252); code.push_back(0xdb);
+    for (unsigned i = 0; i < code.size(); ++i) image[i] = code[i];
+    // Four distinct 32x32 screens, in physical A/B/C/D storage order.
+    for (unsigned screen = 0; screen < 4; ++screen) for (unsigned y = 0; y < 32; ++y) for (unsigned x = 0; x < 32; ++x) {
+      const unsigned entry = (screen+x+3*y)%4+((screen*3+x+2*y)%4)*1024+((x+y+screen)%2)*8192+
+                             ((x+screen)%2)*16384+((y+screen/2)%2)*32768;
+      const unsigned at = 0x2000+screen*2048+2*(y*32+x);
+      image[at] = uint8_t(entry); image[at+1] = uint8_t(entry >> 8);
+    }
+    return image;
+  }
   if (name == "bus_video_scroll") return recompiler_fixture("video_scroll");
   if (name == "video_scroll") {
     auto image = recompiler_fixture("video_registers");
@@ -248,7 +277,7 @@ inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
   if (name == "memory") return {0xa9,0x80,0x8d,0xff,0x1f,0xad,0xff,0x1f,0x8d,0,0x20,0xdb};
   if (name == "branches") {
     std::vector<uint8_t> data;
-    for (uint8_t op : {0x10,0x30,0x50,0x70,0x90,0xb0,0xd0,0xf0}) data.insert(data.end(),{op,1,0xea});
+    for (unsigned op : {0x10u,0x30u,0x50u,0x70u,0x90u,0xb0u,0xd0u,0xf0u}) data.insert(data.end(),{uint8_t(op),1,0xea});
     data.push_back(0xdb); return data;
   }
   throw std::runtime_error("unknown synthetic fixture");

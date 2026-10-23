@@ -6,7 +6,7 @@ Experimento de engenharia reversa do **Teenage Mutant Ninja Turtles IV: Turtles 
 
 ## Ferramentas
 - Prévia gráfica de diagnóstico em C++: [tiles 2bpp](system/TILE_PREVIEW.md),
-  com mapa/tiles, scroll horizontal/vertical, habilitação, blank e brilho
+  com quatro tamanhos de mapa, tiles, scroll horizontal/vertical, habilitação, blank e brilho
   controláveis por registradores,
   e imagem BMP de 32×32 pixels produzida a partir de VRAM e CGRAM preenchidas
   por um programa sintético recompilado. O CI compara os pixels com uma referência

@@ -58,12 +58,12 @@ inline PreviewFrame render_2bpp_preview(const Bus& bus, const PreviewConfig& c) 
   }
   return frame;
 }
-// One supported register configuration: Mode 0 BG1, 8x8 tiles, 32x32 map.
+// Mode 0 BG1, 8x8 tiles, all four BG1SC map geometries.
 // Width/height are host crop controls only; map and character addresses come from MMIO.
 inline PreviewFrame capture_bg1_preview(const Bus& bus, unsigned width_tiles = 32, unsigned height_tiles = 32) {
   const auto& r = bus.video_registers();
-  if (r.mode != 0 || (r.bg1_map & 3) || (r.main_screen & ~1u))
-    throw std::invalid_argument("BG1 capture requires Mode 0, 8x8 tiles, 32x32 map and BG1-only main screen");
+  if (r.mode != 0 || (r.main_screen & ~1u))
+    throw std::invalid_argument("BG1 capture requires Mode 0, 8x8 tiles and BG1-only main screen");
   if (!width_tiles || width_tiles > 32 || !height_tiles || height_tiles > 32)
     throw std::invalid_argument("Invalid BG1 capture crop");
   const unsigned brightness = r.display & 15;
@@ -72,22 +72,23 @@ inline PreviewFrame capture_bg1_preview(const Bus& bus, unsigned width_tiles = 3
     const PreviewRGB color = (r.display & 128) || brightness == 0 ? PreviewRGB{0,0,0} : backdrop;
     return {width_tiles*8,height_tiles*8,std::vector<PreviewRGB>(width_tiles*height_tiles*64,color)};
   }
-  const bool shifted = (r.bg1_x%256) || (r.bg1_y%256);
-  const PreviewConfig c{((unsigned(r.bg1_map) >> 2)*2048)&65535,
-                        ((unsigned(r.bg12_tiles)&15)*8192)&65535,
-                        shifted ? 32 : width_tiles,shifted ? 32 : height_tiles,0};
-  auto frame = render_2bpp_preview(bus,c);
-  if (shifted) {
-    PreviewFrame crop{width_tiles*8,height_tiles*8,{}};
-    crop.pixels.resize(crop.width*crop.height);
-    for (unsigned y = 0; y < crop.height; ++y) for (unsigned x = 0; x < crop.width; ++x)
-      crop.pixels[y*crop.width+x] = frame.pixels[((y+r.bg1_y)%256)*256+(x+r.bg1_x)%256];
-    frame = std::move(crop);
-  }
-  if (brightness != 15) {
-    // Recover the exact 5-bit channels from their bit-replicated representation.
-    for (auto& p : frame.pixels)
-      p = preview_rgb((p.r >> 3) | ((unsigned(p.g) >> 3) << 5) | ((unsigned(p.b) >> 3) << 10),brightness);
+  const unsigned screens_wide = (r.bg1_map & 1) ? 2 : 1;
+  const unsigned map_width = screens_wide*256, map_height = (r.bg1_map & 2) ? 512 : 256;
+  const unsigned map_base = ((unsigned(r.bg1_map) >> 2)*2048)&65535;
+  const unsigned tile_base = ((unsigned(r.bg12_tiles)&15)*8192)&65535;
+  PreviewFrame frame{width_tiles*8,height_tiles*8,{}};
+  frame.pixels.resize(frame.width*frame.height);
+  for (unsigned y = 0; y < frame.height; ++y) for (unsigned x = 0; x < frame.width; ++x) {
+    const unsigned sx = (x+r.bg1_x)%map_width, sy = (y+r.bg1_y)%map_height;
+    const unsigned screen = (sy/256)*screens_wide+sx/256;
+    const unsigned at = (map_base+screen*2048+2*((sy/8%32)*32+sx/8%32))&65535;
+    const unsigned entry = bus.vram_byte(at) | (unsigned(bus.vram_byte((at+1)&65535)) << 8);
+    const unsigned row = (entry & 0x8000) ? 7-sy%8 : sy%8;
+    const unsigned bit = (entry & 0x4000) ? sx%8 : 7-sx%8;
+    const unsigned planes = (tile_base+(entry&1023)*16+row*2)&65535;
+    const unsigned index = ((bus.vram_byte(planes) >> bit)&1) | (((bus.vram_byte((planes+1)&65535) >> bit)&1) << 1);
+    const unsigned palette = ((entry >> 10)&7)*4;
+    frame.pixels[y*frame.width+x] = preview_rgb(bus.cgram_color(index ? palette+index : 0),brightness);
   }
   return frame;
 }

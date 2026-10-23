@@ -36,6 +36,9 @@ jobs:
       - name: Record scroll captures
         shell: bash
         run: python -c "import base64,pathlib; [print('TMNT_SCROLL_'+p.stem+'='+base64.b64encode(p.read_bytes()).decode('ascii')) for p in sorted(pathlib.Path('build').glob('preview-scroll-*.bmp'))]"
+      - name: Record map captures
+        shell: bash
+        run: python -c "import base64,pathlib; [print('TMNT_MAPS_'+p.stem+'='+base64.b64encode(p.read_bytes()).decode('ascii')) for p in sorted(pathlib.Path('build').glob('preview-maps-*.bmp'))]"
       - name: Upload synthetic preview
         uses: actions/upload-artifact@v7
         with:
@@ -44,6 +47,7 @@ jobs:
             build/preview-2bpp.bmp
             build/preview-registers-*.bmp
             build/preview-scroll-*.bmp
+            build/preview-maps-*.bmp
           if-no-files-found: error
       - name: Upload test report
         if: always()
