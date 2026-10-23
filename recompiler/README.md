@@ -222,3 +222,11 @@ $4200 bit 7 enables NMI and mutable byte reads of $4210 consume its status latch
 Successful compiled NMI entry acknowledges the request separately. Untimed code
 never advances the source. Per-cycle timing/hold/lock delays and other CPU control
 registers remain unsupported. Graphics are not scheduled by it; the game does not run.
+
+
+The optional [live blank-status port](../system/README.md#live-hblankvblank-status-and-synthetic-polling)
+at $4212 supports byte LDA, with HBlank/VBlank bits sampled at the operation's
+starting boundary. It does not clear the $4210 latch or acknowledge NMI. The
+synthetic timed polling fixture waits through vblank and writes two samples to
+WRAM before STP; its untimed counterpart exhausts its budget without advancing
+video. Autojoy/open bus and per-cycle read timing remain outside this subset.

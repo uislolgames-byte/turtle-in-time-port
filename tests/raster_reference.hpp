@@ -23,7 +23,7 @@ struct RasterReference {
     const auto p = clock.position();
     if (clock.now() != t || p.frame != frame || p.odd_field != (frame%2 != 0) ||
         p.scanline != line || p.horizontal != horizontal || p.line_length != length() ||
-        p.vblank != (line >= 225) || clock.scanlines_completed() != frame*262+line ||
+        p.vblank != (line >= 225) || clock.hblank() != (horizontal < 3 || horizontal >= 1096) || clock.scanlines_completed() != frame*262+line ||
         clock.vblank_entries() != frame+unsigned(line >= 225) ||
         clock.clocks_to_scanline() != length()-horizontal)
       throw std::runtime_error("independent raster reference mismatch");

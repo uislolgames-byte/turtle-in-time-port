@@ -42,6 +42,7 @@ public:
     const unsigned line = within/line_clocks;
     return {frame,odd,line,within%line_clocks,line_clocks,line >= vblank_line};
   }
+  bool hblank() const { const auto h = position().horizontal; return h <= 2 || h >= 1096; }
   uint64_t scanlines_completed() const {
     const auto p = position(); return p.frame*lines_per_frame+p.scanline;
   }

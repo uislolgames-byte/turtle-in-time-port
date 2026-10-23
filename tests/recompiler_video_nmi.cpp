@@ -76,7 +76,7 @@ int main(int argc, char** argv) {
             !s.master_clock.nmi_pending() && bus->dma_bytes() == 1 && bus->dma_clocks() == 24 &&
             bus->cgram_address() == 255 && bus->cgram_high_byte() && bus->cgram_color(255) == 0,
             "partial DMA did not retain video NMI/elapsed time");
-      check(bus->read8(0x4210) == 130 && bus->video_interrupts().pending(),"fault status read consumed pending NMI");
+      check(bus->read8(0x4210) == 130 && bus->video_interrupts().pending() && bus->read8(0x4212) == 128,"fault status read consumed pending NMI");
       bus->write8(0x2122,0x12); check(bus->cgram_color(255) == 0x125a,"partial DMA low latch changed");
       ++cases;
     } else {

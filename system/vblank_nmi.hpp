@@ -5,6 +5,7 @@ namespace system816 {
 class VblankNmi {
 public:
   uint64_t now() const { return clock_.now(); }
+  unsigned blank_status() const { return (clock_.hblank() ? 64u : 0u) | (clock_.position().vblank ? 128u : 0u); }
   bool enabled() const { return enabled_; }
   bool flag() const { return flag_; }
   bool pending() const { return pending_; }

@@ -42,6 +42,7 @@ public:
   }
   uint8_t read8(uint32_t address) const {
     const auto io = io_address(address);
+    if (devices_io_ && io == 0x4212) return static_cast<uint8_t>(video_nmi_.blank_status());
     if (devices_io_ && dma_register(io)) return channel_[io-0x4300];
     if (devices_io_ && (io == 0x2180 || io == 0x2139 || io == 0x213a || io == 0x213b || io == 0x4210))
       throw BusError(Fault::unmapped, address, "Data-port read requires a mutable bus");

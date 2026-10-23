@@ -4,6 +4,14 @@
 #include <vector>
 #include <cstdint>
 inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
+  if (name == "video_poll" || name == "bus_video_poll") {
+    std::vector<uint8_t> image(32768,0);
+    const std::vector<uint8_t> code{0xa9,0,0x8d,0,0x42,
+      0xad,0x12,0x42,0x10,0xfb,0x8d,0,0x10,
+      0xad,0x12,0x42,0x30,0xfb,0x8d,1,0x10,0xdb};
+    for (unsigned i = 0; i < code.size(); ++i) image[i] = code[i];
+    image[0x7ffd] = 0x80; return image;
+  }
   if (name == "bus_video_nmi_fault") return recompiler_fixture("dma_cgram_fault");
   if (name == "bus_video_nmi" || name == "bus_irq_video_emulation" || name == "bus_irq_video_native") {
     std::vector<uint8_t> image(32768,0);
