@@ -5,6 +5,11 @@ Experimento de engenharia reversa do **Teenage Mutant Ninja Turtles IV: Turtles 
 **Importante:** este repositório contém ferramentas **preliminares** de inspeção e uma primeira recompilação estática de programas sintéticos 65C816. Ainda não é o jogo jogável nem uma recompilação do jogo.
 
 ## Ferramentas
+- Prévia gráfica de diagnóstico em C++: [tiles 2bpp](system/TILE_PREVIEW.md),
+  com imagem BMP de 32×32 pixels produzida a partir de VRAM e CGRAM preenchidas
+  por um programa sintético recompilado. O CI compara os pixels com uma referência
+  independente e publica a imagem no Windows e Linux. Ainda não é uma PPU completa
+  nem imagem do jogo; o Marco 3 permanece em andamento.
 - Base do Marco 3: [barramento de memória em C++](system/README.md), com ROM
   LoROM parcial, RAM, bancos e integração ao runtime recompilado com reinicialização.
   Inclui relógio lógico e diagnóstico de pedidos NMI/IRQ. Temporização do hardware,

@@ -84,6 +84,40 @@ inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
     for (unsigned i = 0; i < 4; ++i) code.insert(code.end(),{0xad,0x3b,0x21,0x8d,uint8_t(i),0x10});
     code.push_back(0xdb); return code;
   }
+  if (name == "bus_tile_preview") return recompiler_fixture("tile_preview");
+  if (name == "tile_preview") {
+    std::vector<uint8_t> image(32768,0), code;
+    const auto write = [&](unsigned at, unsigned value) {
+      code.insert(code.end(),{0xa9,uint8_t(value),0x8d,uint8_t(at),uint8_t(at >> 8)});
+    };
+    const auto dma = [&](unsigned target, unsigned source, unsigned count, unsigned mode) {
+      write(0x4300,mode); write(0x4301,target); write(0x4302,source&255); write(0x4303,source >> 8);
+      write(0x4304,0); write(0x4305,count&255); write(0x4306,count >> 8); write(0x420b,1);
+    };
+    write(0x2121,0); dma(0x22,0x9400,32,0);
+    write(0x2115,0x80); write(0x2116,0); write(0x2117,0); dma(0x18,0x9000,64,1);
+    write(0x2116,0); write(0x2117,8); dma(0x18,0x9100,256,1);
+    code.push_back(0xdb);
+    for (unsigned i = 0; i < code.size(); ++i) image[i] = code[i];
+    image[0x7ffd] = 0x80;
+    // Original abstract patterns, encoded as interleaved low/high bitplane rows.
+    for (unsigned t = 0; t < 4; ++t) for (unsigned y = 0; y < 8; ++y) for (unsigned x = 0; x < 8; ++x) {
+      unsigned pixel = (x+y)%4;
+      if (t == 1) pixel = x == 0 || x == 7 || y == 0 || y == 7 ? 1 : (x/2+y/2)%3+1;
+      if (t == 2) pixel = x < y ? 2 : x == y ? 3 : 0;
+      if (t == 3) pixel = (x/2+2*(y/2))%4;
+      image[0x1000+t*16+y*2] |= uint8_t((pixel&1) << (7-x));
+      image[0x1001+t*16+y*2] |= uint8_t((pixel >> 1) << (7-x));
+    }
+    for (unsigned y = 0; y < 4; ++y) for (unsigned x = 0; x < 4; ++x) {
+      const unsigned entry = (x+3*y)%4 | (((x+2*y)%4) << 10) | (((x+y)%2) << 13) | ((x%2) << 14) | ((y%2) << 15);
+      image[0x1100+2*(y*32+x)] = uint8_t(entry); image[0x1101+2*(y*32+x)] = uint8_t(entry >> 8);
+    }
+    const unsigned colors[] = {0x1042,0x001f,0x03e0,0x7c00,0x7fff,0x03ff,0x7fe0,0x7c1f,
+      0,0x021f,0x7e00,0x43e0,0,0x7fff,0x4210,0x56b5};
+    for (unsigned i = 0; i < 16; ++i) { image[0x1400+2*i] = uint8_t(colors[i]); image[0x1401+2*i] = uint8_t(colors[i] >> 8); }
+    return image;
+  }
   if (name == "mask_flags") return {0x78,0x58,0x20,9,0x80,0x78,0x58,0x78,0xdb,0x58,0x78,0x58,0x60};
   if (name == "irq_mask_emulation" || name == "irq_mask_native") {
     std::vector<uint8_t> image(32768,0);
