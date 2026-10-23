@@ -84,6 +84,31 @@ inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
     for (unsigned i = 0; i < 4; ++i) code.insert(code.end(),{0xad,0x3b,0x21,0x8d,uint8_t(i),0x10});
     code.push_back(0xdb); return code;
   }
+  if (name == "bus_video_4bpp") return recompiler_fixture("video_4bpp");
+  if (name == "video_4bpp") {
+    auto image = recompiler_fixture("video_large");
+    // Expand palette to 128 colors and character DMA to 32 characters of 32 bytes.
+    image[31] = 0; image[36] = 1; image[91] = 4;
+    for (unsigned i = 0; i < 128; ++i) {
+      const unsigned c = (i*997+0x1042)%32768;
+      image[0x1400+2*i] = uint8_t(c); image[0x1401+2*i] = uint8_t(c >> 8);
+    }
+    for (unsigned id = 0; id < 32; ++id) for (unsigned y = 0; y < 8; ++y) {
+      image[0x1800+id*32+2*y] = uint8_t(id*13+y*37);
+      image[0x1801+id*32+2*y] = uint8_t(id*29+y*19+17);
+      image[0x1810+id*32+2*y] = uint8_t(id*7+y*11+53);
+      image[0x1811+id*32+2*y] = uint8_t(id*31+y*23+91);
+    }
+    std::vector<uint8_t> code(image.begin(),image.begin()+285);
+    const auto write = [&](unsigned at, unsigned value) {
+      code.insert(code.end(),{0xa9,uint8_t(value),0x8d,uint8_t(at),uint8_t(at >> 8)});
+    };
+    write(0x2105,1); write(0x2105,17); write(0x2100,7); write(0x2100,128);
+    write(0x2100,15); write(0x2105,1); write(0x2105,0); write(0x2105,1);
+    code.push_back(0xdb);
+    for (unsigned i = 0; i < code.size(); ++i) image[i] = code[i];
+    return image;
+  }
   if (name == "bus_video_large") return recompiler_fixture("video_large");
   if (name == "video_large") {
     auto image = recompiler_fixture("video_maps");

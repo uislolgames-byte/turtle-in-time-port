@@ -51,7 +51,7 @@ opt-in aceita escrita de byte nos aliases $00–$3F/$80–$BF; leituras CPU e pa
 MMIO permanecem rejeitadas. Escritas guardam inclusive configurações ainda não
 suportadas; é a captura que as diagnostica, antes de produzir qualquer imagem.
 
-A captura aceita BGMODE=$00/$10, BG1 8×8/16×16 e os quatro tamanhos de mapa BG1SC,
+A captura aceita BGMODE=$00/$01/$10/$11, BG1 8×8/16×16 e os quatro tamanhos de mapa BG1SC,
 sem outras camadas ativas em TM. BG1SC bits 2–7 selecionam o mapa em passos de
 2048 bytes; BG12NBA bits 0–3 selecionam caracteres em passos de 8192 bytes,
 com wrap físico. O nibble BG2 é armazenado mas não participa desta captura.
@@ -143,7 +143,7 @@ geometria altera só a interpretação das mesmas entradas, sem reescrevê-las.
 ## Tiles BG1 de 16×16
 
 BGMODE bit 4 agora seleciona tiles BG1 16×16; o valor $00 mantém 8×8 e $10
-seleciona 16×16, ambos em Mode 0. Outros bits/modos continuam rejeitados na
+seleciona 16×16, ambos em Mode 0. Mode 1 usa $01/$11. Outros bits/modos continuam rejeitados na
 captura. Cada entrada seleciona quatro caracteres 8×8: índices N, N+1, N+16,
 N+17, com resultado módulo 1024 antes da soma da base gráfica. O espelhamento
 inverte o tile inteiro de 16 pixels, trocando também as partes 8×8. Não há
@@ -172,10 +172,46 @@ vertical, nos limites 98, 106, 108, 110 e 112. São dados originais sintéticos,
 com 32 caracteres por fórmulas de planos e quatro blocos de mapa distintos.
 A alternância de tamanho muda só a interpretação dos dados, mantendo memórias.
 
+## BG1 4bpp em Mode 1
+
+BGMODE bit 0 agora seleciona Mode 1 para esta captura BG1, com quatro planos
+por caractere e 16 índices por paleta. Os dois primeiros planos ocupam os pares
+de bytes das primeiras oito linhas; os planos 2/3 estão 16 bytes adiante. Cada
+caractere ocupa 32 bytes, contra 16 no Mode 0. `decode_4bpp` fornece inspeção
+8×8 com espelhamentos e endereço de byte alinhado a 32; entradas inválidas
+são rejeitadas. A API explícita `render_2bpp_preview` não muda.
+
+A captura usa o stride de 32 bytes e oito grupos de 16 cores da CGRAM (0–127).
+Índice zero continua transparente e expõe a cor global zero, independente da
+paleta selecionada. Mapas, scroll, partes dos tiles 16×16, brilho e blank usam
+o mesmo caminho anterior. Valores aceitos de BGMODE: $00/$10 para Mode 0,
+$01/$11 para Mode 1. Outras camadas, prioridade BG3, sprites, composição e os
+demais modos continuam fora do subconjunto; não é implementação completa de Mode 1.
+Referências: [seleção de profundidade no ares](https://github.com/ares-emulator/ares/blob/master/ares/sfc/ppu/io.cpp)
+e [busca dos planos](https://github.com/ares-emulator/ares/blob/master/ares/sfc/ppu/background.cpp).
+
+`system_video_4bpp` confere 262144 casos de decodificação/espelhamento com
+referência de quatro planos (16777216 índices de pixels). Não é uma varredura
+de todas as 2^32 combinações possíveis de uma linha. Outros 132688 snapshots
+comparam 22429696 pixels RGB independentes: ambos os tamanhos de tile, os
+1024 índices, quatro flips, oito paletas, ambas as prioridades, wrap de índices
+/base, quatro geometrias, scroll, blank/backdrop/reset e entradas rejeitadas.
+
+Duas fixtures geradas percorrem 134 limites cada, com 274432 comparações de
+pixels, CPU/flags/tempo/controles e toda VRAM/CGRAM/WRAM. A ROM sintética mantém
+32 KiB: contém 256 bytes de paleta, 1024 de caracteres 4bpp e 8192 de mapa.
+O programa alterna Mode 0/1, tiles 8×8/16×16, brilho e blank sem reescrever
+as memórias. Rastro final: 131 instruções, 393 ciclos nominais, 78834 master
+clocks (75824 DMA/9472 bytes).
+
+O CI salva sete BMPs `preview-4bpp-*`: small, large, dim, blank, restored,
+2bpp e 4bpp, nos limites 116, 118, 120, 122, 124, 128 e 130. Cada captura
+é escrita depois da comparação com a referência independente.
+
 ## Limite do avanço
 
 Esta é uma ferramenta de diagnóstico chamada pelo host depois da execução.
 A configuração agora pode vir do programa via MMIO, mas ainda faltam scanlines,
-outros modos de vídeo, composição de camadas/sprites, janelas,
+demais modos de vídeo, composição de camadas/sprites, janelas,
 sincronização completa e apresentação pela interface. Não conclui os Marcos
 3 ou 4 e não significa que o jogo execute.

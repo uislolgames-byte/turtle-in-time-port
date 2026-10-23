@@ -67,7 +67,7 @@ int main() {
     b->write8(0x2100,15); b->write8(0x212c,1);
     for (unsigned mode = 1; mode < 256; ++mode) {
       b->write8(0x2105,uint8_t(mode));
-      if (mode == 16) check(capture_bg1_preview(*b,1,1).pixels.size() == 64,"large tile capture rejected");
+      if (mode == 1 || mode == 16 || mode == 17) check(capture_bg1_preview(*b,1,1).pixels.size() == 64,"supported BG1 capture rejected");
       else invalid([&]{ capture_bg1_preview(*b,1,1); });
     }
     b->write8(0x2105,0);
