@@ -329,7 +329,7 @@ written byte values, boundaries, rejected accesses, isolation and reset.
 `recompiled_memsel` checks 28 fixed traces of actual generated LDA/STA/STP code,
 including enable/disable, four data-bank aliases, partial budgets and unchanged
 nominal CPU/DMA accounting. The default strict bus rejects the generated write.
-Both join the existing Windows/Linux regression chain (84 tests total).
+Both join the existing Windows/Linux regression chain (91 tests total).
 
 This is a timing-decoder foundation, not an instruction master-clock counter.
 The optional first CPU timing counter below now applies these speeds to a
@@ -394,7 +394,7 @@ emulation/native mode, loop budgets and faults. They also check overflow before
 CPU/MMIO effects, reset, missing bus, MMIO rejection and existing event timelines.
 The original 37 tests remain; the five instruction tests and eight timed block-move
 tests, three timed leaf-call tests, five timed interrupt tests the master-event
-sweep, four DMA integration fixtures and five IRQ-mask fixtures bring the total to 84 tests in Windows/Linux CI. References for
+sweep, four DMA integration fixtures and five IRQ-mask fixtures bring the total to 91 tests in Windows/Linux CI. References for
 instruction decomposition: upstream bsnes
 [other instructions](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-other.cpp)
 and [branches](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-pc.cpp).
@@ -468,7 +468,7 @@ JSR/RTS and sample NMI at those boundaries using both event timelines.
 Helper tests cover emulation page wrap, native bank wrap, atomic push faults,
 MMIO guards and invalid stack pointers. Generated entry still requires S=$01FF;
 these helper boundary tests do not add TXS or arbitrary initial-S program entry.
-The full regression chain contains 84 tests, retaining these leaf-call tests.
+The full regression chain contains 91 tests, retaining these leaf-call tests.
 
 Calls remain restricted to straight-line, mode-preserving leaves; nested calls,
 leaf branches/mode changes/block moves and JSL/RTL are unsupported. Restricted compiled
@@ -521,7 +521,7 @@ Fixed program totals for one NMI are 160 master clocks / 22 CPU cycles in
 emulation and 226 / 31 in native mode. Additional cases check one clock too few
 and exact capacity at entry and RTI, atomic frame faults, NMI acknowledgement,
 wrong vectors and MMIO. CLI generation exercises both option orders. Total:
-84 tests in Windows/Linux CI, retaining all previous tests.
+91 tests in Windows/Linux CI, retaining all previous tests.
 
 These are aggregate CPU costs at instruction boundaries. Full IRQ polling delay,
 per-access interleaving, DMA arbitration/refresh and PPU/APU synchronization remain
@@ -577,7 +577,7 @@ acknowledgement and deferral. `recompiled_bus_master_events` sweeps 858 fixed
 boundary traces over all timestamps through a program with MEMSEL/FastROM,
 checking both slow and fast ROM paths. It also checks budget zero, failed stores,
 reset, host origins, ahead/rewound clocks and exact/exhausted capacity. Total:
-84 Windows/Linux regression tests, including the two CPU/DMA fixtures below.
+91 Windows/Linux regression tests, including the two CPU/DMA fixtures below.
 
 This is a CPU-owned event queue. It does not generate video interrupts, emulate
 NMITIMEN/IRQ timer registers, run devices between bus accesses, arbitrate DMA,
@@ -618,7 +618,7 @@ Two generated tests cover 16 fixed success/fault budget traces, plus 606 NMI
 positions through setup, DMA stall and subsequent CPU boundaries. Direct runtime
 checks cover aliases, full-size and exact/exhausted capacity, partial faults,
 zero masks, unsupported descriptors and timed WRAM port side effects. The complete CI chain
-now has 84 tests. This does not finish M3, produce video/audio or run the game.
+now has 91 tests. This does not finish M3, produce video/audio or run the game.
 
 
 ### DMA followed by compiled NMI/IRQ handlers
@@ -639,7 +639,7 @@ inside DMA, IRQ pulses entirely inside a stall, IRQ held across the next CPU
 boundary, simultaneous NMI/IRQ, and a second NMI while a handler is active.
 Six additional fixed completion traces check observed WRAM results and exact
 costs: the main fixture takes 604 master clocks in emulation or 632 in native;
-one complete handler adds 240 or 256 respectively. The 84-test Windows/Linux
+one complete handler adds 240 or 256 respectively. The 91-test Windows/Linux
 chain retains every previous test. This block validates integration of existing
 features; it adds no device register or instruction support, and no game execution.
 
@@ -670,7 +670,7 @@ including leaf routines, preserving every flag except I. The other 5,280 cover
 emulation/native IRQ/NMI execution, step/cycle/master events, masked requests,
 handler changes and RTI restoration. Fixed traces check pending IRQ after CLI,
 NMI after SEI and exact/exhausted capacity before mask effects. The regression
-chain now has 84 tests. This does not add hardware-generated interrupts,
+chain now has 91 tests. This does not add hardware-generated interrupts,
 NMITIMEN/timers, video/audio synchronization or game execution, and M3 remains open.
 
 
@@ -707,7 +707,7 @@ source fault, reset and 524288 transferred bytes with all eight zero-sized count
 Four new generated fixtures add 164 fixed CPU/WRAM/register/time traces, including
 channel 0 completing before channel 7 faults. A timed sweep checks 936 NMI positions
 through the two-channel program; capacity tests check whole-mask reservation and
-retained events after partial failure. Windows/Linux CI now has 84 tests.
+retained events after partial failure. Windows/Linux CI now has 91 tests.
 This does not finish M3 or enable video, audio or the game.
 
 
@@ -740,7 +740,7 @@ are deterministic host lifecycle choices, not hardware power-on contents.
 
 This is storage/port behavior for synthetic integration, without a running PPU.
 Writes are accepted without display/vblank restrictions: no scanline, forced-blank
-register, remapping, rendering, palette, tile decoding or audio is
+register, remapping, rendering, palette-to-pixel output, tile decoding or audio is
 implemented. The storage must not be described as working video or a completed M4.
 Port semantics were checked against upstream [bsnes PPU I/O](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/sfc/ppu/io.cpp)
 and [DMA transfer patterns](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/sfc/cpu/dma.cpp);
@@ -753,7 +753,7 @@ checks cover a full 64 KiB WRAM copy, mixed WRAM→VRAM channel chaining, odd-si
 settings/reads, opt-in, word guards, capacity and reset/preservation. Six generated
 fixtures add 186 complete CPU/VRAM/WRAM/register/time traces and 920 master-event
 boundaries. A partial source fault retains its first VRAM byte, 24 DMA clocks
-and a pending NMI, without charging the failed CPU STA. The 84-test Windows/Linux
+and a pending NMI, without charging the failed CPU STA. The 91-test Windows/Linux
 chain retains all prior tests; one former unsupported-target check now uses $17,
 since mode-0 target $18 is newly supported. M3 remains open and the game does not run.
 
@@ -790,9 +790,56 @@ across all 64 valid initial P values and 45 budgets, checking CPU, all WRAM/VRAM
 DMA progress, leftover buffer bytes and clocks. Fixed final states take 41 steps,
 135 nominal cycles and 1084 master clocks in timed execution. Two timed sweeps add
 2172 event positions through the complete DMA/readback sequence. The CI chain
-now has 84 tests, retaining the previous 79. Existing tests still reject reads of
+now has 91 tests, retaining the previous 79. Existing tests still reject reads of
 write-only $2115..$2119; $2139/$213A are newly covered by the read suite.
 
 This extends memory-port integration, without display/vblank access restrictions,
 a running PPU, rendering, image output or audio. M3/M4 remain incomplete and the
 game does not execute.
+
+
+## CGRAM palette storage and ports
+
+Opt-in $2121 selects one of 256 colors and resets a shared read/write byte phase.
+A low-byte write to $2122 only prepares a latch; the high-byte write commits the
+15-bit color (high bit discarded), advances the color address modulo 256 and
+returns to the low phase. Reads of $213B use the same phase: low returns eight
+stored bits, high returns seven stored bits plus retained bit 7 from the previous
+CGRAM read data. High reads advance the address. VRAM reads use a separate latch.
+CGADD and writes do not modify this read-data latch; reads do not replace the
+pending low write byte. This is the supported subset of PPU2 read-data retention,
+not an implementation of open bus or all PPU2 registers. Sequence checked against
+[bsnes PPU I/O](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/sfc/ppu/io.cpp),
+with independent implementation and synthetic data.
+
+DMA mode 0 additionally accepts B-bus target $22, with ROM or mapped WRAM sources
+and all eight channels. The shared CGRAM byte phase persists between channels:
+an odd first channel can supply the low byte completed by the next channel.
+A source fault after one byte leaves an uncommitted low latch, advanced source/
+count, actual DMA cost and due events. Existing whole-mask preflight, addressing
+modes and timing policy remain unchanged. Other patterns/directions are rejected.
+Const palette reads, writes to the read port, reads of write-only ports and word/
+stack/block-move MMIO remain unsupported before effects. Timed byte accesses
+reserve capacity before changing phase, data or CPU state.
+
+Host inspection `cgram_color(index)` is bounds-checked and exposes stored 15-bit
+colors, with address/phase getters for diagnostics. Reset clears controls and
+both latches while preserving colors. Explicit `clear_cgram` affects only stored
+colors; it preserves already pending write/read latch state. WRAM/VRAM clears
+are independent. These are explicit host lifecycle conventions.
+
+A direct test checks all 65536 raw CPU byte pairs, masking, address wrap and read
+bit retention, plus 1152 independent DMA cases across eight channels, sources,
+address modes and odd/even counts. Extra cases cover cross-channel partial pairs,
+a full 65536-byte transfer, mixed read/write phase, retained latches, VRAM read
+isolation, opt-in, unsupported accesses/patterns, capacity, reset and clear policy.
+Six generated fixtures add 12672 independent CPU/CGRAM/WRAM/register/time and latch
+comparisons over 64 valid initial P values and 33 budgets. Fixed completion costs
+are 544 master clocks/71 cycles for CPU write/readback and 776/95 for DMA readback;
+the failed DMA retains 24 DMA clocks and an uncommitted low byte. Timed sweeps add
+1324 NMI positions; partial-fault events are checked separately. Windows/Linux CI
+now has 91 tests, preserving all previous 84.
+
+This provides palette memory and port semantics, without converting palette/tile
+data into pixels. Display access restrictions, rendering, frame scheduling and
+audio remain absent. M3/M4 stay incomplete, and the game does not execute.

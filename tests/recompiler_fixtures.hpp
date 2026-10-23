@@ -65,6 +65,25 @@ inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
     }
     code.push_back(0xdb); return code;
   }
+  if (name == "bus_cgram_cpu") return recompiler_fixture("cgram_cpu");
+  if (name == "cgram_cpu" || name == "dma_cgram" || name == "dma_cgram_fault") {
+    std::vector<uint8_t> code;
+    const auto write = [&](unsigned at, unsigned value) {
+      code.insert(code.end(),{0xa9,uint8_t(value),0x8d,uint8_t(at),uint8_t(at >> 8)});
+    };
+    write(0x2121,0xff);
+    if (name == "cgram_cpu") {
+      write(0x2122,0xde); write(0x2122,0xad); write(0x2122,0xbe); write(0x2122,0xef);
+    } else {
+      const bool fault = name == "dma_cgram_fault";
+      write(0x4300,0); write(0x4301,0x22); write(0x4302,fault ? 0xff : 0);
+      write(0x4303,fault ? 0x1f : 0x90); write(0x4304,0); write(0x4305,4); write(0x4306,0);
+      write(0x420b,1);
+    }
+    write(0x2121,0xff);
+    for (unsigned i = 0; i < 4; ++i) code.insert(code.end(),{0xad,0x3b,0x21,0x8d,uint8_t(i),0x10});
+    code.push_back(0xdb); return code;
+  }
   if (name == "mask_flags") return {0x78,0x58,0x20,9,0x80,0x78,0x58,0x78,0xdb,0x58,0x78,0x58,0x60};
   if (name == "irq_mask_emulation" || name == "irq_mask_native") {
     std::vector<uint8_t> image(32768,0);

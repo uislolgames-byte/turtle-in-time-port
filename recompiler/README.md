@@ -106,7 +106,7 @@ The optional system bus also accepts byte MEMSEL ($420D) writes from generated
 code and exposes address-speed queries (6/8/12 master clocks). These queries do
 not advance `cycle_clock` or supply a CPU master-clock total. See the explicit
 [system timing contract](../system/README.md#address-access-speeds-and-memsel).
-The regression chain now contains 84 tests, including generated MEMSEL traces.
+The regression chain now contains 91 tests, including generated MEMSEL traces.
 
 
 ## First optional CPU master-clock counter
@@ -120,7 +120,7 @@ combined with `--interrupts` for restricted compiled handlers; nested calls rema
 iterations now support timing with separate source and destination access costs.
 Timed byte MMIO now covers the existing opt-in MEMSEL, WRAM port and eight-channel mode-0 DMA subset. Ordinary generation is unchanged.
 The shared CPU/DMA counter drives host events in master units; PPU/APU
-synchronization remains absent. The 84-test regression chain includes 187 fixed generated instruction traces
+synchronization remains absent. The 91-test regression chain includes 187 fixed generated instruction traces
 and 129 timed block-transfer comparisons, alongside the 99 untimed comparisons
 and a separate partial-fault fixture. Full 64 KiB WRAM transfer costs and
 slow/FastROM differences have fixed expected results.
@@ -149,7 +149,7 @@ The timeline advances with committed costs, latches requests at instruction/byte
 completion and combines them with the original step/cycle sources. Reset clears
 all three queues; zero budget delivers none. Counter/timeline rewind is rejected.
 The regression chain adds 4,400 master-event reference comparisons and 858 fixed
-MEMSEL/FastROM boundary traces (84 tests total). See the
+MEMSEL/FastROM boundary traces (91 tests total). See the
 [master event contract](../system/README.md#cpu-master-clock-event-timeline).
 The synchronous mode-0 DMA stall now contributes to the master timeline;
 refresh, hardware DMA arbitration and video/audio scheduling remain future work.
@@ -200,3 +200,14 @@ Four DMA/readback fixtures add 11520 independent full-state comparisons and
 2172 timed event positions, preserving all previous tests. Const bus reads and
 word/stack/block-move MMIO remain rejected. See the
 [buffered read contract](../system/README.md#buffered-vram-cpu-reads).
+
+
+The opt-in memory subset now adds CGRAM: $2121/$2122 byte writes, $213B phased
+reads and mode-0 DMA target $22. Palette colors commit as 15 bits only after the
+second write. Read high-byte bit 7 retains previous CGRAM read data, separate
+from VRAM; this is a limited latch model, not general PPU2 open bus. CPU and DMA
+fixtures write/read synthetic colors back to WRAM, including a partial source
+fault with an uncommitted low byte. Six tests add 12672 reference comparisons,
+with 1324 timed event positions. See the
+[CGRAM contract](../system/README.md#cgram-palette-storage-and-ports).
+Palette storage does not yet produce pixels or run the game.

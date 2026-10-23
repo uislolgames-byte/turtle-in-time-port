@@ -26,7 +26,7 @@ private:
   }
 };
 
-// Strict LoROM subset. Optional DMA, WRAM/VRAM ports and MEMSEL; no open bus/SRAM.
+// Strict LoROM subset. Optional DMA, WRAM/VRAM/CGRAM ports and MEMSEL; no open bus/SRAM.
 class Bus {
 public:
   explicit Bus(std::vector<uint8_t> rom, bool devices_io = false) : rom_(std::move(rom)), devices_io_(devices_io) {
@@ -36,13 +36,23 @@ public:
   uint8_t read8(uint32_t address) const {
     const auto io = io_address(address);
     if (devices_io_ && dma_register(io)) return channel_[io-0x4300];
-    if (devices_io_ && (io == 0x2180 || io == 0x2139 || io == 0x213a))
+    if (devices_io_ && (io == 0x2180 || io == 0x2139 || io == 0x213a || io == 0x213b))
       throw BusError(Fault::unmapped, address, "Data-port read requires a mutable bus");
     const auto location = resolve(address);
     return location.ram ? ram_[location.offset] : rom_[location.offset];
   }
   uint8_t read8(uint32_t address) {
     const auto io = io_address(address);
+    if (devices_io_ && io == 0x213b) {
+      const unsigned color = cgram_[cgram_address_];
+      if (!cgram_high_) cgram_read_mdr_ = static_cast<uint8_t>(color);
+      else {
+        cgram_read_mdr_ = static_cast<uint8_t>((cgram_read_mdr_ & 128) | (color >> 8));
+        cgram_address_ = (cgram_address_+1) & 255;
+      }
+      cgram_high_ = !cgram_high_;
+      return cgram_read_mdr_;
+    }
     if (devices_io_ && (io == 0x2139 || io == 0x213a)) {
       const bool high = io == 0x213a;
       const uint8_t value = static_cast<uint8_t>(vram_buffer_ >> (high ? 8 : 0));
@@ -91,6 +101,10 @@ public:
   unsigned vram_address() const { return vram_word_; }
   unsigned vram_control() const { return vram_control_; }
   void clear_vram() { vram_.assign(65536,0); }
+  uint16_t cgram_color(unsigned index) const { return cgram_.at(index); }
+  unsigned cgram_address() const { return cgram_address_; }
+  bool cgram_high_byte() const { return cgram_high_; }
+  void clear_cgram() { cgram_.fill(0); }
   uint64_t dma_clocks() const { return dma_clocks_; }
   uint64_t dma_bytes() const { return dma_bytes_; }
   // Side-effect-free upper bound, including startup. Source faults may consume less.
@@ -101,10 +115,10 @@ public:
       if (!(mask & (1u << ch))) continue;
       const auto* channel = channel_.data()+16*ch;
       const unsigned mode = channel[0] & 7, target = channel[1];
-      const bool supported = mode == 0 ? (target == 0x80 || target == 0x18 || target == 0x19)
+      const bool supported = mode == 0 ? (target == 0x80 || target == 0x18 || target == 0x19 || target == 0x22)
                                        : mode == 1 && target == 0x18;
       if ((channel[0] & ~0x19u) || !supported)
-        throw BusError(Fault::unmapped, trigger, "Unsupported DMA direction, mode or WRAM/VRAM target");
+        throw BusError(Fault::unmapped, trigger, "Unsupported DMA direction, mode or memory-port target");
       unsigned remaining = unsigned(channel[5]) | (unsigned(channel[6]) << 8);
       if (remaining == 0) remaining = 65536;
       cost += 8 + uint64_t(remaining)*8;
@@ -116,6 +130,7 @@ public:
   void reset_devices() {
     fast_rom_ = false; channel_.fill(0); wram_address_ = 0; dma_clocks_ = 0; dma_bytes_ = 0;
     vram_word_ = 0; vram_control_ = 0; vram_buffer_ = 0;
+    cgram_address_ = 0; cgram_high_ = false; cgram_write_low_ = 0; cgram_read_mdr_ = 0;
   }
   uint16_t reset_vector() const {
     return static_cast<uint16_t>(read8(0x00fffc) | (unsigned(read8(0x00fffd)) << 8));
@@ -132,7 +147,7 @@ private:
     return io >= 0x4300 && io <= 0x4376 && (io & 15) <= 6;
   }
   static bool writable_io(uint32_t io) {
-    return (io >= 0x2115 && io <= 0x2119) || (io >= 0x2180 && io <= 0x2183) || dma_register(io) || io == 0x420b || io == 0x420d;
+    return (io >= 0x2115 && io <= 0x2119) || io == 0x2121 || io == 0x2122 || (io >= 0x2180 && io <= 0x2183) || dma_register(io) || io == 0x420b || io == 0x420d;
   }
   void prefetch_vram() {
     const unsigned low = (vram_word_*2) & 65535;
@@ -155,6 +170,16 @@ private:
     if (io == 0x2116) { vram_word_ = (vram_word_ & 0xff00) | value; prefetch_vram(); return; }
     if (io == 0x2117) { vram_word_ = (vram_word_ & 0xff) | (unsigned(value) << 8); prefetch_vram(); return; }
     if (io == 0x2118 || io == 0x2119) { write_vram(io == 0x2119,value); return; }
+    if (io == 0x2121) { cgram_address_ = value; cgram_high_ = false; return; }
+    if (io == 0x2122) {
+      if (!cgram_high_) cgram_write_low_ = value;
+      else {
+        cgram_[cgram_address_] = static_cast<uint16_t>(cgram_write_low_ | ((unsigned(value) & 127) << 8));
+        cgram_address_ = (cgram_address_+1) & 255;
+      }
+      cgram_high_ = !cgram_high_;
+      return;
+    }
     if (dma_register(io)) { channel_[io-0x4300] = value; return; }
     if (io == 0x2180) { ram_[wram_address_] = value; wram_address_ = (wram_address_+1) & 0x1ffff; }
     if (io == 0x2181) wram_address_ = (wram_address_ & 0x1ff00) | value;
@@ -210,6 +235,10 @@ private:
   std::array<uint8_t, 0x20000> ram_{};
   std::vector<uint8_t> vram_ = std::vector<uint8_t>(65536,0);
   unsigned vram_word_ = 0, vram_control_ = 0, vram_buffer_ = 0;
+  std::array<uint16_t,256> cgram_{};
+  unsigned cgram_address_ = 0;
+  bool cgram_high_ = false;
+  uint8_t cgram_write_low_ = 0, cgram_read_mdr_ = 0;
   bool devices_io_ = false, fast_rom_ = false;
   std::array<uint8_t,128> channel_{};
   uint32_t wram_address_ = 0;
