@@ -11,7 +11,7 @@ static void both(system816::Bus& b, DmaPatternReference& r, unsigned at, unsigne
   b.write8(at,static_cast<uint8_t>(value)); check(r.write(at,value),"reverse reference setup");
 }
 static void setup(system816::Bus& b, DmaPatternReference& r, unsigned mapping) {
-  b.reset_devices(); b.clear_ram(); b.clear_vram(); b.clear_cgram();
+  b.reset_devices(); b.clear_ram(); b.clear_vram(); b.clear_cgram(); b.clear_oam();
   both(b,r,0x2115,128+mapping*4); both(b,r,0x2116,0xfc); both(b,r,0x2117,0x7f);
   for (unsigned i = 0; i < 16; ++i) both(b,r,0x2118+i%2,(i*37+0x91)%256);
   both(b,r,0x2116,0xfe); both(b,r,0x2117,0x7f);

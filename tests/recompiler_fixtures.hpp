@@ -64,6 +64,28 @@ inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
   if (name == "bus_raster_loop") return {0xea,0x80,0xfd};
   if (name == "bus_raster_fault") return recompiler_fixture("dma_cgram_fault");
   if (name.rfind("bus_dma_",0) == 0) return recompiler_fixture(name.substr(4));
+  if (name == "dma_oam_roundtrip" || name == "dma_oam_fault") {
+    std::vector<uint8_t> image(32768,0), code;
+    const auto write = [&](unsigned at, unsigned value) {
+      code.insert(code.end(),{0xa9,static_cast<uint8_t>(value),0x8d,static_cast<uint8_t>(at),static_cast<uint8_t>(at >> 8)});
+    };
+    const auto channel = [&](unsigned ch, unsigned control, unsigned target, unsigned source, unsigned count) {
+      const unsigned regs[] = {control,target,source%256,(source/256)%256,source/65536,count,0};
+      for (unsigned r = 0; r < 7; ++r) write(0x4300+16*ch+r,regs[r]);
+    };
+    const bool fault = name == "dma_oam_fault";
+    write(0x2102,fault ? 0 : 0xfe); write(0x2103,fault ? 0 : 0x80);
+    if (fault) write(0x1fff,0xa6);
+    channel(0,2,4,fault ? 0x001fff : 0x009100,fault ? 3 : 9); write(0x420b,1);
+    if (!fault) {
+      write(0x2102,0xfe); write(0x2103,0x80);
+      channel(7,0x82,0x38,0x7efffd,9); write(0x420b,128);
+      code.insert(code.end(),{0xad,0x38,0x21,0x8d,0,0x10});
+    }
+    code.push_back(0xdb); for (unsigned i = 0; i < code.size(); ++i) image[i] = code[i];
+    for (unsigned i = 0; i < 9; ++i) image[0x1100+i] = static_cast<uint8_t>(i*31+3);
+    image[0x7ffd] = 0x80; return image;
+  }
   if (name == "dma_reverse_vram" || name == "dma_reverse_cgram" || name == "dma_reverse_fault") {
     std::vector<uint8_t> image(32768,0), code;
     const auto write = [&](unsigned at, unsigned value) {

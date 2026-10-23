@@ -1104,8 +1104,8 @@ trigger, even when the preceding transfer ended partway through a pattern.
 | 7 | 0, 0, 1, 1 |
 
 Destinations remain deliberately bounded: $210D..$2110 (the four shared-latch
-BG1/BG2 scroll ports), $2118/$2119 (VRAM data), $2122 (CGRAM data) and $2180
-(WRAM data). Other implemented CPU-write registers are not automatically DMA
+BG1/BG2 scroll ports), $2104 (OAM data), $2118/$2119 (VRAM data), $2122 (CGRAM
+data) and $2180 (WRAM data). Other implemented CPU-write registers are not automatically DMA
 targets. BBAD arithmetic wraps within the B-bus byte address. Preflight checks
 every destination actually reached by DAS (zero means 65536), not hypothetical
 later pattern positions. Thus mode 4/BBAD $0E/count 3 can write $0E/$0F/$10;
@@ -1194,8 +1194,8 @@ no display-access restrictions, per-cycle PPU pipeline or game execution is adde
 
 ## Reverse DMA into WRAM
 
-DMAP bit 7 now selects B-to-A DMA for the bounded readable ports $2139/$213A
-(buffered VRAM) and $213B (CGRAM). The seven A-bus descriptor bytes retain their
+DMAP bit 7 now selects B-to-A DMA for the bounded readable ports $2138 (OAM),
+$2139/$213A (buffered VRAM) and $213B (CGRAM). The seven A-bus descriptor bytes retain their
 layout; A1T is the WRAM destination in this direction. All eight byte patterns
 use the same offsets, restart per channel/trigger, and apply BBAD wrap. Bits
 5/6 remain rejected. A selected descriptor must reach only readable ports for
@@ -1243,3 +1243,66 @@ Transfer direction/address/pattern semantics were checked against [ares DMA](htt
 with independently written code. Timing remains instruction-boundary based,
 without DMA alignment/arbitration, refresh, per-byte video scheduling, general
 B-bus destinations or a full PPU. This does not complete M3/M4 or run the game.
+
+
+## OAM storage and bidirectional DMA
+
+Opt-in CPU ports now implement 544 bytes of OAM storage for sprite attributes.
+$2102 writes the low eight bits of a nine-bit word base; $2103 bit 0 writes the
+high bit and bit 7 stores priority-rotation metadata (bits 1..6 are ignored).
+Either address write reloads the current byte pointer from twice the base.
+$2104 writes and $2138 reads advance a ten-bit byte pointer, wrapping at 1024.
+Logical $000..$1FF address the 512-byte main table; $200..$3FF mirror the 32-byte
+high table using their low five bits. The stored rotation flag and current first
+sprite index ((byte address >> 2) & 127 when enabled) are inspectable metadata;
+no sprite evaluator or priority rendering is introduced.
+
+Even-address writes latch a byte. In the main table nothing is stored until an
+odd-address write commits both the latched byte and its own byte as a pair. In
+the high table each write commits immediately; an even high-table write also
+updates the shared latch. Reads return stored data and advance without changing
+the write latch. Address writes preserve that latch. Explicit host clear_oam
+clears only stored bytes and preserves pointer/base/rotation/latch. Device/CPU
+reset clears controls, pointer and latch but preserves all OAM bytes. Host byte
+inspection checks the physical 544-byte bound and has no port effects. These are
+deterministic lifecycle defaults, not hardware power-on state.
+
+A-to-B DMA now allows BBAD $04; B-to-A adds readable BBAD $38. Existing actual-count
+pattern validation still applies: mode 3/$04/count 2 writes OAM twice, but count 3
+reaches unsupported $05 and rejects the entire selected mask before startup.
+Mode 4/$38 can read OAM, VRAM low, VRAM high and CGRAM in one repeating pattern.
+Address/control ports $2102/$2103 remain CPU-only; supported CPU registers do not
+automatically become DMA destinations. All eight channels share the OAM pointer
+and pending write latch, including mixed directions and odd transfer lengths.
+Previous whole-mask capacity checks, byte progress, timing and partial-fault
+policy apply. A failed forward source can leave an uncommitted even OAM byte;
+a failed reverse WRAM destination must not consume its next OAM read.
+
+The direct independent model uses word address/parity rather than the production
+byte-pointer implementation. Tests compare every OAM byte over 4096 CPU traces
+(512 bases, two rotation settings, four bank aliases) and 1002 full-memory DMA
+traces. Additional checks cover all 256 OAMADDH values, both address-write orders,
+2048 sequential writes/reads, high-table mirroring, pending latch preservation,
+all channel masks, fixed/increment/decrement, 65536-byte transfers, source and
+destination faults, MMIO const/word/stack/block-move rejection, capacity, opt-in
+and reset/clear behavior. Existing forward/reverse descriptor matrices now
+include the new ports without weakening rejection of other ports.
+
+Four generated C++ fixtures add a CPU/DMA OAM round trip and a partial forward
+fault, each timed/untimed. Across four flags, 47 budgets and five timed origins,
+they add 2256 independent full-state comparisons, 70 scheduled NMI boundaries and
+one partial-fault NMI check. The round trip transfers nine bytes ROM-to-OAM and
+nine OAM-to-WRAM, then performs a CPU OAM read/store: 43 instructions, 131 nominal
+cycles, 1178 master clocks when timed (176 DMA clocks), PC $806B. The fault leaves
+an uncommitted low latch after one byte: 21 completed instructions, 62 cycles,
+502 master clocks (24 DMA clocks), PC $8034. A subsequent port write verifies the
+retained latch. CPU, OAM/WRAM/VRAM/CGRAM, channel registers, time and raster are
+compared to the independent reference.
+
+Semantics were checked against [ares OAM ports](https://github.com/ares-emulator/ares/blob/master/ares/sfc/ppu/io.cpp),
+[OAM addressing/mirroring](https://github.com/ares-emulator/ares/blob/master/ares/sfc/ppu/oam.cpp)
+and [address reset/rotation](https://github.com/ares-emulator/ares/blob/master/ares/sfc/ppu/object.cpp),
+with independently written code. This storage subset ignores active-display
+access redirection, scanline/frame address resets and sprite limits/evaluation.
+It adds no OBSEL sizing/base selection, OBJ pixel rendering or game execution;
+M3/M4 remain open. The existing BG1/BG2 host snapshots are unaffected.

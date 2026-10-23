@@ -7,7 +7,7 @@ static void channel(system816::Bus& b, unsigned mode, unsigned target, unsigned 
   const unsigned values[] = {mode,target,source%256,source/256,0,count%256,count/256};
   for (unsigned r = 0; r < 7; ++r) b.write8(0x4300+r,static_cast<uint8_t>(values[r]));
 }
-static void clear(system816::Bus& b) { b.clear_ram(); b.clear_vram(); b.clear_cgram(); b.reset_devices(); }
+static void clear(system816::Bus& b) { b.clear_ram(); b.clear_vram(); b.clear_cgram(); b.clear_oam(); b.reset_devices(); }
 static void mirror_write(system816::Bus& b, DmaPatternReference& r, unsigned at, unsigned value) {
   b.write8(at,static_cast<uint8_t>(value)); check(r.write(at,value),"reference setup fault");
 }

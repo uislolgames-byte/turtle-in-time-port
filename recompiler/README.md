@@ -264,7 +264,14 @@ cases and compare CPU, all WRAM/VRAM, DMA registers, buffered bytes and timing
 against an independent bit-wiring reference. See the [system contract](../system/README.md#vram-address-remapping).
 
 
-Bounded reverse DMA now reads buffered VRAM/CGRAM into mapped WRAM, preserving
+Bounded reverse DMA reads OAM and buffered VRAM/CGRAM into mapped WRAM, preserving
 per-byte progress and source-port state on a destination fault. Six synthetic
 generated fixtures compare CPU/memory/registers/buffers/timing, including partial
 failure with a pending NMI. See [reverse DMA contract](../system/README.md#reverse-dma-into-wram).
+
+
+OAM now has opt-in CPU address/data/read ports, paired main-table writes,
+mirrored high-table storage and bidirectional DMA. Four original synthetic
+fixtures check round-trip readback, CPU reads, pending even-byte writes, source
+faults and timing/NMI against an independent model. This stores sprite attributes;
+it does not render sprites. See the [OAM contract](../system/README.md#oam-storage-and-bidirectional-dma).

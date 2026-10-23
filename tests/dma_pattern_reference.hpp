@@ -1,11 +1,13 @@
 #pragma once
 #include "../system/bus.hpp"
 #include "vram_remap_reference.hpp"
+#include "oam_reference.hpp"
 #include <array>
 #include <vector>
 #include <stdexcept>
 struct DmaPatternReference {
   const std::vector<uint8_t>& rom;
+  OamReference oam;
   std::vector<uint8_t> ram = std::vector<uint8_t>(131072,0), vram = std::vector<uint8_t>(65536,0);
   std::array<unsigned,256> palette{};
   std::array<unsigned,128> regs{};
@@ -21,15 +23,16 @@ struct DmaPatternReference {
     return 0x2100+(at+pattern[mode][index%4])%256;
   }
   static bool supported(unsigned address) {
-    return (address >= 0x210d && address <= 0x2110) || address == 0x2118 || address == 0x2119 ||
+    return address == 0x2104 || (address >= 0x210d && address <= 0x2110) || address == 0x2118 || address == 0x2119 ||
            address == 0x2122 || address == 0x2180;
   }
-  static bool reverse_supported(unsigned address) { return address >= 0x2139 && address <= 0x213b; }
+  static bool reverse_supported(unsigned address) { return address >= 0x2138 && address <= 0x213b; }
   void fetch() {
     const unsigned at = (reference_vram_word(vm,control)*2)%65536;
     buffer = vram[at]+256*unsigned(vram[at+1]);
   }
   unsigned read_port(unsigned port) {
+    if (port == 0x2138) return oam.read();
     if (port == 0x213b) {
       if (!high) read_mdr = palette[cg]%256;
       else { read_mdr = (read_mdr & 128)+palette[cg]/256; cg = (cg+1)%256; }
@@ -81,6 +84,9 @@ struct DmaPatternReference {
   }
   bool write(unsigned address, unsigned value) {
     value %= 256;
+    if (address == 0x2102) { oam.low(value); return true; }
+    if (address == 0x2103) { oam.high(value); return true; }
+    if (address == 0x2104) { oam.write(value); return true; }
     if (address < 8192) { ram[address] = static_cast<uint8_t>(value); return true; }
     if (address >= 0x4300 && address <= 0x4376 && address%16 <= 6) { regs[address-0x4300] = value; return true; }
     if (address == 0x420b) return transfer(value);
@@ -108,6 +114,7 @@ struct DmaPatternReference {
     return true;
   }
   void compare(const system816::Bus& b) const {
+    oam.compare(b);
     if (b.dma_clocks() != clocks || b.dma_bytes() != bytes || b.wram_address() != wm || b.vram_address() != vm ||
         b.vram_control() != control || b.cgram_address() != cg || b.cgram_high_byte() != high)
       throw std::runtime_error("DMA pattern register/progress reference mismatch");
