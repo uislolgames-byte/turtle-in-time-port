@@ -331,10 +331,65 @@ nominal CPU/DMA accounting. The default strict bus rejects the generated write.
 Both join the existing Windows/Linux regression chain (37 tests total).
 
 This is a timing-decoder foundation, not an instruction master-clock counter.
-The static compiler still needs per-instruction bus-access/internal-cycle
-sequences before these speeds can safely drive CPU time. Multiplying nominal
-cycles by one fixed value would be incorrect. Refresh, DMA arbitration and
+The optional first CPU timing counter below now applies these speeds to a
+restricted generated subset. Other instructions still need their access plans.
+Multiplying all nominal cycles by one fixed value would be incorrect. Refresh, DMA arbitration and
 PPU/APU scheduling also remain future work. References for comparison: upstream
 bsnes [CPU access timing](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/sfc/cpu/memory.cpp)
 and [MEMSEL register](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/sfc/cpu/io.cpp).
+No upstream source code was copied.
+
+## Optional generated CPU master-clock accounting
+
+`tmnt_recompile synthetic.bin output.cpp --bus-timing` emits bus timing plans
+alongside literal CPU operations. It requires a connected bus, including for
+budget zero; it is mutually exclusive with `--interrupts`. The option supports
+the existing NOP, CLC/SEC, XCE, REP/SEP, INX/DEX, immediate LDA/LDX/LDY,
+absolute LDA/STA, BRA/conditional branches and bounded STP entry. Calls/returns
+and MVN/MVP are rejected at generation time. Existing generation without the
+option keeps its behavior and does not increment the new counter.
+
+`State::master_clocks` is a uint64 CPU-only counter, separately from nominal
+`cycle_clock`, logical steps and DMA clocks. For each completed instruction the
+generated plan supplies opcode/operand length and data-byte count/address. The
+runtime sums each fetch/data byte's address speed and six clocks per remaining
+internal cycle. Costs are reserved before register/memory effects and committed
+only on successful completion. Bank-zero code fetches remain eight clocks each;
+FastROM can change high-bank data-read costs. A MEMSEL write uses the pre-write
+setting to reserve that instruction, then affects following instructions. The
+host code-identity checks do not count as emulated fetches. There is no runtime
+opcode decode or interpretation.
+
+For example, an 8-bit immediate LDA costs 16 clocks, bank-zero absolute LDA from
+WRAM costs 32, and from fast high-bank ROM costs 30. NOP costs 14 (one eight-clock
+fetch plus one six-clock internal cycle). A taken branch adds six clocks and a
+taken emulation page crossing adds six more. The bounded STP convention keeps
+the existing three nominal entry cycles: one fetch plus two internal cycles
+(20 clocks); idle time after STP is not accumulated. This is an explicit subset
+accounting convention, not a full model of hardware stop/wakeup.
+
+Only byte MEMSEL writes are allowed MMIO in timed code. Other enabled MMIO,
+including DMA triggers and WRAM-port accesses, stops with a contract diagnostic
+before effects. Ordinary faults and rejected ROM writes charge no partial
+instruction time, consistent with the existing diagnostic fault policy. Capacity
+exhaustion stops before the instruction, including before a MEMSEL write. Reset
+clears the counter and its internal pending reservation, preserving WRAM.
+`pending_master_clocks` is internal transient state, not an elapsed-time count.
+The runtime is single-threaded and no host callback runs inside an instruction.
+
+This is **instruction-boundary CPU accounting**, not an interleaved master-clock
+scheduler. It does not expose bus events per cycle, schedule IRQ/NMI in master
+units, time interrupt handlers, or combine CPU time with DMA/refresh/PPU/APU.
+Existing step/cycle events still stop at instruction boundaries. Hardware delayed
+polling, idleIRQ bus substitutions, STP idle behavior and arbitration are not
+modeled. No new video or game execution is enabled.
+
+Five generated timing tests add 187 fixed traces for widths, mode/flag/index
+changes, ROM/WRAM, FastROM enable/disable, taken/untaken branches across pages in
+emulation/native mode, loop budgets and faults. They also check overflow before
+CPU/MMIO effects, reset, missing bus, MMIO rejection and existing event timelines.
+The previous 37 tests remain; total 42 tests in Windows/Linux CI. References for
+instruction decomposition: upstream bsnes
+[other instructions](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-other.cpp)
+and [branches](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-pc.cpp).
 No upstream source code was copied.

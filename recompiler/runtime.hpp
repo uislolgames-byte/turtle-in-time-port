@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <sstream>
+#include <limits>
 #include "../system/bus.hpp"
 #include "../system/events.hpp"
 
@@ -23,6 +24,8 @@ struct State {
   std::string diagnostic;
   system816::EventClock clock;
   system816::EventClock cycle_clock;
+  uint64_t master_clocks = 0;
+  unsigned pending_master_clocks = 0; // Reserved cost for one generated instruction.
   InterruptContext interrupt;
 };
 inline bool reserve_cycles(State& s, unsigned cycles) {
@@ -59,6 +62,40 @@ inline void complete_instruction(State& s, unsigned cycles) {
   ++s.steps;
   s.clock.advance(1);
   s.cycle_clock.advance(cycles);
+}
+// Timing-enabled generated code supplies lengths/data accesses, not opcodes.
+inline bool begin_bus_instruction(State& s, unsigned limit, unsigned cycles,
+                                  unsigned pc, unsigned length, unsigned address,
+                                  unsigned bytes, bool writing) {
+  if (!begin_instruction(s, limit, cycles)) return false;
+  s.pending_master_clocks = 0;
+  if (!s.bus || length < 1 || length > 3 || bytes > 2 || cycles > 7 || cycles < length + bytes) {
+    s.stop = Stop::contract; s.diagnostic = "Invalid CPU bus timing plan or missing bus"; return false;
+  }
+  try {
+    unsigned cost = (cycles - length - bytes) * 6;
+    for (unsigned i = 0; i < length; ++i) cost += s.bus->cpu_access_clocks(pc+i);
+    for (unsigned i = 0; i < bytes; ++i) {
+      const unsigned at = address+i;
+      // MMIO timing currently supports only an 8-bit MEMSEL write.
+      if (s.bus->is_mmio(at) && !(writing && bytes == 1 && (at & 65535) == 0x420d)) {
+        s.stop = Stop::contract; s.diagnostic = "CPU bus timing supports only MEMSEL MMIO writes"; return false;
+      }
+      cost += s.bus->cpu_access_clocks(at);
+    }
+    if (cost > std::numeric_limits<uint64_t>::max() - s.master_clocks) {
+      s.stop = Stop::contract; s.diagnostic = "CPU master clock counter exhausted"; return false;
+    }
+    s.pending_master_clocks = cost;
+    return true;
+  } catch (const system816::BusError& error) {
+    s.stop = Stop::memory; s.diagnostic = error.what(); return false;
+  }
+}
+inline void complete_bus_instruction(State& s, unsigned cycles) {
+  complete_instruction(s, cycles);
+  s.master_clocks += s.pending_master_clocks;
+  s.pending_master_clocks = 0;
 }
 // Deterministic host reset policy. Preserves the bus's RAM and immutable ROM.
 // Only bank-zero entry $8000 is currently compiled. No hardware reset cycles.
@@ -127,7 +164,7 @@ inline bool store(State& s, unsigned address, unsigned value, bool narrow) {
     if (!narrow) write_byte(s, address + 1, static_cast<uint8_t>(value >> 8));
     return true;
   } catch (const system816::BusError& e) {
-    s.stop = Stop::memory; s.diagnostic = e.what(); return false;
+    s.pending_master_clocks = 0; s.stop = Stop::memory; s.diagnostic = e.what(); return false;
   }
 }
 inline bool load(State& s, unsigned address, bool narrow) {
@@ -140,7 +177,7 @@ inline bool load(State& s, unsigned address, bool narrow) {
     s.a = narrow ? ((s.a & 0xff00) | value) : value;
     nz(s, value, narrow); return true;
   } catch (const system816::BusError& e) {
-    s.stop = Stop::memory; s.diagnostic = e.what(); return false;
+    s.pending_master_clocks = 0; s.stop = Stop::memory; s.diagnostic = e.what(); return false;
   }
 }
 // One MVN/MVP byte iteration. A is always a 16-bit counter; index width follows X.
@@ -157,7 +194,7 @@ inline bool move_byte(State& s, unsigned destination, unsigned source, bool narr
     const auto value = s.bus->read8((source << 16) | s.x);
     s.bus->write8((destination << 16) | s.y, value);
   } catch (const system816::BusError& e) {
-    s.stop = Stop::memory; s.diagnostic = e.what(); return false;
+    s.pending_master_clocks = 0; s.stop = Stop::memory; s.diagnostic = e.what(); return false;
   }
   const unsigned delta = decrement ? mask : 1;
   s.x = (s.x + delta) & mask;

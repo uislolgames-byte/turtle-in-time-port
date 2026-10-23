@@ -18,7 +18,8 @@ struct Mode {
 struct Instruction { unsigned pc, op, value, length; Mode mode; int leaf; };
 
 // Closed, flat synthetic code at $8000. Analyze only proven entry points.
-inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = false) {
+inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = false, bool bus_timing = false) {
+  if (interrupts && bus_timing) throw std::runtime_error("--bus-timing cannot compile interrupt handlers yet");
   if (code.empty() || code.size() > 32768) throw std::runtime_error("code size must be 1..32768");
   if (interrupts && (code.size() != 32768 || code[0x7ffc] != 0 || code[0x7ffd] != 0x80))
     throw std::runtime_error("--interrupts requires a 32 KiB synthetic image with RESET $8000");
@@ -54,6 +55,8 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
       if (owners.count(pc+i) && owners.at(pc+i) != pc) throw std::runtime_error("overlapping instructions");
       owners[pc+i] = pc;
     }
+    if (bus_timing && (op == 0x20 || op == 0x60 || op == 0x44 || op == 0x54))
+      throw std::runtime_error("--bus-timing does not support calls, returns or block moves yet");
     nodes.emplace(pc, Instruction{pc,op,value,length,mode,leaf});
     const bool control_mode = op == 0x18 || op == 0x38 || op == 0xfb || op == 0xc2 || op == 0xe2;
     if (leaf >= 0 && (control_mode || op == 0x20 || op == 0xdb || op == 0x80 || op == 0x44 || op == 0x54 || branch(op)))
@@ -157,12 +160,18 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
       const unsigned penalty = 1 + unsigned(n.mode.e && ((next & 0xff00) != (target & 0xff00)));
       cycles = op == 0x80 ? std::to_string(2+penalty) : "(2+("+condition+"?"+std::to_string(penalty)+":0))";
     }
+    const std::string completion = bus_timing ? "complete_bus_instruction" : "complete_instruction";
     out << "L" << pc << ":\n";
     if (interrupts && n.leaf != -2)
       out << "while(!begin_instruction(s,limit," << cycles << ")){if(s.stop!=Stop::interrupt||!interrupt_mode"
           << mode_id(n.mode) << "(s,limit))return false;}\n";
-    else out << "if(!begin_instruction(s,limit," << cycles << "))return false;\n";
-    if (op == 0x40) { out << "if(!return_interrupt(s))return false;complete_instruction(s," << cycles << ");return true;\n"; return; }
+    else if (bus_timing) {
+      out << "if(!begin_bus_instruction(s,limit," << cycles << "," << pc << "," << n.length << ",";
+      if (op == 0xad || op == 0x8d) out << "(s.db<<16)|" << v;
+      else out << "0";
+      out << "," << ((op == 0xad || op == 0x8d) ? (m ? 1 : 2) : 0) << "," << (op == 0x8d) << "))return false;\n";
+    } else out << "if(!begin_instruction(s,limit," << cycles << "))return false;\n";
+    if (op == 0x40) { out << "if(!return_interrupt(s))return false;" << completion << "(s," << cycles << ");return true;\n"; return; }
     if (op == 0xa9) out << "s.a=" << (m ? "(s.a&65280)|" : "") << v << ";nz(s,s.a," << m << ");\n";
     if (op == 0xa2 || op == 0xa0) out << "s." << (op==0xa2?'x':'y') << "=" << v << ";nz(s," << v << "," << x << ");\n";
     if (op == 0xe8 || op == 0xca) out << "s.x=(s.x+" << (op==0xe8?1:65535) << ")&" << (x?255:65535) << ";nz(s,s.x," << x << ");\n";
@@ -175,17 +184,17 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
     if (op == 0xad) out << "if(!load(s,(s.db<<16)|" << v << "," << m << "))return false;\n";
     if (op == 0x44 || op == 0x54) {
       out << "if(!move_byte(s," << (v & 255) << "," << (v >> 8) << "," << x << "," << (op == 0x44) << "))return false;\n"
-          << "s.pc=s.a==65535?" << next << ":" << pc << ";complete_instruction(s," << cycles << ");\n"
+          << "s.pc=s.a==65535?" << next << ":" << pc << ";" << completion << "(s," << cycles << ");\n"
           << "if(s.a!=65535)goto L" << pc << ";goto L" << next << ";\n";
       return;
     }
     if (op == 0x20) {
-      out << "if(!push_return(s," << next-1 << "))return false;s.pc=" << v << ";complete_instruction(s," << cycles << ");\n"
+      out << "if(!push_return(s," << next-1 << "))return false;s.pc=" << v << ";" << completion << "(s," << cycles << ");\n"
           << "if(!leaf" << v << "(s,limit," << next << "))return false;goto L" << next << ";\n";
       return;
     }
-    if (op == 0x60) { out << "complete_instruction(s," << cycles << ");return pop_return(s,expected);\n"; return; }
-    out << "s.pc=" << (next & 65535) << ";complete_instruction(s," << cycles << ");\n";
+    if (op == 0x60) { out << completion << "(s," << cycles << ");return pop_return(s,expected);\n"; return; }
+    out << "s.pc=" << (next & 65535) << ";" << completion << "(s," << cycles << ");\n";
     if (op == 0xdb) { out << "s.stop=Stop::stp;return true;\n"; return; }
     if (op == 0x80 || branch(op)) {
       out << "if(" << condition << "){s.pc=" << target << ";goto L" << target << ";}\n";
@@ -214,6 +223,7 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
   }
   out << "bool run_generated(State& s,unsigned limit){\n"
       << "if(s.pc!=32768||!s.e||(s.p&48)!=48||s.p>255||s.s!=511||s.a>65535||s.x>255||s.y>255||s.db>255||(!s.bus&&s.db)||s.interrupt.active){s.stop=Stop::contract;return false;}\n";
+  if (bus_timing) out << "if(!s.bus){s.stop=Stop::contract;s.diagnostic=\"CPU bus timing requires a memory bus\";return false;}\n";
   if (interrupts) out << "if(!s.bus){s.stop=Stop::contract;s.diagnostic=\"Compiled interrupts require a memory bus\";return false;}\n";
   out << "if(s.bus){\n";
   for (const auto& byte : owners)

@@ -129,3 +129,11 @@ A bateria tem 37 testes, incluindo varredura de todos os endereços com os dois
 valores de MEMSEL e execução de alterações do controle pelo C++ gerado.
 Essa consulta ainda precisa ser ligada à sequência de acessos de cada instrução;
 não representa um relógio mestre completo. Veja [o contrato](system/README.md#address-access-speeds-and-memsel).
+
+
+A ferramenta agora oferece `--bus-timing`: contagem de master clocks da CPU
+para um subconjunto sem chamadas, handlers compilados ou movimentos em bloco.
+Ela soma acessos e ciclos internos por instrucao, respeitando MEMSEL/FastROM.
+A bateria passa a ter 42 testes. Ainda falta sincronizar essa contagem com DMA,
+video e audio; nao representa um agendador completo do SNES. Detalhes e limites
+no [contrato de temporizacao](system/README.md#optional-generated-cpu-master-clock-accounting).

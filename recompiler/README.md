@@ -107,3 +107,15 @@ code and exposes address-speed queries (6/8/12 master clocks). These queries do
 not advance `cycle_clock` or supply a CPU master-clock total. See the explicit
 [system timing contract](../system/README.md#address-access-speeds-and-memsel).
 The regression chain now contains 37 tests, including generated MEMSEL traces.
+
+
+## First optional CPU master-clock counter
+
+Use `tmnt_recompile synthetic.bin generated.cpp --bus-timing` for the restricted
+non-stack subset described in the [system timing contract](../system/README.md#optional-generated-cpu-master-clock-accounting).
+It emits fetch/data/internal-cycle costs and increments `State::master_clocks`
+on each successful instruction, using current MEMSEL and address speeds. It
+requires a bus and rejects calls, block moves and compiled interrupt handlers.
+Only MEMSEL writes are accepted as timed MMIO. Ordinary generation is unchanged.
+The separate CPU counter does not yet synchronize DMA, PPU/APU or master-unit
+events. The 42-test regression chain includes 187 new fixed generated traces.

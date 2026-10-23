@@ -42,5 +42,15 @@ int main() {
   const auto interrupt_output = static816::compile(recompiler_fixture("irq_native"),true);
   if (interrupt_output.find("return_interrupt") == std::string::npos ||
       interrupt_output.find("switch") != std::string::npos || interrupt_output.find("code[") != std::string::npos) return 1;
+  for (const auto& name : {"calls","emulation_calls","move_forward","move_backward"}) {
+    try { static816::compile(recompiler_fixture(name),false,true); return 1; }
+    catch (const std::runtime_error&) {}
+  }
+  try { static816::compile(recompiler_fixture("irq_emulation"),true,true); return 1; }
+  catch (const std::runtime_error&) {}
+  const auto timed = static816::compile(recompiler_fixture("bus_memory"),false,true);
+  if (timed.find("begin_bus_instruction") == std::string::npos ||
+      timed.find("complete_bus_instruction") == std::string::npos ||
+      timed.find("switch") != std::string::npos || timed.find("code[") != std::string::npos) return 1;
   std::cout << "Static compiler rejection tests passed\n";
 }
