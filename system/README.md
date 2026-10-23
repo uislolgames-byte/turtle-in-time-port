@@ -865,11 +865,65 @@ A zero instruction budget leaves all clocks untouched; reset clears the observer
 and event queues while preserving bus memories. Untimed generated programs do
 not advance it. Existing host diagnostic captures remain snapshots of memory.
 
-This is a timing observer, not a running PPU or full hardware scheduler. There is
-no automatic NMI/IRQ, $4200/$4210 interface, HBlank/dot model, HDMA, DRAM refresh,
-bus arbitration, PAL/interlace/overscan selection, APU synchronization or rendering
-per scanline. External scheduled interrupts retain the existing boundary policy.
+RasterClock itself is an observer, not a running PPU or full hardware scheduler.
+The optional vblank NMI source below now consumes the same completed master time.
+There is no video IRQ/timer, HBlank/dot model, HDMA, DRAM refresh, bus arbitration,
+PAL/interlace/overscan selection, APU synchronization or rendering per scanline.
+External scheduled interrupts retain the existing boundary policy.
 The direct test compares every master clock across four frames against an
 iterative oracle. Three synthetic generated programs cover DMA, partial failure,
 CPU budgets, long loops, host origins, external events, reset and uint64 capacity.
 Existing timed interrupt and timed/untimed graphics comparisons also check the observer.
+
+
+## Vblank NMI boundary subset
+
+With optional device I/O enabled, byte writes to $4200 support **only** bit 7
+(NMI enable); values other than $00/$80 reject before mutation. IRQ timer/autojoy
+bits remain unsupported. Mutable byte reads at $4210 return the unread vblank
+latch in bit 7, a fixed diagnostic CPU version 2 in bits 0-3 and zero in bits 4-6.
+This is not a general CPU open-bus model. Reads clear the latch, but do not cancel
+an already pending NMI. Read-only host inspection is available through
+`video_interrupts()`, without consuming the latch. Const bus reads at $4210 and
+writes to it reject; reading $4200, words, stack/MVN/MVP accesses and DMA sources
+at the status port remain unsupported. Low-bank aliases follow other device ports.
+
+`VblankNmi` observes the same NTSC progressive master timeline as RasterClock.
+A transition into line 225 sets the status latch, whether or not NMI is enabled;
+if enabled, it also latches a pending request. Frame start clears the status.
+Enabling NMI while an unread status latch is set requests NMI immediately; writing
+the enabled state again does not create a new edge. Disabling does not cancel a
+pending request. Reading/acknowledging the status does not rearm it within the
+same vblank; the next vblank sets it again. Pending requests coalesce across
+multiple frames, even when a jump ends outside vblank. Rewinds reject atomically.
+Reset clears time, enable, status and pending request while preserving memories;
+clearing WRAM/VRAM/CGRAM does not touch the source.
+
+Timed generated code updates the source at completed CPU/interrupt boundaries
+and for actual DMA stalls, including partial source faults. The next boundary
+combines it with existing logical/cycle/master NMI sources. Successful NMI entry
+acknowledges all pending sources after stack/vector checks; it does not read
+$4210. IRQ entry never consumes NMI. The existing compiled handler policy (no
+nesting, RTI restoration and capacity guards) remains in force. Code compiled
+without handlers stops with the existing interrupt diagnostic. A DMA fault keeps
+its memory stop plus the newly latched request; failure does not service a handler.
+Zero budget leaves the source untouched, and untimed code does not advance it.
+The host can explicitly call `synchronize_video`; an ahead-of-CPU source rejects
+at the next timed boundary before other clocks advance.
+
+**Boundary approximation:** MMIO reads/writes sample/apply at the operation's
+starting boundary, then elapsed time is accounted at completion. There is no
+per-bus-cycle ordering, four-clock NMI hold, communication/pipeline delay, IRQ lock
+or post-$4200/DMA delay. Those hardware details are deliberately outside this
+subset, so these synthetic tests do not establish cycle-exact NMI behavior.
+$4211/$4212 and other CPU control/status ports are still unsupported.
+References: [ares NMI control/status/hold](https://github.com/ares-emulator/ares/blob/master/ares/sfc/cpu/irq.cpp)
+and [CPU port mapping](https://github.com/ares-emulator/ares/blob/master/ares/sfc/cpu/io.cpp).
+Implementation and fixtures are original C++; no commercial content is included.
+
+Tests compare four frames clock by clock with an independent state machine,
+exercise split/multiframe jumps, all 128 low-bank aliases, every rejected control
+value, side-effect-free rejection, reset and memory preservation. Four generated
+fixtures exercise emulation/native handlers and RTI, programs without handlers,
+partial DMA failure, host origins, frame edges, zero budgets, long multi-frame
+loops, external NMI coalescence and rejection of a source ahead of the CPU.

@@ -46,7 +46,12 @@ inline bool synchronize_master_clock(State& s) {
     s.pending_master_clocks = 0;
     s.stop = Stop::contract; s.diagnostic = "Raster clock is ahead of CPU counter"; return false;
   }
+  if (s.bus && s.bus->video_interrupts().now() > s.master_clocks) {
+    s.pending_master_clocks = 0;
+    s.stop = Stop::contract; s.diagnostic = "Video interrupt clock is ahead of CPU counter"; return false;
+  }
   s.video_clock.synchronize(s.master_clocks);
+  if (s.bus) s.bus->synchronize_video(s.master_clocks);
   s.master_clock.advance(s.master_clocks-s.master_clock.now());
   return true;
 }
@@ -54,7 +59,7 @@ inline bool pending_irq(const State& s) {
   return s.clock.irq_asserted() || s.cycle_clock.irq_asserted() || s.master_clock.irq_asserted();
 }
 inline bool pending_nmi(const State& s) {
-  return s.clock.nmi_pending() || s.cycle_clock.nmi_pending() || s.master_clock.nmi_pending();
+  return s.clock.nmi_pending() || s.cycle_clock.nmi_pending() || s.master_clock.nmi_pending() || (s.bus && s.bus->video_interrupts().pending());
 }
 inline bool begin_instruction(State& s, unsigned limit, unsigned cycles, bool master_timed = false) {
   // Budget zero must leave scheduled events untouched.
@@ -107,8 +112,8 @@ inline bool begin_bus_instruction(State& s, unsigned limit, unsigned cycles,
       const unsigned at = address+i;
       // Only the opt-in device subset supports timed byte MMIO.
       if (s.bus->is_mmio(at) && !(bytes == 1 && (((at & 65535) >= 0x4300 && (at & 65535) <= 0x4376 && (at & 15) <= 6) ||
-          ((at & 65535) == 0x2180) || (!writing && ((at & 65535) == 0x2139 || (at & 65535) == 0x213a || (at & 65535) == 0x213b)) || (writing && (((at & 65535) >= 0x2115 && (at & 65535) <= 0x2119) || ((at & 65535) >= 0x2181 && (at & 65535) <= 0x2183) ||
-          (at & 65535) == 0x2121 || (at & 65535) == 0x2122 || (at & 65535) == 0x420b || (at & 65535) == 0x420d ||
+          ((at & 65535) == 0x2180) || (!writing && ((at & 65535) == 0x2139 || (at & 65535) == 0x213a || (at & 65535) == 0x213b || (at & 65535) == 0x4210)) || (writing && (((at & 65535) >= 0x2115 && (at & 65535) <= 0x2119) || ((at & 65535) >= 0x2181 && (at & 65535) <= 0x2183) ||
+          (at & 65535) == 0x2121 || (at & 65535) == 0x2122 || (at & 65535) == 0x4200 || (at & 65535) == 0x420b || (at & 65535) == 0x420d ||
           (at & 65535) == 0x2100 || (at & 65535) == 0x2105 || (at & 65535) == 0x2107 || (at & 65535) == 0x210b ||
           (at & 65535) == 0x2108 || ((at & 65535) >= 0x210d && (at & 65535) <= 0x2110) || (at & 65535) == 0x212c))))) {
         s.stop = Stop::contract; s.diagnostic = "Unsupported timed MMIO access"; return false;
@@ -215,6 +220,7 @@ inline void complete_bus_instruction(State& s, unsigned cycles) {
   complete_instruction(s, cycles);
   s.master_clocks += s.pending_master_clocks;
   s.video_clock.synchronize(s.master_clocks);
+  if (s.bus) s.bus->synchronize_video(s.master_clocks);
   s.master_clock.advance(s.pending_master_clocks);
   s.pending_master_clocks = 0;
 }
@@ -285,6 +291,7 @@ inline bool store(State& s, unsigned address, unsigned value, bool narrow) {
     const uint64_t elapsed = s.bus->dma_clocks()-before;
     s.master_clocks += elapsed;
     s.video_clock.synchronize(s.master_clocks);
+    s.bus->synchronize_video(s.master_clocks);
     s.master_clock.advance(elapsed);
   };
   try {
@@ -399,7 +406,7 @@ inline bool enter_interrupt(State& s, unsigned target, bool nmi) {
     for (unsigned i = 0; i < count; ++i) write_byte(s, addresses[i], static_cast<uint8_t>(values[i]));
     s.interrupt = {true, s.e, s.pc, s.p, s.s, next};
     s.s = next; s.pc = target; s.p = (s.p | 4) & ~8u;
-    if (nmi) { s.clock.acknowledge_nmi(); s.cycle_clock.acknowledge_nmi(); s.master_clock.acknowledge_nmi(); }
+    if (nmi) { s.clock.acknowledge_nmi(); s.cycle_clock.acknowledge_nmi(); s.master_clock.acknowledge_nmi(); s.bus->acknowledge_video_nmi(); }
     s.stop = Stop::limit; s.diagnostic.clear();
     return true;
   } catch (const system816::BusError& e) {

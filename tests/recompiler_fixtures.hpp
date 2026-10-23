@@ -4,6 +4,20 @@
 #include <vector>
 #include <cstdint>
 inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
+  if (name == "bus_video_nmi_fault") return recompiler_fixture("dma_cgram_fault");
+  if (name == "bus_video_nmi" || name == "bus_irq_video_emulation" || name == "bus_irq_video_native") {
+    std::vector<uint8_t> image(32768,0);
+    std::vector<uint8_t> code{0xa9,0x80,0x8d,0x00,0x42,0xea,0x80,0xfd};
+    if (name == "bus_irq_video_native") code.insert(code.begin(),{0x18,0xfb});
+    for (unsigned i = 0; i < code.size(); ++i) image[i] = code[i];
+    const std::vector<uint8_t> handler{0xad,0x10,0x42,0x8d,0x00,0x10,0xe8,0x40};
+    for (unsigned i = 0; i < handler.size(); ++i) image[0x100+i] = handler[i];
+    image[0x120] = 0x40;
+    for (unsigned v : {0x7feau,0x7ffau}) { image[v] = 0; image[v+1] = 0x81; }
+    for (unsigned v : {0x7feeu,0x7ffeu}) { image[v] = 0x20; image[v+1] = 0x81; }
+    image[0x7ffd] = 0x80;
+    return image;
+  }
   if (name == "bus_raster") return recompiler_fixture("video_layers");
   if (name == "bus_raster_loop") return {0xea,0x80,0xfd};
   if (name == "bus_raster_fault") return recompiler_fixture("dma_cgram_fault");

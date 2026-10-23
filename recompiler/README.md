@@ -216,5 +216,9 @@ Palette storage does not yet produce pixels or run the game.
 Timed generated programs also update `State::video_clock`, the NTSC progressive
 raster observer described in the [system contract](../system/README.md#ntsc-progressive-raster-clock-observer).
 It follows completed CPU and DMA master time, including partial DMA faults;
-untimed programs leave it at reset. It does not generate video interrupts or
-schedule graphics. This foundation does not run the game.
+untimed programs leave it at reset. The optional bus now also observes this time for the
+[vblank NMI boundary subset](../system/README.md#vblank-nmi-boundary-subset):
+$4200 bit 7 enables NMI and mutable byte reads of $4210 consume its status latch.
+Successful compiled NMI entry acknowledges the request separately. Untimed code
+never advances the source. Per-cycle timing/hold/lock delays and other CPU control
+registers remain unsupported. Graphics are not scheduled by it; the game does not run.
