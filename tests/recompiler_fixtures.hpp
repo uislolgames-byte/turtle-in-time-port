@@ -34,6 +34,20 @@ inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
     write(0x420b,0x81); code.insert(code.end(),{0xad,2,0x43,0xdb});
     return code;
   }
+  if (name == "bus_vram_read_low" || name == "bus_vram_read_high") return recompiler_fixture(name.substr(4));
+  if (name == "vram_read_low" || name == "vram_read_high") {
+    auto code = recompiler_fixture("dma_vram"); code.pop_back();
+    const bool high = name == "vram_read_high";
+    const auto write = [&](unsigned at, unsigned value) {
+      code.insert(code.end(),{0xa9,uint8_t(value),0x8d,uint8_t(at),uint8_t(at >> 8)});
+    };
+    write(0x2115,high ? 0x80 : 0); write(0x2116,0xff); write(0x2117,0x7f);
+    for (unsigned i = 0; i < 6; ++i) {
+      const unsigned port = high ? i%2 : 1-i%2;
+      code.insert(code.end(),{0xad,uint8_t(0x39+port),0x21,0x8d,uint8_t(i),0x10});
+    }
+    code.push_back(0xdb); return code;
+  }
   if (name == "bus_vram_cpu") return recompiler_fixture("vram_cpu");
   if (name == "vram_cpu" || name == "dma_vram" || name == "dma_vram_fault") {
     std::vector<uint8_t> code;

@@ -36,12 +36,22 @@ public:
   uint8_t read8(uint32_t address) const {
     const auto io = io_address(address);
     if (devices_io_ && dma_register(io)) return channel_[io-0x4300];
-    if (devices_io_ && io == 0x2180)
-      throw BusError(Fault::unmapped, address, "WRAM data-port read requires a mutable bus");
+    if (devices_io_ && (io == 0x2180 || io == 0x2139 || io == 0x213a))
+      throw BusError(Fault::unmapped, address, "Data-port read requires a mutable bus");
     const auto location = resolve(address);
     return location.ram ? ram_[location.offset] : rom_[location.offset];
   }
   uint8_t read8(uint32_t address) {
+    const auto io = io_address(address);
+    if (devices_io_ && (io == 0x2139 || io == 0x213a)) {
+      const bool high = io == 0x213a;
+      const uint8_t value = static_cast<uint8_t>(vram_buffer_ >> (high ? 8 : 0));
+      if (high == ((vram_control_ & 128) != 0)) {
+        prefetch_vram();
+        increment_vram();
+      }
+      return value;
+    }
     if (devices_io_ && io_address(address) == 0x2180) {
       const auto value = ram_[wram_address_];
       wram_address_ = (wram_address_ + 1) & 0x1ffff;
@@ -76,7 +86,7 @@ public:
     return system816::cpu_access_clocks(address, fast_rom_);
   }
   uint32_t wram_address() const { return wram_address_; }
-  // Host inspection only; these do not emulate the buffered CPU VRAM read ports.
+  // Host inspection only; no buffered CPU read-port side effects.
   uint8_t vram_byte(uint32_t offset) const { return vram_.at(offset); }
   unsigned vram_address() const { return vram_word_; }
   unsigned vram_control() const { return vram_control_; }
@@ -105,7 +115,7 @@ public:
   }
   void reset_devices() {
     fast_rom_ = false; channel_.fill(0); wram_address_ = 0; dma_clocks_ = 0; dma_bytes_ = 0;
-    vram_word_ = 0; vram_control_ = 0;
+    vram_word_ = 0; vram_control_ = 0; vram_buffer_ = 0;
   }
   uint16_t reset_vector() const {
     return static_cast<uint16_t>(read8(0x00fffc) | (unsigned(read8(0x00fffd)) << 8));
@@ -124,21 +134,26 @@ private:
   static bool writable_io(uint32_t io) {
     return (io >= 0x2115 && io <= 0x2119) || (io >= 0x2180 && io <= 0x2183) || dma_register(io) || io == 0x420b || io == 0x420d;
   }
+  void prefetch_vram() {
+    const unsigned low = (vram_word_*2) & 65535;
+    vram_buffer_ = unsigned(vram_[low]) | (unsigned(vram_[low+1]) << 8);
+  }
+  void increment_vram() {
+    const unsigned select = vram_control_ & 3;
+    const unsigned increment = select == 0 ? 1 : select == 1 ? 32 : 128;
+    vram_word_ = (vram_word_+increment) & 65535;
+  }
   void write_vram(bool high, uint8_t value) {
     vram_[(vram_word_*2+unsigned(high)) & 65535] = value;
-    if (high == ((vram_control_ & 128) != 0)) {
-      const unsigned select = vram_control_ & 3;
-      const unsigned increment = select == 0 ? 1 : select == 1 ? 32 : 128;
-      vram_word_ = (vram_word_+increment) & 65535;
-    }
+    if (high == ((vram_control_ & 128) != 0)) increment_vram();
   }
   void write_io(uint32_t io, uint8_t value, uint32_t address) {
     if (io == 0x2115) {
       if (value & ~0x83u) throw BusError(Fault::unmapped,address,"VRAM remapping/reserved VMAIN bits unsupported");
       vram_control_ = value; return;
     }
-    if (io == 0x2116) { vram_word_ = (vram_word_ & 0xff00) | value; return; }
-    if (io == 0x2117) { vram_word_ = (vram_word_ & 0xff) | (unsigned(value) << 8); return; }
+    if (io == 0x2116) { vram_word_ = (vram_word_ & 0xff00) | value; prefetch_vram(); return; }
+    if (io == 0x2117) { vram_word_ = (vram_word_ & 0xff) | (unsigned(value) << 8); prefetch_vram(); return; }
     if (io == 0x2118 || io == 0x2119) { write_vram(io == 0x2119,value); return; }
     if (dma_register(io)) { channel_[io-0x4300] = value; return; }
     if (io == 0x2180) { ram_[wram_address_] = value; wram_address_ = (wram_address_+1) & 0x1ffff; }
@@ -194,7 +209,7 @@ private:
   std::vector<uint8_t> rom_;
   std::array<uint8_t, 0x20000> ram_{};
   std::vector<uint8_t> vram_ = std::vector<uint8_t>(65536,0);
-  unsigned vram_word_ = 0, vram_control_ = 0;
+  unsigned vram_word_ = 0, vram_control_ = 0, vram_buffer_ = 0;
   bool devices_io_ = false, fast_rom_ = false;
   std::array<uint8_t,128> channel_{};
   uint32_t wram_address_ = 0;

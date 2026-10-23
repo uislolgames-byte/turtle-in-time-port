@@ -87,7 +87,7 @@ int main() {
       rejected([&] { bus->write8(0x2115,static_cast<uint8_t>(value)); });
       check(bus->vram_control() == 0x80 && bus->vram_address() == 2 && bus->vram_byte(0) == rom[0x1000],"bad VMAIN mutated VRAM");
     }
-    for (unsigned at : {0x2115u,0x2116u,0x2117u,0x2118u,0x2119u,0x2139u,0x213au})
+    for (unsigned at : {0x2115u,0x2116u,0x2117u,0x2118u,0x2119u})
       rejected([&] { (void)bus->read8(at); });
     auto disabled = std::make_unique<Bus>(rom);
     rejected([&] { disabled->write8(0x2118,1); });
