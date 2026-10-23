@@ -20,6 +20,20 @@ inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
     image[0x1000] = 0xde; image[0x1001] = 0xad; image[0x1002] = 0xbe; image[0x1003] = 0xef;
     return image;
   }
+  if (name == "dma_channels" || name == "dma_channels_fault") {
+    std::vector<uint8_t> code;
+    const auto write = [&](unsigned at, unsigned value) {
+      code.insert(code.end(),{0xa9,uint8_t(value),0x8d,uint8_t(at),uint8_t(at >> 8)});
+    };
+    write(0x2181,0); write(0x2182,0); write(0x2183,0);
+    for (unsigned ch : {0u,7u}) {
+      const unsigned base = 0x4300+16*ch;
+      write(base,ch ? 0x10 : 0); write(base+1,0x80); write(base+2,ch ? 3 : 0); write(base+3,0x90);
+      write(base+4,ch && name == "dma_channels_fault" ? 1 : 0); write(base+5,2); write(base+6,0);
+    }
+    write(0x420b,0x81); code.insert(code.end(),{0xad,2,0x43,0xdb});
+    return code;
+  }
   if (name == "mask_flags") return {0x78,0x58,0x20,9,0x80,0x78,0x58,0x78,0xdb,0x58,0x78,0x58,0x60};
   if (name == "irq_mask_emulation" || name == "irq_mask_native") {
     std::vector<uint8_t> image(32768,0);

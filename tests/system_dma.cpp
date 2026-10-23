@@ -157,6 +157,74 @@ int main() {
           recompiled::load(state,0x2180,true),"timed WRAM port read");
     recompiled::complete_bus_instruction(state,4);
     check(state.a == 0x67 && bus->wram_address() == 1 && state.master_clocks == 60,"WRAM port timing/side effects");
+    // Independent oracle for every channel-selection mask, including sparse masks.
+    for (unsigned mask = 0; mask < 256; ++mask) {
+      bus->reset_devices(); bus->clear_ram();
+      const unsigned alias = (mask%4 == 0 ? 0 : mask%4 == 1 ? 0x3f0000 : mask%4 == 2 ? 0x800000 : 0xbf0000);
+      std::vector<uint8_t> expected(0x20000,0);
+      unsigned target = 0, bytes = 0; uint64_t cost = mask ? 8 : 0;
+      for (unsigned ch = 0; ch < 8; ++ch) {
+        const unsigned base = alias+0x4300+16*ch, control = (ch%4)*8, start = 0x9000+32*ch;
+        bus->write8(base,static_cast<uint8_t>(control)); bus->write8(base+1,0x80);
+        bus->write8(base+2,static_cast<uint8_t>(start)); bus->write8(base+3,0x90);
+        bus->write8(base+4,0); bus->write8(base+5,static_cast<uint8_t>(ch+1)); bus->write8(base+6,0);
+        unsigned source = start;
+        if (mask & (1u << ch)) {
+          cost += 8+8*(ch+1); bytes += ch+1;
+          for (unsigned i = 0; i <= ch; ++i) {
+            expected[target++] = rom[source-0x8000];
+            if (!(control & 8)) source = (source+((control & 16) ? 65535 : 1))%65536;
+          }
+        }
+      }
+      check(bus->dma_max_clocks(static_cast<uint8_t>(mask),0x420b) == cost && bus->dma_clocks() == 0,
+            "multi-channel timing preflight changed state/cost");
+      bus->write8(alias+0x420b,static_cast<uint8_t>(mask));
+      check(bus->dma_bytes() == bytes && bus->dma_clocks() == cost && bus->wram_address() == target,
+            "multi-channel order/overhead counters");
+      for (unsigned i = 0; i < expected.size(); ++i)
+        check(bus->read8(0x7e0000+i) == expected[i],"multi-channel independent copy mismatch");
+      for (unsigned ch = 0; ch < 8; ++ch) {
+        const unsigned base = 0x4300+16*ch, start = 0x9000+32*ch, control = (ch%4)*8;
+        unsigned source = start;
+        if ((mask & (1u << ch)) && !(control & 8)) source = (source+((control & 16) ? 65536-ch-1 : ch+1))%65536;
+        check(bus->read8(base+2)+256u*bus->read8(base+3) == source &&
+              bus->read8(base+5) == ((mask & (1u << ch)) ? 0u : ch+1),"selected/unselected channel register progress");
+      }
+    }
+    // A bad selected descriptor is rejected before even an earlier valid channel starts.
+    bus->reset_devices(); setup(*bus,0,0x9000,1,0);
+    bus->write8(0x4370,1); bus->write8(0x4371,0x80);
+    fails([&] { bus->write8(0x420b,0x81); },Fault::unmapped,0x420b);
+    check(bus->dma_clocks() == 0 && bus->dma_bytes() == 0 && bus->read8(0x4305) == 1,
+          "multi-channel descriptor preflight committed earlier channel");
+    // A source fault in a middle channel preserves earlier progress and skips later channels.
+    bus->reset_devices(); setup(*bus,0,0x9000,1,0);
+    for (unsigned ch : {3u,7u}) {
+      const unsigned base = 0x4300+16*ch;
+      bus->write8(base+1,0x80); bus->write8(base+3,0x90); bus->write8(base+5,1);
+    }
+    bus->write8(0x4334,1);
+    fails([&] { bus->write8(0x420b,0x89); },Fault::rom_bounds,0x019000);
+    check(bus->dma_clocks() == 32 && bus->dma_bytes() == 1 && bus->wram_address() == 1 &&
+          bus->read8(0x4305) == 0 && bus->read8(0x4335) == 1 && bus->read8(0x4375) == 1,
+          "middle-channel fault changed later descriptor or lost earlier progress");
+    // Full-size fixed-address copies on all eight channels exercise the upper bound.
+    bus->reset_devices();
+    for (unsigned ch = 0; ch < 8; ++ch) {
+      const unsigned base = 0x4300+16*ch;
+      bus->write8(base,8); bus->write8(base+1,0x80); bus->write8(base+2,static_cast<uint8_t>(ch));
+      bus->write8(base+3,0x90);
+    }
+    check(bus->dma_max_clocks(0xff,0x420b) == 4194376,"eight-channel full-size upper bound");
+    bus->write8(0x420b,0xff);
+    check(bus->dma_bytes() == 524288 && bus->dma_clocks() == 4194376 && bus->wram_address() == 0,
+          "eight-channel full-size transfer counters");
+    for (unsigned i = 0; i < 0x20000; ++i)
+      check(bus->read8(0x7e0000+i) == rom[0x1000+(i < 65536 ? 6 : 7)],"full-size channel order/wrap");
+    recompiled::reset_cpu(state,*bus);
+    for (unsigned ch = 0; ch < 8; ++ch) for (unsigned reg = 0; reg < 7; ++reg)
+      check(bus->read8(0x4300+16*ch+reg) == 0,"RESET left channel registers active");
     std::cout << "DMA: " << cases << " reference copies, 65536-byte transfer, ports, faults and guards passed\n";
     return 0;
   } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }

@@ -106,7 +106,7 @@ The optional system bus also accepts byte MEMSEL ($420D) writes from generated
 code and exposes address-speed queries (6/8/12 master clocks). These queries do
 not advance `cycle_clock` or supply a CPU master-clock total. See the explicit
 [system timing contract](../system/README.md#address-access-speeds-and-memsel).
-The regression chain now contains 68 tests, including generated MEMSEL traces.
+The regression chain now contains 72 tests, including generated MEMSEL traces.
 
 
 ## First optional CPU master-clock counter
@@ -118,9 +118,9 @@ on each successful instruction, using current MEMSEL and address speeds. It
 requires a bus and supports the existing short leaf JSR/RTS. It can be
 combined with `--interrupts` for restricted compiled handlers; nested calls remain rejected. MVN/MVP byte
 iterations now support timing with separate source and destination access costs.
-Timed byte MMIO now covers the existing opt-in MEMSEL, WRAM port and channel-0 DMA subset. Ordinary generation is unchanged.
+Timed byte MMIO now covers the existing opt-in MEMSEL, WRAM port and eight-channel mode-0 DMA subset. Ordinary generation is unchanged.
 The shared CPU/DMA counter drives host events in master units; PPU/APU
-synchronization remains absent. The 68-test regression chain includes 187 fixed generated instruction traces
+synchronization remains absent. The 72-test regression chain includes 187 fixed generated instruction traces
 and 129 timed block-transfer comparisons, alongside the 99 untimed comparisons
 and a separate partial-fault fixture. Full 64 KiB WRAM transfer costs and
 slow/FastROM differences have fixed expected results.
@@ -149,9 +149,9 @@ The timeline advances with committed costs, latches requests at instruction/byte
 completion and combines them with the original step/cycle sources. Reset clears
 all three queues; zero budget delivers none. Counter/timeline rewind is rejected.
 The regression chain adds 4,400 master-event reference comparisons and 858 fixed
-MEMSEL/FastROM boundary traces (68 tests total). See the
+MEMSEL/FastROM boundary traces (72 tests total). See the
 [master event contract](../system/README.md#cpu-master-clock-event-timeline).
-The synchronous channel-0 DMA stall now contributes to the master timeline;
+The synchronous mode-0 DMA stall now contributes to the master timeline;
 refresh, hardware DMA arbitration and video/audio scheduling remain future work.
 See the [CPU/DMA contract](../system/README.md#shared-cpudma-master-time) for fault/capacity policy.
 
@@ -173,3 +173,12 @@ nested dispatch in this restricted engine. Hardware polling delays are not
 modeled. See the [IRQ masking contract](../system/README.md#software-irq-mask-clisei).
 Five new fixtures add 7,840 reference comparisons: 2,560 for flags and leaf
 calls, plus 5,280 interrupt comparisons across modes and time sources.
+
+
+The existing opt-in mode-0 DMA subset now accepts all eight channel bits in $420B,
+with independent $43n0..$43n6 registers, ascending execution and a shared WRAM port.
+Timed execution reserves the entire selected mask before effects and accounts
+actual progress if a later channel faults. Single-channel behavior is preserved.
+Four generated tests add 164 fixed traces and 936 NMI boundaries, while direct
+bus tests cover every selection mask and the full eight-channel byte count.
+See the [multi-channel DMA contract](../system/README.md#eight-dma-channels-in-the-bounded-transfer-model).

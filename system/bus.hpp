@@ -35,7 +35,7 @@ public:
   }
   uint8_t read8(uint32_t address) const {
     const auto io = io_address(address);
-    if (devices_io_ && io >= 0x4300 && io <= 0x4306) return channel_[io-0x4300];
+    if (devices_io_ && dma_register(io)) return channel_[io-0x4300];
     if (devices_io_ && io == 0x2180)
       throw BusError(Fault::unmapped, address, "WRAM data-port read requires a mutable bus");
     const auto location = resolve(address);
@@ -81,11 +81,16 @@ public:
   // Side-effect-free upper bound, including startup. Source faults may consume less.
   uint64_t dma_max_clocks(uint8_t mask, uint32_t trigger) const {
     if (mask == 0) return 0;
-    if (mask != 1 || (channel_[0] & ~0x18u) || channel_[1] != 0x80)
-      throw BusError(Fault::unmapped, trigger, "Only channel 0, mode 0, A-to-WRAM-port DMA is supported");
-    unsigned remaining = unsigned(channel_[5]) | (unsigned(channel_[6]) << 8);
-    if (remaining == 0) remaining = 65536;
-    const uint64_t cost = 16 + uint64_t(remaining)*8;
+    uint64_t cost = 8; // Shared startup, charged once for a nonempty mask.
+    for (unsigned ch = 0; ch < 8; ++ch) {
+      if (!(mask & (1u << ch))) continue;
+      const auto* channel = channel_.data()+16*ch;
+      if ((channel[0] & ~0x18u) || channel[1] != 0x80)
+        throw BusError(Fault::unmapped, trigger, "Only mode 0, A-to-WRAM-port DMA is supported");
+      unsigned remaining = unsigned(channel[5]) | (unsigned(channel[6]) << 8);
+      if (remaining == 0) remaining = 65536;
+      cost += 8 + uint64_t(remaining)*8;
+    }
     if (dma_clocks_ > std::numeric_limits<uint64_t>::max() - cost)
       throw BusError(Fault::address, trigger, "DMA clock counter exhausted");
     return cost;
@@ -104,11 +109,14 @@ private:
     if (address > 0xffffff || ((address >> 16) & 0x7f) >= 0x40) return 0;
     return address & 0xffff;
   }
+  static bool dma_register(uint32_t io) {
+    return io >= 0x4300 && io <= 0x4376 && (io & 15) <= 6;
+  }
   static bool writable_io(uint32_t io) {
-    return (io >= 0x2180 && io <= 0x2183) || (io >= 0x4300 && io <= 0x4306) || io == 0x420b || io == 0x420d;
+    return (io >= 0x2180 && io <= 0x2183) || dma_register(io) || io == 0x420b || io == 0x420d;
   }
   void write_io(uint32_t io, uint8_t value, uint32_t address) {
-    if (io >= 0x4300 && io <= 0x4306) { channel_[io-0x4300] = value; return; }
+    if (dma_register(io)) { channel_[io-0x4300] = value; return; }
     if (io == 0x2180) { ram_[wram_address_] = value; wram_address_ = (wram_address_+1) & 0x1ffff; }
     if (io == 0x2181) wram_address_ = (wram_address_ & 0x1ff00) | value;
     if (io == 0x2182) wram_address_ = (wram_address_ & 0x100ff) | (unsigned(value) << 8);
@@ -119,26 +127,30 @@ private:
   void run_dma(uint8_t mask, uint32_t trigger) {
     if (mask == 0) return;
     (void)dma_max_clocks(mask, trigger);
-    unsigned remaining = unsigned(channel_[5]) | (unsigned(channel_[6]) << 8);
-    if (remaining == 0) remaining = 65536;
-    // Startup + channel overhead; alignment/refresh/arbitration are not modeled.
-    dma_clocks_ += 16;
-    while (remaining) {
-      const unsigned low = unsigned(channel_[2]) | (unsigned(channel_[3]) << 8);
-      const unsigned bank = channel_[4], source = (bank << 16) | low;
-      if (bank == 0x7e || bank == 0x7f || ((bank & 0x7f) < 0x40 && low < 0x2000))
-        throw BusError(Fault::unmapped, source, "WRAM-to-WRAM-port DMA unsupported");
-      if (io_address(source) >= 0x2100 && io_address(source) < 0x4380)
-        throw BusError(Fault::unmapped, source, "DMA source in CPU/PPU I/O unsupported");
-      const auto value = static_cast<const Bus&>(*this).read8(source);
-      ram_[wram_address_] = value; wram_address_ = (wram_address_+1) & 0x1ffff;
-      if (!(channel_[0] & 8)) {
-        const unsigned next = (low + ((channel_[0] & 16) ? 65535 : 1)) & 65535;
-        channel_[2] = static_cast<uint8_t>(next); channel_[3] = static_cast<uint8_t>(next >> 8);
+    dma_clocks_ += 8;
+    for (unsigned ch = 0; ch < 8; ++ch) {
+      if (!(mask & (1u << ch))) continue;
+      auto* channel = channel_.data()+16*ch;
+      unsigned remaining = unsigned(channel[5]) | (unsigned(channel[6]) << 8);
+      if (remaining == 0) remaining = 65536;
+      dma_clocks_ += 8; // Per-channel overhead; no alignment/refresh/arbitration.
+      while (remaining) {
+        const unsigned low = unsigned(channel[2]) | (unsigned(channel[3]) << 8);
+        const unsigned bank = channel[4], source = (bank << 16) | low;
+        if (bank == 0x7e || bank == 0x7f || ((bank & 0x7f) < 0x40 && low < 0x2000))
+          throw BusError(Fault::unmapped, source, "WRAM-to-WRAM-port DMA unsupported");
+        if (io_address(source) >= 0x2100 && io_address(source) < 0x4380)
+          throw BusError(Fault::unmapped, source, "DMA source in CPU/PPU I/O unsupported");
+        const auto value = static_cast<const Bus&>(*this).read8(source);
+        ram_[wram_address_] = value; wram_address_ = (wram_address_+1) & 0x1ffff;
+        if (!(channel[0] & 8)) {
+          const unsigned next = (low + ((channel[0] & 16) ? 65535 : 1)) & 65535;
+          channel[2] = static_cast<uint8_t>(next); channel[3] = static_cast<uint8_t>(next >> 8);
+        }
+        --remaining;
+        channel[5] = static_cast<uint8_t>(remaining); channel[6] = static_cast<uint8_t>(remaining >> 8);
+        ++dma_bytes_; dma_clocks_ += 8;
       }
-      --remaining;
-      channel_[5] = static_cast<uint8_t>(remaining); channel_[6] = static_cast<uint8_t>(remaining >> 8);
-      ++dma_bytes_; dma_clocks_ += 8;
     }
   }
   struct Location { bool ram; uint32_t offset; };
@@ -155,7 +167,7 @@ private:
   std::vector<uint8_t> rom_;
   std::array<uint8_t, 0x20000> ram_{};
   bool devices_io_ = false, fast_rom_ = false;
-  std::array<uint8_t,7> channel_{};
+  std::array<uint8_t,128> channel_{};
   uint32_t wram_address_ = 0;
   uint64_t dma_clocks_ = 0, dma_bytes_ = 0;
 };

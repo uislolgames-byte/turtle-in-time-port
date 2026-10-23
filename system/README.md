@@ -109,10 +109,10 @@ WRAM address; $2180 reads/writes its byte and increments that address modulo
 $2180 requires a non-const bus because it advances state. The default bus still
 rejects these addresses.
 
-Channel-0 registers $4300–4306 are readable/writable: control, B-bus target,
-A-bus address low/high/bank and size low/high. A byte write of 1 to $420B starts
-the supported transfer synchronously. A zero mask does nothing; other channel
-masks are rejected. Only mode 0, A-to-B, target $80 (WRAM port) is implemented.
+Registers $43n0–43n6 are readable/writable for all eight channels: control, B-bus
+target, A-bus address low/high/bank and size low/high. Each bit of a byte write
+to $420B selects a channel; they run synchronously in ascending order. A zero
+mask does nothing. Only mode 0, A-to-B, target $80 (WRAM port) is implemented.
 Control $00 increments the source, $10 decrements it, $08/$18 fixes it. The
 16-bit source wraps without changing its bank. Count zero means 65,536 bytes.
 After each successful byte, source/size registers and the WRAM pointer advance.
@@ -123,7 +123,7 @@ are rejected with address/reason. A failure retains completed bytes and their
 register progress; the failing byte is not committed. Retrying requires explicit
 reconfiguration. Startup overhead remains counted on a data-source failure.
 
-`dma_clocks()` counts 16 master clocks of startup/channel overhead plus 8 for
+`dma_clocks()` counts 8 common startup clocks, 8 per channel reached, plus 8 for
 each successfully transferred byte; `dma_bytes()` counts successful bytes. A
 four-byte transfer therefore records 48 clocks. These are a **partial DMA
 timing model**, separate from `State::clock` (logical instruction ticks). CPU bus
@@ -328,7 +328,7 @@ written byte values, boundaries, rejected accesses, isolation and reset.
 `recompiled_memsel` checks 28 fixed traces of actual generated LDA/STA/STP code,
 including enable/disable, four data-bank aliases, partial budgets and unchanged
 nominal CPU/DMA accounting. The default strict bus rejects the generated write.
-Both join the existing Windows/Linux regression chain (68 tests total).
+Both join the existing Windows/Linux regression chain (72 tests total).
 
 This is a timing-decoder foundation, not an instruction master-clock counter.
 The optional first CPU timing counter below now applies these speeds to a
@@ -370,7 +370,7 @@ the existing three nominal entry cycles: one fetch plus two internal cycles
 (20 clocks); idle time after STP is not accumulated. This is an explicit subset
 accounting convention, not a full model of hardware stop/wakeup.
 
-Timed byte MMIO covers the existing MEMSEL, WRAM-port and channel-0 DMA subset
+Timed byte MMIO covers the existing MEMSEL, WRAM-port and eight-channel mode-0 DMA subset
 (see the CPU/DMA contract below). Unsupported MMIO stops before effects.
 Ordinary faults and rejected ROM writes charge no partial
 instruction time, consistent with the existing diagnostic fault policy. Capacity
@@ -393,7 +393,7 @@ emulation/native mode, loop budgets and faults. They also check overflow before
 CPU/MMIO effects, reset, missing bus, MMIO rejection and existing event timelines.
 The original 37 tests remain; the five instruction tests and eight timed block-move
 tests, three timed leaf-call tests, five timed interrupt tests the master-event
-sweep, four DMA integration fixtures and five IRQ-mask fixtures bring the total to 68 tests in Windows/Linux CI. References for
+sweep, four DMA integration fixtures and five IRQ-mask fixtures bring the total to 72 tests in Windows/Linux CI. References for
 instruction decomposition: upstream bsnes
 [other instructions](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-other.cpp)
 and [branches](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-pc.cpp).
@@ -467,7 +467,7 @@ JSR/RTS and sample NMI at those boundaries using both event timelines.
 Helper tests cover emulation page wrap, native bank wrap, atomic push faults,
 MMIO guards and invalid stack pointers. Generated entry still requires S=$01FF;
 these helper boundary tests do not add TXS or arbitrary initial-S program entry.
-The full regression chain contains 68 tests, retaining these leaf-call tests.
+The full regression chain contains 72 tests, retaining these leaf-call tests.
 
 Calls remain restricted to straight-line, mode-preserving leaves; nested calls,
 leaf branches/mode changes/block moves and JSL/RTL are unsupported. Restricted compiled
@@ -520,7 +520,7 @@ Fixed program totals for one NMI are 160 master clocks / 22 CPU cycles in
 emulation and 226 / 31 in native mode. Additional cases check one clock too few
 and exact capacity at entry and RTI, atomic frame faults, NMI acknowledgement,
 wrong vectors and MMIO. CLI generation exercises both option orders. Total:
-68 tests in Windows/Linux CI, retaining all previous tests.
+72 tests in Windows/Linux CI, retaining all previous tests.
 
 These are aggregate CPU costs at instruction boundaries. Full IRQ polling delay,
 per-access interleaving, DMA arbitration/refresh and PPU/APU synchronization remain
@@ -576,7 +576,7 @@ acknowledgement and deferral. `recompiled_bus_master_events` sweeps 858 fixed
 boundary traces over all timestamps through a program with MEMSEL/FastROM,
 checking both slow and fast ROM paths. It also checks budget zero, failed stores,
 reset, host origins, ahead/rewound clocks and exact/exhausted capacity. Total:
-68 Windows/Linux regression tests, including the two CPU/DMA fixtures below.
+72 Windows/Linux regression tests, including the two CPU/DMA fixtures below.
 
 This is a CPU-owned event queue. It does not generate video interrupts, emulate
 NMITIMEN/IRQ timer registers, run devices between bus accesses, arbitrate DMA,
@@ -586,10 +586,11 @@ future work. It does not complete M3 or run the game. Only synthetic data is use
 
 ## Shared CPU/DMA master time
 
-Timed generated byte LDA/STA may access the existing opt-in WRAM port, channel-0
+Timed generated byte LDA/STA may access the existing opt-in WRAM port, DMA channel
 registers and MEMSEL. Other MMIO and all word MMIO remain rejected. A write to
 $420B reserves the CPU instruction cost plus the maximum supported DMA stall
-before starting DMA: 16 startup clocks plus 8 per byte (zero count means 65536).
+before starting: 8 common startup clocks, 8 per selected channel and 8 per byte
+(zero count means 65536 per channel).
 This is the existing bounded DMA cost model, without alignment, refresh or
 arbitration. The upper bound is conservative even when a source fault would
 abort early. Capacity exhaustion leaves DMA registers/data/counters untouched.
@@ -615,8 +616,8 @@ a CPU State. Reset clears device and CPU timelines while preserving WRAM.
 Two generated tests cover 16 fixed success/fault budget traces, plus 606 NMI
 positions through setup, DMA stall and subsequent CPU boundaries. Direct runtime
 checks cover aliases, full-size and exact/exhausted capacity, partial faults,
-zero/unsupported masks and timed WRAM port side effects. The complete CI chain
-now has 68 tests. This does not finish M3, produce video/audio or run the game.
+zero masks, unsupported descriptors and timed WRAM port side effects. The complete CI chain
+now has 72 tests. This does not finish M3, produce video/audio or run the game.
 
 
 ### DMA followed by compiled NMI/IRQ handlers
@@ -637,7 +638,7 @@ inside DMA, IRQ pulses entirely inside a stall, IRQ held across the next CPU
 boundary, simultaneous NMI/IRQ, and a second NMI while a handler is active.
 Six additional fixed completion traces check observed WRAM results and exact
 costs: the main fixture takes 604 master clocks in emulation or 632 in native;
-one complete handler adds 240 or 256 respectively. The 68-test Windows/Linux
+one complete handler adds 240 or 256 respectively. The 72-test Windows/Linux
 chain retains every previous test. This block validates integration of existing
 features; it adds no device register or instruction support, and no game execution.
 
@@ -668,5 +669,42 @@ including leaf routines, preserving every flag except I. The other 5,280 cover
 emulation/native IRQ/NMI execution, step/cycle/master events, masked requests,
 handler changes and RTI restoration. Fixed traces check pending IRQ after CLI,
 NMI after SEI and exact/exhausted capacity before mask effects. The regression
-chain now has 68 tests. This does not add hardware-generated interrupts,
+chain now has 72 tests. This does not add hardware-generated interrupts,
 NMITIMEN/timers, video/audio synchronization or game execution, and M3 remains open.
+
+
+## Eight DMA channels in the bounded transfer model
+
+Opt-in MMIO now exposes $43n0..$43n6 for all channels n=0..7. Holes $43n7..$43nF
+remain unsupported, as do word MMIO accesses. Each bit of $420B selects a channel;
+selected channels run in ascending order and share the WRAM data-port pointer.
+Each retains its own source, control and byte count; unselected channels are
+unchanged. The existing mode-0 ROM-to-WRAM-port restrictions and fixed/increment/
+decrement addressing apply independently to every selected channel. Reset clears
+all eight sets of registers while preserving WRAM.
+
+The bounded cost is eight common startup clocks, eight per channel reached, and
+eight per successful byte. A single-channel transfer retains its previous cost.
+The pure capacity preflight sums the maximum for every selected channel, treating
+a zero count as 65536 bytes, and rejects any unsupported selected descriptor
+before starting the first transfer. A source fault after startup preserves earlier
+channels and successful bytes in the failing channel; later channels do not run.
+Timed CPU stores preserve those actual DMA costs and due events on the shared
+timeline. Whole-mask capacity exhaustion rejects before any DMA effects, even
+when a later source would have faulted early.
+
+This extends the existing accounting convention, without alignment, refresh,
+HDMA, per-byte device interleaving or general B-bus destinations. Channel iteration
+and cost structure were checked against upstream [bsnes DMA implementation](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/sfc/cpu/dma.cpp);
+no source code was copied. Hardware register/fault behavior outside the supported
+strict subset is not emulated.
+
+Direct tests compare all 256 selection masks with an independent byte-array oracle,
+including register mirrors, order, mixed address modes and unselected descriptors.
+They also cover unsupported later descriptors before startup, a middle-channel
+source fault, reset and 524288 transferred bytes with all eight zero-sized counts.
+Four new generated fixtures add 164 fixed CPU/WRAM/register/time traces, including
+channel 0 completing before channel 7 faults. A timed sweep checks 936 NMI positions
+through the two-channel program; capacity tests check whole-mask reservation and
+retained events after partial failure. Windows/Linux CI now has 72 tests.
+This does not finish M3 or enable video, audio or the game.
