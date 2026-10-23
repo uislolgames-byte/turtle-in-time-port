@@ -1,7 +1,7 @@
 # Prévia 2bpp de diagnóstico
 
 `tile_preview.hpp` transforma a VRAM e CGRAM atuais em uma imagem RGB de uma
-camada. A configuração é fornecida pelo host: endereços **em bytes** do mapa e
+camada. Na API original `render_2bpp_preview`, a configuração é fornecida pelo host: endereços **em bytes** do mapa e
 dos caracteres, recorte de 1–32 tiles por dimensão e bloco de 32 cores alinhado
 na CGRAM (0–224). O mapa físico mantém 32 entradas por linha, mesmo no recorte.
 Os endereços físicos de VRAM dão a volta em 64 KiB.
@@ -14,7 +14,9 @@ Referência de organização: [implementação de background do bsnes](https://g
 e [composição de tela do bsnes](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/sfc/ppu/screen.cpp).
 
 As cores de 15 bits são expandidas por repetição de bits para RGB de 8 bits
-por canal, sem aplicar brilho. A leitura é por inspeção const da memória:
+por canal. A API original mantém brilho máximo; `preview_rgb` também aceita
+nível 0–15, arredondando cada canal de 5 bits por `(canal*nível+7)/15` antes
+da expansão RGB. Essa é uma conversão digital de diagnóstico, sem simular DAC. A leitura é por inspeção const da memória:
 não avança relógios, ponteiros MMIO ou fases das portas. O exportador escreve
 BMP de 24 bits, BGR, linhas de baixo para cima e padding até múltiplos de quatro.
 Configuração e dimensões inválidas são rejeitadas antes da saída.
@@ -40,9 +42,46 @@ base64 do mesmo BMP permite comparar exatamente o resultado dos dois sistemas.
 Não há ROM comercial ou gráficos extraídos: os quatro padrões abstratos e a
 paleta estão definidos em `tests/recompiler_fixtures.hpp`.
 
+## Captura comandada por registradores
+
+`capture_bg1_preview(bus, largura_tiles, altura_tiles)` usa cinco registradores
+escritos pelo programa recompilado: INIDISP ($2100), BGMODE ($2105), BG1SC
+($2107), BG12NBA ($210B) e TM ($212C). O host só escolhe o recorte. O barramento
+opt-in aceita escrita de byte nos aliases $00–$3F/$80–$BF; leituras CPU e palavras
+MMIO permanecem rejeitadas. Escritas guardam inclusive configurações ainda não
+suportadas; é a captura que as diagnostica, antes de produzir qualquer imagem.
+
+A captura aceita somente BGMODE=0, BG1 8×8 e mapa 32×32 (BG1SC bits 0–1 zero),
+sem outras camadas ativas em TM. BG1SC bits 2–7 selecionam o mapa em passos de
+2048 bytes; BG12NBA bits 0–3 selecionam caracteres em passos de 8192 bytes,
+com wrap físico. O nibble BG2 é armazenado mas não participa desta captura.
+TM=0 mostra backdrop; TM=1 habilita BG1. Os demais bits de camada são rejeitados
+na captura. INIDISP conserva bit 7 e bits 0–3; TM conserva bits 0–4.
+Forced blank produz preto; brilho 0 produz preto; os 16 níveis afetam inclusive
+backdrop quando BG1 está desativada. Não há restrições de acesso VRAM por blank.
+
+Construção/reset de dispositivos/CPU deixam display em $80 e os quatro outros
+controles em zero: política determinística de diagnóstico, sem alegar power-on
+real. Reset preserva memórias e as limpezas de memória preservam controles.
+Referências: [registradores no bsnes](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/sfc/ppu/io.cpp)
+e [tabela digital de brilho](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/sfc/ppu/ppu.cpp).
+
+`system_video_registers` verifica 524288 combinações cor/brilho contra referência
+em ponto flutuante, 163840 escritas nos aliases, 1024 pares de bases físicas,
+blank/backdrop, isolamento, reset e rejeições. Duas fixtures novas percorrem
+80 limites de instruções cada, com 163840 comparações de pixels no total,
+checagem completa de memória/controles/CPU e clocks. O programa de 77 instruções
+termina em 231 ciclos nominais e 4632 master clocks (2864 DMA).
+
+O CI inclui três BMPs extras nos artefatos `synthetic-preview-*`:
+`preview-registers-full.bmp`, `preview-registers-dim.bmp` e
+`preview-registers-blank.bmp`. São capturados respectivamente nos limites
+70, 72 e 74, depois de verificar todos os pixels esperados.
+
 ## Limite do avanço
 
 Esta é uma ferramenta de diagnóstico chamada pelo host depois da execução.
-Ainda faltam seleção de modo/mapa por registradores PPU, scanlines, composição
-de camadas/sprites, brilho, janela, sincronização completa e apresentação pela
-interface. Não conclui os Marcos 3 ou 4 e não significa que o jogo execute.
+A configuração agora pode vir do programa via MMIO, mas ainda faltam scanlines,
+scroll, outros modos/tamanhos, composição de camadas/sprites, janelas,
+sincronização completa e apresentação pela interface. Não conclui os Marcos
+3 ou 4 e não significa que o jogo execute.

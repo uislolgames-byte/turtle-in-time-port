@@ -5,14 +5,17 @@
 #include <vector>
 
 namespace system816 {
-// Host diagnostic preview, not a PPU: no scanlines, register-driven modes or composition.
+// Host diagnostic snapshots, not a running PPU: no scanlines or composition.
 struct PreviewRGB {
   uint8_t r, g, b;
   bool operator==(const PreviewRGB& o) const { return r == o.r && g == o.g && b == o.b; }
 };
-inline PreviewRGB preview_rgb(unsigned color) {
-  if (color > 32767) throw std::invalid_argument("Preview color exceeds 15 bits");
-  const auto expand = [](unsigned v) { return static_cast<uint8_t>((v << 3) | (v >> 2)); };
+inline PreviewRGB preview_rgb(unsigned color, unsigned brightness = 15) {
+  if (color > 32767 || brightness > 15) throw std::invalid_argument("Invalid preview color or brightness");
+  const auto expand = [brightness](unsigned v) {
+    v = (v*brightness+7)/15;
+    return static_cast<uint8_t>((v << 3) | (v >> 2));
+  };
   return {expand(color & 31),expand((color >> 5) & 31),expand((color >> 10) & 31)};
 }
 inline std::array<uint8_t,64> decode_2bpp(const Bus& bus, unsigned at, bool hflip = false, bool vflip = false) {
@@ -52,6 +55,30 @@ inline PreviewFrame render_2bpp_preview(const Bus& bus, const PreviewConfig& c) 
       // Single-layer preview: index zero exposes the global backdrop. Priority is irrelevant here.
       frame.pixels[(ty*8+y)*frame.width+tx*8+x] = preview_rgb(bus.cgram_color(index ? palette+index : 0));
     }
+  }
+  return frame;
+}
+// One supported register configuration: Mode 0 BG1, 8x8 tiles, 32x32 map, no scroll.
+// Width/height are host crop controls only; map and character addresses come from MMIO.
+inline PreviewFrame capture_bg1_preview(const Bus& bus, unsigned width_tiles = 32, unsigned height_tiles = 32) {
+  const auto& r = bus.video_registers();
+  if (r.mode != 0 || (r.bg1_map & 3) || (r.main_screen & ~1u))
+    throw std::invalid_argument("BG1 capture requires Mode 0, 8x8 tiles, 32x32 map and BG1-only main screen");
+  if (!width_tiles || width_tiles > 32 || !height_tiles || height_tiles > 32)
+    throw std::invalid_argument("Invalid BG1 capture crop");
+  const unsigned brightness = r.display & 15;
+  if ((r.display & 128) || brightness == 0 || !(r.main_screen & 1)) {
+    const auto backdrop = preview_rgb(bus.cgram_color(0),brightness);
+    const PreviewRGB color = (r.display & 128) || brightness == 0 ? PreviewRGB{0,0,0} : backdrop;
+    return {width_tiles*8,height_tiles*8,std::vector<PreviewRGB>(width_tiles*height_tiles*64,color)};
+  }
+  const PreviewConfig c{((unsigned(r.bg1_map) >> 2)*2048)&65535,
+                        ((unsigned(r.bg12_tiles)&15)*8192)&65535,width_tiles,height_tiles,0};
+  auto frame = render_2bpp_preview(bus,c);
+  if (brightness != 15) {
+    // Recover the exact 5-bit channels from their bit-replicated representation.
+    for (auto& p : frame.pixels)
+      p = preview_rgb((p.r >> 3) | ((unsigned(p.g) >> 3) << 5) | ((unsigned(p.b) >> 3) << 10),brightness);
   }
   return frame;
 }

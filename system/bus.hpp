@@ -11,6 +11,10 @@
 
 namespace system816 {
 enum class Fault { address, unmapped, rom_bounds, read_only };
+// Diagnostic lifecycle defaults, not hardware power-on state. CPU reads remain unsupported.
+struct VideoRegisters {
+  uint8_t display = 0x80, mode = 0, bg1_map = 0, bg12_tiles = 0, main_screen = 0;
+};
 class BusError : public std::runtime_error {
 public:
   const Fault fault;
@@ -105,6 +109,7 @@ public:
   unsigned cgram_address() const { return cgram_address_; }
   bool cgram_high_byte() const { return cgram_high_; }
   void clear_cgram() { cgram_.fill(0); }
+  const VideoRegisters& video_registers() const { return video_; }
   uint64_t dma_clocks() const { return dma_clocks_; }
   uint64_t dma_bytes() const { return dma_bytes_; }
   // Side-effect-free upper bound, including startup. Source faults may consume less.
@@ -131,6 +136,7 @@ public:
     fast_rom_ = false; channel_.fill(0); wram_address_ = 0; dma_clocks_ = 0; dma_bytes_ = 0;
     vram_word_ = 0; vram_control_ = 0; vram_buffer_ = 0;
     cgram_address_ = 0; cgram_high_ = false; cgram_write_low_ = 0; cgram_read_mdr_ = 0;
+    video_ = VideoRegisters{};
   }
   uint16_t reset_vector() const {
     return static_cast<uint16_t>(read8(0x00fffc) | (unsigned(read8(0x00fffd)) << 8));
@@ -147,7 +153,8 @@ private:
     return io >= 0x4300 && io <= 0x4376 && (io & 15) <= 6;
   }
   static bool writable_io(uint32_t io) {
-    return (io >= 0x2115 && io <= 0x2119) || io == 0x2121 || io == 0x2122 || (io >= 0x2180 && io <= 0x2183) || dma_register(io) || io == 0x420b || io == 0x420d;
+    return io == 0x2100 || io == 0x2105 || io == 0x2107 || io == 0x210b || io == 0x212c ||
+      (io >= 0x2115 && io <= 0x2119) || io == 0x2121 || io == 0x2122 || (io >= 0x2180 && io <= 0x2183) || dma_register(io) || io == 0x420b || io == 0x420d;
   }
   void prefetch_vram() {
     const unsigned low = (vram_word_*2) & 65535;
@@ -163,6 +170,11 @@ private:
     if (high == ((vram_control_ & 128) != 0)) increment_vram();
   }
   void write_io(uint32_t io, uint8_t value, uint32_t address) {
+    if (io == 0x2100) { video_.display = value & 0x8f; return; }
+    if (io == 0x2105) { video_.mode = value; return; }
+    if (io == 0x2107) { video_.bg1_map = value; return; }
+    if (io == 0x210b) { video_.bg12_tiles = value; return; }
+    if (io == 0x212c) { video_.main_screen = value & 31; return; }
     if (io == 0x2115) {
       if (value & ~0x83u) throw BusError(Fault::unmapped,address,"VRAM remapping/reserved VMAIN bits unsupported");
       vram_control_ = value; return;
@@ -236,6 +248,7 @@ private:
   std::vector<uint8_t> vram_ = std::vector<uint8_t>(65536,0);
   unsigned vram_word_ = 0, vram_control_ = 0, vram_buffer_ = 0;
   std::array<uint16_t,256> cgram_{};
+  VideoRegisters video_;
   unsigned cgram_address_ = 0;
   bool cgram_high_ = false;
   uint8_t cgram_write_low_ = 0, cgram_read_mdr_ = 0;

@@ -6,7 +6,8 @@ Experimento de engenharia reversa do **Teenage Mutant Ninja Turtles IV: Turtles 
 
 ## Ferramentas
 - Prévia gráfica de diagnóstico em C++: [tiles 2bpp](system/TILE_PREVIEW.md),
-  com imagem BMP de 32×32 pixels produzida a partir de VRAM e CGRAM preenchidas
+  com mapa/tiles, habilitação, blank e brilho controláveis por registradores,
+  e imagem BMP de 32×32 pixels produzida a partir de VRAM e CGRAM preenchidas
   por um programa sintético recompilado. O CI compara os pixels com uma referência
   independente e publica a imagem no Windows e Linux. Ainda não é uma PPU completa
   nem imagem do jogo; o Marco 3 permanece em andamento.

@@ -30,11 +30,16 @@ jobs:
       - name: Record synthetic preview
         shell: bash
         run: python -c "import base64,pathlib; print('TMNT_PREVIEW_BMP_BASE64='+base64.b64encode(pathlib.Path('build/preview-2bpp.bmp').read_bytes()).decode('ascii'))"
+      - name: Record register captures
+        shell: bash
+        run: python -c "import base64,pathlib; [print('TMNT_REG_'+p.stem+'='+base64.b64encode(p.read_bytes()).decode('ascii')) for p in sorted(pathlib.Path('build').glob('preview-registers-*.bmp'))]"
       - name: Upload synthetic preview
         uses: actions/upload-artifact@v7
         with:
           name: synthetic-preview-${{ matrix.os }}
-          path: build/preview-2bpp.bmp
+          path: |
+            build/preview-2bpp.bmp
+            build/preview-registers-*.bmp
           if-no-files-found: error
       - name: Upload test report
         if: always()

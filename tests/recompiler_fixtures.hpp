@@ -84,6 +84,19 @@ inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
     for (unsigned i = 0; i < 4; ++i) code.insert(code.end(),{0xad,0x3b,0x21,0x8d,uint8_t(i),0x10});
     code.push_back(0xdb); return code;
   }
+  if (name == "bus_video_registers") return recompiler_fixture("video_registers");
+  if (name == "video_registers") {
+    auto image = recompiler_fixture("tile_preview");
+    std::vector<uint8_t> code(image.begin(),image.begin()+150); // Replace the original STP.
+    const auto write = [&](unsigned at, unsigned value) {
+      code.insert(code.end(),{0xa9,uint8_t(value),0x8d,uint8_t(at),uint8_t(at >> 8)});
+    };
+    write(0x2105,0); write(0x2107,8); write(0x210b,0); write(0x212c,1);
+    write(0x2100,15); write(0x2100,7); write(0x2100,128); write(0x2100,15);
+    code.push_back(0xdb);
+    for (unsigned i = 0; i < code.size(); ++i) image[i] = code[i];
+    return image;
+  }
   if (name == "bus_tile_preview") return recompiler_fixture("tile_preview");
   if (name == "tile_preview") {
     std::vector<uint8_t> image(32768,0), code;
