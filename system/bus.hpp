@@ -26,7 +26,7 @@ private:
   }
 };
 
-// Strict LoROM subset. Optional DMA/WRAM-port/MEMSEL MMIO; no open bus/SRAM.
+// Strict LoROM subset. Optional DMA, WRAM/VRAM ports and MEMSEL; no open bus/SRAM.
 class Bus {
 public:
   explicit Bus(std::vector<uint8_t> rom, bool devices_io = false) : rom_(std::move(rom)), devices_io_(devices_io) {
@@ -76,6 +76,11 @@ public:
     return system816::cpu_access_clocks(address, fast_rom_);
   }
   uint32_t wram_address() const { return wram_address_; }
+  // Host inspection only; these do not emulate the buffered CPU VRAM read ports.
+  uint8_t vram_byte(uint32_t offset) const { return vram_.at(offset); }
+  unsigned vram_address() const { return vram_word_; }
+  unsigned vram_control() const { return vram_control_; }
+  void clear_vram() { vram_.assign(65536,0); }
   uint64_t dma_clocks() const { return dma_clocks_; }
   uint64_t dma_bytes() const { return dma_bytes_; }
   // Side-effect-free upper bound, including startup. Source faults may consume less.
@@ -85,8 +90,11 @@ public:
     for (unsigned ch = 0; ch < 8; ++ch) {
       if (!(mask & (1u << ch))) continue;
       const auto* channel = channel_.data()+16*ch;
-      if ((channel[0] & ~0x18u) || channel[1] != 0x80)
-        throw BusError(Fault::unmapped, trigger, "Only mode 0, A-to-WRAM-port DMA is supported");
+      const unsigned mode = channel[0] & 7, target = channel[1];
+      const bool supported = mode == 0 ? (target == 0x80 || target == 0x18 || target == 0x19)
+                                       : mode == 1 && target == 0x18;
+      if ((channel[0] & ~0x19u) || !supported)
+        throw BusError(Fault::unmapped, trigger, "Unsupported DMA direction, mode or WRAM/VRAM target");
       unsigned remaining = unsigned(channel[5]) | (unsigned(channel[6]) << 8);
       if (remaining == 0) remaining = 65536;
       cost += 8 + uint64_t(remaining)*8;
@@ -97,6 +105,7 @@ public:
   }
   void reset_devices() {
     fast_rom_ = false; channel_.fill(0); wram_address_ = 0; dma_clocks_ = 0; dma_bytes_ = 0;
+    vram_word_ = 0; vram_control_ = 0;
   }
   uint16_t reset_vector() const {
     return static_cast<uint16_t>(read8(0x00fffc) | (unsigned(read8(0x00fffd)) << 8));
@@ -113,9 +122,24 @@ private:
     return io >= 0x4300 && io <= 0x4376 && (io & 15) <= 6;
   }
   static bool writable_io(uint32_t io) {
-    return (io >= 0x2180 && io <= 0x2183) || dma_register(io) || io == 0x420b || io == 0x420d;
+    return (io >= 0x2115 && io <= 0x2119) || (io >= 0x2180 && io <= 0x2183) || dma_register(io) || io == 0x420b || io == 0x420d;
+  }
+  void write_vram(bool high, uint8_t value) {
+    vram_[(vram_word_*2+unsigned(high)) & 65535] = value;
+    if (high == ((vram_control_ & 128) != 0)) {
+      const unsigned select = vram_control_ & 3;
+      const unsigned increment = select == 0 ? 1 : select == 1 ? 32 : 128;
+      vram_word_ = (vram_word_+increment) & 65535;
+    }
   }
   void write_io(uint32_t io, uint8_t value, uint32_t address) {
+    if (io == 0x2115) {
+      if (value & ~0x83u) throw BusError(Fault::unmapped,address,"VRAM remapping/reserved VMAIN bits unsupported");
+      vram_control_ = value; return;
+    }
+    if (io == 0x2116) { vram_word_ = (vram_word_ & 0xff00) | value; return; }
+    if (io == 0x2117) { vram_word_ = (vram_word_ & 0xff) | (unsigned(value) << 8); return; }
+    if (io == 0x2118 || io == 0x2119) { write_vram(io == 0x2119,value); return; }
     if (dma_register(io)) { channel_[io-0x4300] = value; return; }
     if (io == 0x2180) { ram_[wram_address_] = value; wram_address_ = (wram_address_+1) & 0x1ffff; }
     if (io == 0x2181) wram_address_ = (wram_address_ & 0x1ff00) | value;
@@ -134,15 +158,18 @@ private:
       unsigned remaining = unsigned(channel[5]) | (unsigned(channel[6]) << 8);
       if (remaining == 0) remaining = 65536;
       dma_clocks_ += 8; // Per-channel overhead; no alignment/refresh/arbitration.
+      unsigned transferred = 0;
       while (remaining) {
         const unsigned low = unsigned(channel[2]) | (unsigned(channel[3]) << 8);
         const unsigned bank = channel[4], source = (bank << 16) | low;
-        if (bank == 0x7e || bank == 0x7f || ((bank & 0x7f) < 0x40 && low < 0x2000))
+        if (channel[1] == 0x80 && (bank == 0x7e || bank == 0x7f || ((bank & 0x7f) < 0x40 && low < 0x2000)))
           throw BusError(Fault::unmapped, source, "WRAM-to-WRAM-port DMA unsupported");
         if (io_address(source) >= 0x2100 && io_address(source) < 0x4380)
           throw BusError(Fault::unmapped, source, "DMA source in CPU/PPU I/O unsupported");
         const auto value = static_cast<const Bus&>(*this).read8(source);
-        ram_[wram_address_] = value; wram_address_ = (wram_address_+1) & 0x1ffff;
+        const unsigned target = 0x2100+channel[1]+((channel[0] & 1) ? (transferred & 1) : 0);
+        write_io(target,value,target);
+        ++transferred;
         if (!(channel[0] & 8)) {
           const unsigned next = (low + ((channel[0] & 16) ? 65535 : 1)) & 65535;
           channel[2] = static_cast<uint8_t>(next); channel[3] = static_cast<uint8_t>(next >> 8);
@@ -166,6 +193,8 @@ private:
   }
   std::vector<uint8_t> rom_;
   std::array<uint8_t, 0x20000> ram_{};
+  std::vector<uint8_t> vram_ = std::vector<uint8_t>(65536,0);
+  unsigned vram_word_ = 0, vram_control_ = 0;
   bool devices_io_ = false, fast_rom_ = false;
   std::array<uint8_t,128> channel_{};
   uint32_t wram_address_ = 0;

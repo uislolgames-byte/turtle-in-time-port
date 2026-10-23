@@ -100,7 +100,7 @@ inline bool begin_bus_instruction(State& s, unsigned limit, unsigned cycles,
       const unsigned at = address+i;
       // Only the opt-in device subset supports timed byte MMIO.
       if (s.bus->is_mmio(at) && !(bytes == 1 && (((at & 65535) >= 0x4300 && (at & 65535) <= 0x4376 && (at & 15) <= 6) ||
-          ((at & 65535) == 0x2180) || (writing && (((at & 65535) >= 0x2181 && (at & 65535) <= 0x2183) ||
+          ((at & 65535) == 0x2180) || (writing && (((at & 65535) >= 0x2115 && (at & 65535) <= 0x2119) || ((at & 65535) >= 0x2181 && (at & 65535) <= 0x2183) ||
           (at & 65535) == 0x420b || (at & 65535) == 0x420d))))) {
         s.stop = Stop::contract; s.diagnostic = "Unsupported timed MMIO access"; return false;
       }

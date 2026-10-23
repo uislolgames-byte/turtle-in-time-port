@@ -68,7 +68,7 @@ int main() {
     }
     bus->reset_devices(); setup(*bus,0,0x9000,4);
     fails([&] { bus->write8(0x420b,2); },Fault::unmapped,0x420b);
-    bus->write8(0x4301,0x18);
+    bus->write8(0x4301,0x17);
     fails([&] { bus->write8(0x420b,1); },Fault::unmapped,0x420b);
     bus->write8(0x420b,0); check(bus->dma_clocks() == 0,"zero DMA mask started transfer");
     for (unsigned source : {0x7e1000u,0x7f1000u,0x001000u,0x801000u,0x002180u,0x004300u}) {

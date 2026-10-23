@@ -34,6 +34,23 @@ inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
     write(0x420b,0x81); code.insert(code.end(),{0xad,2,0x43,0xdb});
     return code;
   }
+  if (name == "bus_vram_cpu") return recompiler_fixture("vram_cpu");
+  if (name == "vram_cpu" || name == "dma_vram" || name == "dma_vram_fault") {
+    std::vector<uint8_t> code;
+    const auto write = [&](unsigned at, unsigned value) {
+      code.insert(code.end(),{0xa9,uint8_t(value),0x8d,uint8_t(at),uint8_t(at >> 8)});
+    };
+    write(0x2115,0x80); write(0x2116,0xff); write(0x2117,0x7f);
+    if (name == "vram_cpu") {
+      write(0x2118,0x11); write(0x2119,0x22); write(0x2118,0x33); write(0x2119,0x44);
+    } else {
+      const bool fault = name == "dma_vram_fault";
+      write(0x4300,1); write(0x4301,0x18); write(0x4302,fault ? 0xff : 0);
+      write(0x4303,fault ? 0x1f : 0x90); write(0x4304,0); write(0x4305,4); write(0x4306,0);
+      write(0x420b,1);
+    }
+    code.push_back(0xdb); return code;
+  }
   if (name == "mask_flags") return {0x78,0x58,0x20,9,0x80,0x78,0x58,0x78,0xdb,0x58,0x78,0x58,0x60};
   if (name == "irq_mask_emulation" || name == "irq_mask_native") {
     std::vector<uint8_t> image(32768,0);
