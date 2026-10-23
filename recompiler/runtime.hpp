@@ -46,7 +46,7 @@ inline bool synchronize_master_clock(State& s) {
     s.pending_master_clocks = 0;
     s.stop = Stop::contract; s.diagnostic = "Raster clock is ahead of CPU counter"; return false;
   }
-  if (s.bus && s.bus->video_interrupts().now() > s.master_clocks) {
+  if (s.bus && (s.bus->video_interrupts().now() > s.master_clocks || s.bus->vertical_irq().now() > s.master_clocks)) {
     s.pending_master_clocks = 0;
     s.stop = Stop::contract; s.diagnostic = "Video interrupt clock is ahead of CPU counter"; return false;
   }
@@ -56,7 +56,7 @@ inline bool synchronize_master_clock(State& s) {
   return true;
 }
 inline bool pending_irq(const State& s) {
-  return s.clock.irq_asserted() || s.cycle_clock.irq_asserted() || s.master_clock.irq_asserted();
+  return s.clock.irq_asserted() || s.cycle_clock.irq_asserted() || s.master_clock.irq_asserted() || (s.bus && s.bus->vertical_irq().asserted());
 }
 inline bool pending_nmi(const State& s) {
   return s.clock.nmi_pending() || s.cycle_clock.nmi_pending() || s.master_clock.nmi_pending() || (s.bus && s.bus->video_interrupts().pending());
@@ -112,8 +112,8 @@ inline bool begin_bus_instruction(State& s, unsigned limit, unsigned cycles,
       const unsigned at = address+i;
       // Only the opt-in device subset supports timed byte MMIO.
       if (s.bus->is_mmio(at) && !(bytes == 1 && (((at & 65535) >= 0x4300 && (at & 65535) <= 0x4376 && (at & 15) <= 6) ||
-          ((at & 65535) == 0x2180) || (!writing && ((at & 65535) == 0x2139 || (at & 65535) == 0x213a || (at & 65535) == 0x213b || (at & 65535) == 0x4210 || (at & 65535) == 0x4212)) || (writing && (((at & 65535) >= 0x2115 && (at & 65535) <= 0x2119) || ((at & 65535) >= 0x2181 && (at & 65535) <= 0x2183) ||
-          (at & 65535) == 0x2121 || (at & 65535) == 0x2122 || (at & 65535) == 0x4200 || (at & 65535) == 0x420b || (at & 65535) == 0x420d ||
+          ((at & 65535) == 0x2180) || (!writing && ((at & 65535) == 0x2139 || (at & 65535) == 0x213a || (at & 65535) == 0x213b || (at & 65535) == 0x4210 || (at & 65535) == 0x4211 || (at & 65535) == 0x4212)) || (writing && (((at & 65535) >= 0x2115 && (at & 65535) <= 0x2119) || ((at & 65535) >= 0x2181 && (at & 65535) <= 0x2183) ||
+          (at & 65535) == 0x2121 || (at & 65535) == 0x2122 || (at & 65535) == 0x4200 || (at & 65535) == 0x4209 || (at & 65535) == 0x420a || (at & 65535) == 0x420b || (at & 65535) == 0x420d ||
           (at & 65535) == 0x2100 || (at & 65535) == 0x2105 || (at & 65535) == 0x2107 || (at & 65535) == 0x210b ||
           (at & 65535) == 0x2108 || ((at & 65535) >= 0x210d && (at & 65535) <= 0x2110) || (at & 65535) == 0x212c))))) {
         s.stop = Stop::contract; s.diagnostic = "Unsupported timed MMIO access"; return false;

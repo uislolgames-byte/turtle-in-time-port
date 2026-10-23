@@ -47,7 +47,7 @@ int main() {
     for (unsigned bank = 0; bank < 256; ++bank) if ((bank & 127) < 64) {
       bus->reset_devices(); bus->synchronize_video(306900);
       const unsigned base = bank << 16;
-      for (unsigned value = 0; value < 256; ++value) if (value != 0 && value != 128) {
+      for (unsigned value = 0; value < 256; ++value) if (value != 0 && value != 32 && value != 128 && value != 160) {
         rejects([&] { bus->write8(base+0x4200,static_cast<uint8_t>(value)); });
         check(!bus->video_interrupts().enabled() && !bus->video_interrupts().pending() && bus->video_interrupts().flag(),"invalid control mutated state");
       }

@@ -867,7 +867,7 @@ not advance it. Existing host diagnostic captures remain snapshots of memory.
 
 RasterClock itself is an observer, not a running PPU or full hardware scheduler.
 The optional vblank NMI source below now consumes the same completed master time.
-There is no video IRQ/timer, dot/rendering pipeline, HDMA, DRAM refresh, bus arbitration,
+There is no horizontal/combined IRQ, dot/rendering pipeline, HDMA, DRAM refresh, bus arbitration,
 PAL/interlace/overscan selection, APU synchronization or rendering per scanline.
 External scheduled interrupts retain the existing boundary policy.
 The direct test compares every master clock across four frames against an
@@ -878,9 +878,9 @@ Existing timed interrupt and timed/untimed graphics comparisons also check the o
 
 ## Vblank NMI boundary subset
 
-With optional device I/O enabled, byte writes to $4200 support **only** bit 7
-(NMI enable); values other than $00/$80 reject before mutation. IRQ timer/autojoy
-bits remain unsupported. Mutable byte reads at $4210 return the unread vblank
+With optional device I/O enabled, byte writes to $4200 now support bits 7 (NMI enable) and 5
+(vertical-only IRQ enable, described below); only $00/$20/$80/$A0 are accepted.
+Horizontal/combined IRQ and autojoy bits reject before mutation. Mutable byte reads at $4210 return the unread vblank
 latch in bit 7, a fixed diagnostic CPU version 2 in bits 0-3 and zero in bits 4-6.
 This is not a general CPU open-bus model. Reads clear the latch, but do not cancel
 an already pending NMI. Read-only host inspection is available through
@@ -916,8 +916,8 @@ starting boundary, then elapsed time is accounted at completion. There is no
 per-bus-cycle ordering, four-clock NMI hold, communication/pipeline delay, IRQ lock
 or post-$4200/DMA delay. Those hardware details are deliberately outside this
 subset, so these synthetic tests do not establish cycle-exact NMI behavior.
-$4211 and other CPU control/status ports remain unsupported; the live $4212
-blank-status subset is described next.
+$4211 now provides the vertical IRQ status subset described below; other CPU
+control/status ports remain unsupported. The live $4212 blank-status subset is next.
 References: [ares NMI control/status/hold](https://github.com/ares-emulator/ares/blob/master/ares/sfc/cpu/irq.cpp)
 and [CPU port mapping](https://github.com/ares-emulator/ares/blob/master/ares/sfc/cpu/io.cpp).
 Implementation and fixtures are original C++; no commercial content is included.
@@ -954,7 +954,7 @@ starting boundary and advances clocks at completion, following the same boundary
 approximation as the NMI subset. Untimed generated code never advances the
 raster; a status-polling loop therefore reaches its instruction budget rather
 than inventing video progress. Host reads never advance clocks. No autojoy,
-IRQ/timers, per-cycle read phase, hardware hold/pipeline delay, rendering per
+horizontal/combined IRQ, per-cycle read phase, hardware hold/pipeline delay, rendering per
 scanline or game execution is added.
 
 The direct test compares 1429465 master positions across four frames against an
@@ -966,3 +966,59 @@ compare registers, flags, all WRAM and every clock against an independent
 interpreter at 17 host origins and 43 instruction budgets each. Existing raster
 reference tests also verify HBlank at every position. Reference:
 [ares CPU HVBJOY mapping](https://github.com/ares-emulator/ares/blob/master/ares/sfc/cpu/io.cpp).
+
+
+## Vertical-only IRQ boundary subset
+
+The optional device bus adds a 9-bit VTIME comparator: byte $4209 writes bits 0-7,
+$420A writes bit 8 from bit 0 (other high-byte bits are ignored). Reset selects
+line 0. NMITIMEN $4200 bit 5 enables vertical-only IRQ; bit 7 still independently
+enables NMI. Only $00/$20/$80/$A0 controls are accepted, with validation before
+mutating either source. Horizontal/combined modes (bit 4), autojoy and other bits
+remain rejected. HTIME $4207/$4208 is unsupported. Targets 262..511 are stored
+but cannot match the fixed 262-line progressive raster.
+
+A false-to-true match of current scanline and VTIME asserts a held IRQ level.
+Crossing the selected line during a completed CPU/DMA interval also asserts it,
+even if the interval skips a whole frame or ends after that line. The source
+uses constant-time frame arithmetic for large host origins, including uint64
+maximum. Enabling or reprogramming a comparator into a current match asserts
+immediately at this model's boundary (including line 0 at origin). Repeating the
+same enable or target does not create a new edge. Reading TIMEUP while still on
+the matching line does not retrigger until the comparison goes false then true.
+Disabling vertical IRQ clears its level; changing VTIME alone does not clear an
+already held request. New frames and target reprogramming can create new edges.
+
+Mutable byte $4211 reads bit 7 of this level and clears it; bits 0-6 return fixed
+zero, not general CPU open bus. Reading $4211 does not clear RDNMI, acknowledge
+NMI, change live blank status or clear any external synthetic IRQ source. CPU IRQ
+entry does not acknowledge the vertical level: a handler must read $4211 or
+disable it before returning to an unmasked CPU. IRQ sources combine by OR and
+respect P.I; NMI retains priority and ignores P.I. Existing compiled handlers
+remain non-nested, with validated stack/vector/capacity and RTI restoration.
+Const TIMEUP reads, words, writes to TIMEUP, reads of VTIME, stack/MVN/MVP port
+accesses and I/O DMA sources reject before their data effects.
+
+The source follows the same completed master time as the raster/NMI observers;
+zero budget and untimed code do not advance it. Host port writes do not advance
+time but reevaluate the comparator at the current boundary. Reset clears its
+clock, target, enable, comparator and IRQ level while preserving memories;
+WRAM/VRAM/CGRAM clears leave it intact. A partial DMA source fault retains the
+IRQ generated by transferred-byte time and its memory stop, without running a
+handler. IRQ entry capacity failure retains the request and writes no frame.
+
+This remains a boundary approximation, not cycle-exact SNES IRQ timing: there
+is no four-clock hold, delayed comparator sampling, last-dot suppression, pipeline
+or IRQ-lock delay, per-bus-cycle ordering, refresh/arbitration or PPU/APU scheduler.
+No horizontal/combined IRQ, HDMA, rendering per scanline or game execution is added.
+Reference: [ares IRQ match, NMITIMEN and TIMEUP](https://github.com/ares-emulator/ares/blob/master/ares/sfc/cpu/irq.cpp)
+and [CPU port mapping](https://github.com/ares-emulator/ares/blob/master/ares/sfc/cpu/io.cpp).
+
+A direct iterative oracle checks four frames clock by clock with changing target,
+enable and reads; all 512 targets, exact even/odd boundaries, split/multiframe
+jumps, uint64/rewind, all 128 aliases, independent latches and lifecycle are covered.
+Four generated fixtures add timed emulation/native and untimed emulation loops,
+plus a partial DMA fault. Independent interpreters compare CPU/flags/full WRAM,
+stack/RTI, all clocks, NMI priority, P.I masking, TIMEUP and comparator state across
+13 origins, four initial P values, 61 budgets and long multi-frame loops. Fixed
+checks cover IRQ-entry capacity and external IRQ independence. All data is original.

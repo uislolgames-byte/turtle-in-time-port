@@ -230,3 +230,11 @@ starting boundary. It does not clear the $4210 latch or acknowledge NMI. The
 synthetic timed polling fixture waits through vblank and writes two samples to
 WRAM before STP; its untimed counterpart exhausts its budget without advancing
 video. Autojoy/open bus and per-cycle read timing remain outside this subset.
+
+
+The optional [vertical-only IRQ subset](../system/README.md#vertical-only-irq-boundary-subset)
+adds byte VTIME writes ($4209/$420A), NMITIMEN bit 5 and mutable byte TIMEUP reads
+($4211). Timed CPU/DMA progress can assert a held IRQ; IRQ entry respects P.I and
+does not clear the source. TIMEUP clears only this source. NMI retains priority.
+Untimed generated code can configure it without advancing raster time. Horizontal
+IRQ and hardware comparator/hold/pipeline delays remain outside this boundary model.
