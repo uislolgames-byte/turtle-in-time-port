@@ -187,8 +187,15 @@ private:
       (io >= 0x210d && io <= 0x2110) || io == 0x212c ||
       (io >= 0x2115 && io <= 0x2119) || io == 0x2121 || io == 0x2122 || (io >= 0x2180 && io <= 0x2183) || dma_register(io) || io == 0x4200 || io == 0x4207 || io == 0x4208 || io == 0x4209 || io == 0x420a || io == 0x420b || io == 0x420d;
   }
+  unsigned mapped_vram_word() const {
+    // Rotate the low 8/9/10 address bits left by three, retaining the upper bits.
+    const unsigned mapping = (vram_control_ >> 2) & 3;
+    if (!mapping) return vram_word_;
+    const unsigned width = mapping+7, mask = (1u << width)-1;
+    return (vram_word_ & ~mask) | ((vram_word_ << 3) & mask) | ((vram_word_ & mask) >> (width-3));
+  }
   void prefetch_vram() {
-    const unsigned low = (vram_word_*2) & 65535;
+    const unsigned low = (mapped_vram_word()*2) & 65535;
     vram_buffer_ = unsigned(vram_[low]) | (unsigned(vram_[low+1]) << 8);
   }
   void increment_vram() {
@@ -197,7 +204,7 @@ private:
     vram_word_ = (vram_word_+increment) & 65535;
   }
   void write_vram(bool high, uint8_t value) {
-    vram_[(vram_word_*2+unsigned(high)) & 65535] = value;
+    vram_[(mapped_vram_word()*2+unsigned(high)) & 65535] = value;
     if (high == ((vram_control_ & 128) != 0)) increment_vram();
   }
   void write_io(uint32_t io, uint8_t value, uint32_t address) {
@@ -226,7 +233,7 @@ private:
       bg_offset_shared_ = value; return;
     }
     if (io == 0x2115) {
-      if (value & ~0x83u) throw BusError(Fault::unmapped,address,"VRAM remapping/reserved VMAIN bits unsupported");
+      if (value & ~0x8fu) throw BusError(Fault::unmapped,address,"Reserved VMAIN bits unsupported");
       vram_control_ = value; return;
     }
     if (io == 0x2116) { vram_word_ = (vram_word_ & 0xff00) | value; prefetch_vram(); return; }

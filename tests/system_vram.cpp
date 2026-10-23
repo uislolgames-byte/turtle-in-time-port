@@ -1,3 +1,4 @@
+#include "vram_remap_reference.hpp"
 #include "../recompiler/runtime.hpp"
 #include <iostream>
 #include <memory>
@@ -23,7 +24,9 @@ int main() {
     auto bus = std::make_unique<Bus>(rom,true);
     unsigned cpu_cases = 0, dma_cases = 0;
     // Byte-array/address oracle; no runtime timing, port or DMA helper is reused.
-    for (unsigned control : {0u,1u,2u,3u,128u,129u,130u,131u})
+    for (unsigned mapping = 0; mapping < 4; ++mapping)
+    for (unsigned base_control : {0u,1u,2u,3u,128u,129u,130u,131u})
+      for (unsigned control : {base_control+4*mapping})
       for (unsigned start : {0u,0x7fffu,0xffffu}) for (unsigned alias : {0u,0x3f0000u,0x800000u,0xbf0000u}) {
         bus->reset_devices(); bus->clear_vram();
         bus->write8(alias+0x2115,static_cast<uint8_t>(control));
@@ -31,7 +34,7 @@ int main() {
         std::vector<uint8_t> expected(65536,0); unsigned address = start;
         for (unsigned i = 0; i < 12; ++i) {
           const unsigned high = i%3 == 0 ? 1 : 0, value = data(i+17);
-          expected[(address*2+high)%65536] = static_cast<uint8_t>(value);
+          expected[(reference_vram_word(address,control)*2+high)%65536] = static_cast<uint8_t>(value);
           if (high == control/128) address = (address+((control%4) == 0 ? 1 : (control%4) == 1 ? 32 : 128))%65536;
           bus->write8(alias+0x2118+high,static_cast<uint8_t>(value));
         }
@@ -40,7 +43,9 @@ int main() {
               "CPU VRAM address/control mismatch");
         ++cpu_cases;
       }
-    for (unsigned vmain : {0u,1u,2u,3u,128u,129u,130u,131u})
+    for (unsigned mapping = 0; mapping < 4; ++mapping)
+    for (unsigned base_control : {0u,1u,2u,3u,128u,129u,130u,131u})
+      for (unsigned vmain : {base_control+4*mapping})
       for (unsigned pattern : {0u,1u,2u}) for (unsigned control : {0u,8u,16u,24u})
         for (unsigned count : {1u,3u,4u,17u}) for (unsigned memory : {0u,1u,2u}) {
           bus->reset_devices(); bus->clear_vram(); bus->clear_ram();
@@ -53,7 +58,7 @@ int main() {
           for (unsigned i = 0; i < count; ++i) {
             const unsigned high = pattern == 2 ? i%2 : pattern == 1 ? 1 : 0;
             const unsigned at = memory == 0 ? source-0x8000 : source;
-            expected[(address*2+high)%65536] = static_cast<uint8_t>(data(at));
+            expected[(reference_vram_word(address,vmain)*2+high)%65536] = static_cast<uint8_t>(data(at));
             if (high == vmain/128) address = (address+((vmain%4) == 0 ? 1 : (vmain%4) == 1 ? 32 : 128))%65536;
             if (!(control & 8)) source = (source+((control & 16) ? 65535 : 1))%65536;
           }
@@ -64,6 +69,20 @@ int main() {
                 bus->read8(0x4375) == 0,"DMA VRAM register/time mismatch");
           ++dma_cases;
         }
+    // Full logical address space writes; compare every physical byte after each mapping.
+    for (unsigned mapping = 0; mapping < 4; ++mapping) {
+      bus->reset_devices(); bus->clear_vram(); bus->write8(0x2115,static_cast<uint8_t>(128+4*mapping));
+      std::vector<uint8_t> expected(65536,0);
+      for (unsigned address = 0; address < 65536; ++address) {
+        bus->write8(0x2116,static_cast<uint8_t>(address)); bus->write8(0x2117,static_cast<uint8_t>(address/256));
+        const unsigned physical = (2*reference_vram_word(address,4*mapping))%65536;
+        const unsigned low = data(address), high = data(address/256+7);
+        bus->write8(0x2118,static_cast<uint8_t>(low)); bus->write8(0x2119,static_cast<uint8_t>(high));
+        expected[physical] = static_cast<uint8_t>(low); expected[physical+1] = static_cast<uint8_t>(high);
+        check(bus->vram_address() == (address+1)%65536,"exhaustive write logical increment mismatch");
+      }
+      for (unsigned i = 0; i < 65536; ++i) check(bus->vram_byte(i) == expected[i],"exhaustive remapped write data mismatch");
+    }
     bus->reset_devices(); bus->clear_vram(); bus->write8(0x2115,0x80);
     for (unsigned i = 0; i < 65536; ++i) bus->write8(0x7e0000+i,static_cast<uint8_t>(data(i)));
     channel(*bus,0,1,0x18,0x7e0000,0); bus->write8(0x420b,1);
@@ -83,7 +102,7 @@ int main() {
     // Restore the fixed state used by the following atomic-control guards.
     bus->write8(0x2118,rom[0x1000]); bus->write8(0x2116,2);
     // Unsupported VMAIN values are atomic and preserve earlier contents/control.
-    for (unsigned value : {4u,8u,16u,32u,64u,255u}) {
+    for (unsigned value = 0; value < 256; ++value) if (value & 0x70) {
       rejected([&] { bus->write8(0x2115,static_cast<uint8_t>(value)); });
       check(bus->vram_control() == 0x80 && bus->vram_address() == 2 && bus->vram_byte(0) == rom[0x1000],"bad VMAIN mutated VRAM");
     }
@@ -110,7 +129,7 @@ int main() {
     }
     recompiled::reset_cpu(s,*bus); bus->write8(0x2115,0x80);
     check(recompiled::begin_bus_instruction(s,1,4,0x8000,3,0x2115,1,true) &&
-          !recompiled::store(s,0x2115,4,true) && s.stop == recompiled::Stop::memory && s.master_clocks == 0 &&
+          !recompiled::store(s,0x2115,16,true) && s.stop == recompiled::Stop::memory && s.master_clocks == 0 &&
           s.master_clock.now() == 0 && s.pending_master_clocks == 0 && bus->vram_control() == 0x80,
           "rejected VMAIN write committed CPU timing/state");
     bus->write8(0x2118,0x67); bus->write8(0x7e0000,0x89); recompiled::reset_cpu(s,*bus);

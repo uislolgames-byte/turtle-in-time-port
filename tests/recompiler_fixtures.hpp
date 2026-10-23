@@ -119,6 +119,18 @@ inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
     write(0x420b,0x81); code.insert(code.end(),{0xad,2,0x43,0xdb});
     return code;
   }
+  if (name.rfind("bus_vram_read_remap",0) == 0) return recompiler_fixture(name.substr(4));
+  if (name.rfind("vram_read_remap",0) == 0) {
+    const unsigned mapping = static_cast<unsigned>(name.at(15)-'0');
+    auto code = recompiler_fixture(name.find("high") != std::string::npos ? "vram_read_high" : "vram_read_low");
+    for (unsigned i = 0; i+4 < code.size(); ++i)
+      if (code[i] == 0xa9 && code[i+2] == 0x8d && code[i+4] == 0x21) {
+        if (code[i+3] == 0x15) code[i+1] = static_cast<uint8_t>(code[i+1] | (mapping << 2));
+        if (code[i+3] == 0x16) code[i+1] = 0x23;
+        if (code[i+3] == 0x17) code[i+1] = 0x01;
+      }
+    return code;
+  }
   if (name == "bus_vram_read_low" || name == "bus_vram_read_high") return recompiler_fixture(name.substr(4));
   if (name == "vram_read_low" || name == "vram_read_high") {
     auto code = recompiler_fixture("dma_vram"); code.pop_back();

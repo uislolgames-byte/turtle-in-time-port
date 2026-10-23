@@ -256,3 +256,9 @@ completed bytes/latches/time and skip later channels; the failed CPU STA is not
 charged. Timed/untimed synthetic matrix and partial-fault fixtures compare actual
 generated C++ against an independent reference. Reverse DMA, HDMA, alignment and
 per-byte scheduling remain outside this subset.
+
+
+VRAM CPU/DMA writes and buffered reads also support all four VMAIN address
+mappings. Twelve generated remapping/readback fixtures preserve the identity
+cases and compare CPU, all WRAM/VRAM, DMA registers, buffered bytes and timing
+against an independent bit-wiring reference. See the [system contract](../system/README.md#vram-address-remapping).

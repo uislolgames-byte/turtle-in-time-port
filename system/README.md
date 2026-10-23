@@ -718,7 +718,8 @@ With `Bus(image, true)`, byte writes to $2115..$2119 configure and fill a separa
 64 KiB VRAM store. $2116/$2117 set the 16-bit word address. $2118/$2119 select low/
 high bytes, with physical byte addresses mirrored modulo 65536. VMAIN ($2115)
 accepts bits 0/1 for word increments 1, 32, 128, 128 and bit 7 to choose increment
-after low/high. Remapping and reserved bits are rejected before changing control.
+after low/high. Bits 2/3 now select address remapping (see below); reserved bits
+4/5/6 are rejected before changing control.
 The VMADD register wraps at 16 bits independently of the physical VRAM mirror.
 CPU reads of these write ports remain unsupported; buffered $2139/$213A reads
 are described below.
@@ -741,7 +742,7 @@ are deterministic host lifecycle choices, not hardware power-on contents.
 
 This is storage/port behavior for synthetic integration, without a running PPU.
 Writes are accepted without display/vblank restrictions: no scanline, forced-blank
-register, remapping, rendering, palette-to-pixel output, tile decoding or audio is
+register, rendering, palette-to-pixel output, tile decoding or audio is
 implemented. The storage must not be described as working video or a completed M4.
 Port semantics were checked against upstream [bsnes PPU I/O](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/sfc/ppu/io.cpp)
 and [DMA transfer patterns](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/sfc/cpu/dma.cpp);
@@ -1150,3 +1151,38 @@ All fixture content and reference logic are original.
 The full CI build explicitly limits compilation to two jobs at once. This bounds
 compiler concurrency as the generated regression suite grows; it does not change
 which tests run or their timing contracts.
+
+
+## VRAM address remapping
+
+VMAIN bits 2/3 select all four address wirings for CPU writes, DMA writes and
+buffer prefetch/refill. Logical VMADD retains all 16 bits and increments by the
+existing 1/32/128/128 selection; remapping happens only when accessing storage,
+then the physical byte address mirrors within 64 KiB. The low 8, 9 or 10 bits
+are rotated left by three for modes 1, 2 or 3 respectively; higher bits remain
+unchanged. Mode 0 retains the previous identity mapping. VMAIN accepts exactly
+32 values (bits 7/3/2/1/0); all 224 values containing reserved bits 4/5/6 reject
+atomically. Changing mapping neither refills an already buffered word nor changes
+VMADD. The next VMADD write or selected-port refill uses the new mapping. Host
+VRAM inspection and graphics decoding continue to see physical bytes.
+
+The independent test oracle uses literal per-bit wiring rather than the bus
+rotation helper. Direct tests now cover 384 CPU traces and 4608 DMA traces,
+comparing all VRAM bytes, plus 1152 buffered-read sequences (18432 reads).
+Every one of the 65536 logical addresses is separately written and read under
+all four mappings (262144 address cases per direction), including the bit-15
+mirror and logical-address wrap. Tests preserve stale buffer contents across a
+mapping change and reject all reserved-bit values without state changes.
+
+Twelve additional generated fixtures cover three nonidentity mappings, low/high
+increment ports and timed/untimed execution. Each transfers original synthetic
+data by DMA at logical $0123, readdresses it, reads buffered data and writes the
+results to WRAM. The existing independent CPU/device oracle checks all 64 initial
+P values over 45 budgets: 34560 additional full-state comparisons. Six timed
+fixtures also check all 1086 scheduled NMI boundaries each (6516 cases). Each
+complete trace still takes 41 instructions, 135 nominal cycles and 1084 master
+clocks when timed; final logical VMADD is $0126. Existing identity fixtures remain.
+
+Semantics checked against [ares PPU address and buffer I/O](https://github.com/ares-emulator/ares/blob/master/ares/sfc/ppu/io.cpp),
+with independently written code. This extends the bounded memory/device subset;
+no display-access restrictions, per-cycle PPU pipeline or game execution is added.

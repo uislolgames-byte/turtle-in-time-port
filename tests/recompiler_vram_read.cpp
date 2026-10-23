@@ -1,3 +1,4 @@
+#include "vram_remap_reference.hpp"
 #include "runtime.hpp"
 #include "recompiler_fixtures.hpp"
 #include <algorithm>
@@ -12,9 +13,9 @@ struct Reference {
   std::array<unsigned,7> channel{};
   std::vector<uint8_t> ram = std::vector<uint8_t>(131072,0), vram = std::vector<uint8_t>(65536,0);
   Reference(unsigned flags) : a(0xab00|flags), p(flags) {}
-  void fetch() { const unsigned at = (2*address)%65536; buffer = vram[at]+256*unsigned(vram[at+1]); }
+  void fetch() { const unsigned at = (2*reference_vram_word(address,control))%65536; buffer = vram[at]+256*unsigned(vram[at+1]); }
   void port(unsigned high, unsigned value) {
-    vram[(2*address+high)%65536] = static_cast<uint8_t>(value);
+    vram[(2*reference_vram_word(address,control)+high)%65536] = static_cast<uint8_t>(value);
     if (high == control/128) address = (address+1)%65536;
   }
   unsigned read(unsigned high) {
@@ -104,7 +105,7 @@ int main(int argc, char** argv) {
     bus->clear_ram(); bus->clear_vram(); recompiled::State s; recompiled::reset_cpu(s,*bus);
     check(recompiled::run_generated(s,100) && s.steps == 41 && s.pc == 0x806b &&
           s.a == (high ? 0xefu : 0xbeu) && s.p == 0xb4 && s.cycle_clock.now() == 135 &&
-          s.master_clocks == (timed ? 1084u : 0u) && bus->vram_address() == 0x8002 && bus->dma_clocks() == 48,
+          s.master_clocks == (timed ? 1084u : 0u) && bus->vram_address() == (name.find("remap") != std::string::npos ? 0x126u : 0x8002u) && bus->dma_clocks() == 48,
           "fixed DMA/readback CPU completion trace");
     const unsigned high_values[] = {0xde,0xad,0xde,0xad,0xbe,0xef}, low_values[] = {0xad,0xde,0xad,0xde,0xef,0xbe};
     for (unsigned i = 0; i < 6; ++i) check(bus->read8(0x1000+i) == (high ? high_values[i] : low_values[i]),"fixed buffered read sequence");

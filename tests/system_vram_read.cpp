@@ -1,3 +1,4 @@
+#include "vram_remap_reference.hpp"
 #include "../recompiler/runtime.hpp"
 #include <iostream>
 #include <memory>
@@ -18,17 +19,19 @@ int main() {
     for (unsigned i = 0; i < 65536; ++i) bus->write8(0x2118+i%2,static_cast<uint8_t>(data(i)));
     const auto word = [&](unsigned address) { const unsigned at = (address*2)%65536; return data(at)+256*data(at+1); };
     unsigned cases = 0;
-    for (unsigned control : {0u,1u,2u,3u,128u,129u,130u,131u})
+    for (unsigned mapping = 0; mapping < 4; ++mapping)
+    for (unsigned base_control : {0u,1u,2u,3u,128u,129u,130u,131u})
+      for (unsigned control : {base_control+4*mapping})
       for (unsigned start : {0u,0x7fffu,0xffffu}) for (unsigned alias : {0u,0x3f0000u,0x800000u,0xbf0000u})
         for (unsigned pattern : {0u,1u,2u}) {
           bus->reset_devices(); bus->write8(alias+0x2115,static_cast<uint8_t>(control));
           bus->write8(alias+0x2116,static_cast<uint8_t>(start)); bus->write8(alias+0x2117,static_cast<uint8_t>(start/256));
-          unsigned address = start, buffer = word(start);
+          unsigned address = start, buffer = word(reference_vram_word(start,control));
           for (unsigned i = 0; i < 16; ++i) {
             const unsigned high = pattern == 0 ? i%2 : pattern == 1 ? 0 : 1;
             const unsigned expected = high ? buffer/256 : buffer%256;
             if (high == control/128) {
-              buffer = word(address);
+              buffer = word(reference_vram_word(address,control));
               address = (address+((control%4) == 0 ? 1 : (control%4) == 1 ? 32 : 128))%65536;
             }
             check(bus->read8(alias+0x2139+high) == expected && bus->vram_address() == address,
@@ -37,6 +40,26 @@ int main() {
           ++cases;
         }
     for (unsigned i = 0; i < 65536; ++i) check(bus->vram_byte(i) == data(i),"VRAM reads changed stored bytes");
+    // Every logical address (including bit 15 mirror) under all four wirings.
+    unsigned exhaustive = 0;
+    for (unsigned mapping = 0; mapping < 4; ++mapping) {
+      bus->write8(0x2115,static_cast<uint8_t>(128+4*mapping));
+      for (unsigned address = 0; address < 65536; ++address) {
+        bus->write8(0x2116,static_cast<uint8_t>(address)); bus->write8(0x2117,static_cast<uint8_t>(address/256));
+        const unsigned at = (reference_vram_word(address,4*mapping)*2)%65536;
+        check(bus->read8(0x2139) == data(at) && bus->read8(0x213a) == data(at+1) &&
+              bus->vram_address() == (address+1)%65536,"exhaustive VRAM remapped address/read mismatch");
+        ++exhaustive;
+      }
+    }
+    // Mapping switches preserve the old buffer; refill alone adopts the new mapping.
+    bus->reset_devices(); bus->write8(0x2115,128); bus->write8(0x2116,0x21);
+    const unsigned old_at = 0x42, new_at = reference_vram_word(0x21,4)*2;
+    bus->write8(0x2115,132);
+    check(bus->read8(0x2139) == data(old_at) && bus->read8(0x213a) == data(old_at+1) &&
+          bus->read8(0x2139) == data(new_at) && bus->read8(0x213a) == data(new_at+1),
+          "VMAIN remap change refreshed stale buffer or used stale mapping on refill");
+
     // Either address-register byte prefetches immediately, using the other byte as it stands.
     bus->reset_devices(); bus->write8(0x2115,0x80); bus->write8(0x2117,0x7f); bus->write8(0x2116,0x12);
     check(bus->read8(0x2139) == data(0xfe24) && bus->vram_address() == 0x7f12,"VMADDL prefetch missing");
@@ -79,7 +102,7 @@ int main() {
           bus->vram_byte(0) == 0x12 && bus->vram_byte(1) == 0x34,"reset buffer/data preservation policy");
     auto disabled = std::make_unique<Bus>(image);
     rejected([&] { (void)disabled->read8(0x2139); }); rejected([&] { (void)disabled->read8(0x213a); });
-    std::cout << cases << " buffered-read reference cases, 4608 byte reads, guards and lifecycle passed\n";
+    std::cout << cases << " buffered-read reference cases, " << exhaustive << " exhaustive addresses, 18432 byte reads, guards and lifecycle passed\n";
     return 0;
   } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
 }
