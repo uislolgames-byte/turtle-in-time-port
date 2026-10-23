@@ -114,7 +114,8 @@ target, A-bus address low/high/bank and size low/high. Each bit of a byte write
 to $420B selects a channel; they run synchronously in ascending order. A zero
 mask does nothing. Target $80 (WRAM port) supports mode 0, A-to-B only.
 Additional destinations and all eight forward patterns are described in the VRAM
-and DMA-pattern sections below.
+and DMA-pattern sections below. B-to-A VRAM/CGRAM readback is described in
+the reverse-DMA section.
 Control $00 increments the source, $10 decrements it, $08/$18 fixes it. The
 16-bit source wraps without changing its bank. Count zero means 65,536 bytes.
 After each successful byte, source/size registers and the WRAM pointer advance.
@@ -820,7 +821,8 @@ an odd first channel can supply the low byte completed by the next channel.
 A source fault after one byte leaves an uncommitted low latch, advanced source/
 count, actual DMA cost and due events. Existing whole-mask preflight, addressing
 modes and timing policy remain unchanged. The eight-pattern extension below
-now supports additional patterns; reverse direction remains rejected.
+now supports additional patterns; bounded B-to-A palette readback is described
+in the reverse-DMA section.
 Const palette reads, writes to the read port, reads of write-only ports and word/
 stack/block-move MMIO remain unsupported before effects. Timed byte accesses
 reserve capacity before changing phase, data or CPU state.
@@ -1113,7 +1115,8 @@ Mode 1/$19/count 1 is valid, but count 2 rejects the unimplemented $1A destinati
 
 Bits 0-2 select the pattern, bit 3 fixes the source and bit 4 decrements it when
 not fixed; fixed wins if both are set. Source low addresses wrap within the same
-bank. Bits 5-7 (including reverse direction/HDMA-related flags) remain rejected.
+bank. Bits 5/6 remain rejected. Bit 7 now selects bounded reverse DMA, described
+in the reverse-DMA section below.
 ROM/mapped WRAM sources, CPU/PPU I/O source rejection and WRAM-to-WRAM-data-port
 rejection are preserved, checking the actual per-byte destination. No general
 open bus or unimplemented port is silently accepted.
@@ -1143,7 +1146,8 @@ modes, odd counts, bank/pointer wrapping, per-channel/trigger phase reset and
 65536-byte transfers in every pattern. Generated timed/untimed fixtures compare
 CPU/flags, all WRAM/VRAM/CGRAM, scroll, all channels and all clocks over budgets,
 host origins and scheduled events. Timing still omits alignment, refresh,
-arbitration and per-byte scheduling; no reverse DMA, HDMA, scanline rendering,
+arbitration and per-byte scheduling; reverse DMA is covered by the later extension,
+while HDMA, scanline rendering,
 full PPU/APU synchronization or game execution is added.
 Reference: [ares DMA transfer patterns and index reset](https://github.com/ares-emulator/ares/blob/master/ares/sfc/cpu/dma.cpp).
 All fixture content and reference logic are original.

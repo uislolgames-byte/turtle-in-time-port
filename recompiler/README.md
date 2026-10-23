@@ -254,8 +254,8 @@ ports. Whole-mask preflight validates only pattern positions reached by the coun
 Mode 4 can configure the four shared-latch scroll registers. Source faults retain
 completed bytes/latches/time and skip later channels; the failed CPU STA is not
 charged. Timed/untimed synthetic matrix and partial-fault fixtures compare actual
-generated C++ against an independent reference. Reverse DMA, HDMA, alignment and
-per-byte scheduling remain outside this subset.
+generated C++ against an independent reference. Reverse DMA is described below;
+HDMA, alignment and per-byte scheduling remain outside this subset.
 
 
 VRAM CPU/DMA writes and buffered reads also support all four VMAIN address
