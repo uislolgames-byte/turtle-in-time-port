@@ -1,4 +1,4 @@
-# System memory â€” first part of milestone 3
+# System memory — first part of milestone 3
 
 `bus.hpp` is a C++17 memory component optionally connected to the static
 recompiler runtime. The existing CPU probe and Windows application are unchanged.
@@ -13,12 +13,12 @@ normalized `data`; no file loader or commercial data is added here.
 
 | CPU address | Supported mapping |
 | --- | --- |
-| `$7E:0000â€“$7F:FFFF` | 128 KiB WRAM, read/write |
-| `$00â€“$3F/$80â€“$BF:0000â€“1FFF` | Mirror of first 8 KiB WRAM |
-| Other banks, `$8000â€“FFFF` | LoROM offset `(bank & 127) * 32768 + (address & 32767)` |
+| `$7E:0000–$7F:FFFF` | 128 KiB WRAM, read/write |
+| `$00–$3F/$80–$BF:0000–1FFF` | Mirror of first 8 KiB WRAM |
+| Other banks, `$8000–FFFF` | LoROM offset `(bank & 127) * 32768 + (address & 32767)` |
 | All remaining regions | Explicit unsupported-region fault |
 
-WRAM banks take precedence over ROM mapping. Banks `$80â€“FF` mirror the
+WRAM banks take precedence over ROM mapping. Banks `$80–FF` mirror the
 corresponding lower ROM banks. The mapped offset must exist in the supplied
 cartridge; smaller ROMs do not wrap to fill unpopulated banks. Additional LoROM
 aliases in the lower half of banks are deliberately unsupported. No SRAM,
@@ -37,7 +37,7 @@ integration; callers must not infer them from this byte API.
 RAM starts at zero as a deterministic host testing policy, not a hardware
 power-on guarantee. RAM persists for the life of an instance until explicitly
 changed or `clear_ram()` is called. `reset_vector()` reads little-endian
-`$00:FFFCâ€“FFFD` without resetting CPU or clearing RAM. ROM remains immutable.
+`$00:FFFC–FFFD` without resetting CPU or clearing RAM. ROM remains immutable.
 There is no save-state format.
 
 ## Static runtime connection and reset
@@ -103,13 +103,13 @@ Total: 35 tests.
 ## Optional channel-0 DMA to the WRAM data port
 
 Construct `Bus(image, true)` to enable this device subset. It is off by default.
-Supported CPU-bank aliases: $00â€“3F/$80â€“BF. Byte writes to $2181â€“2183 set a 17-bit
+Supported CPU-bank aliases: $00–3F/$80–BF. Byte writes to $2181–2183 set a 17-bit
 WRAM address; $2180 reads/writes its byte and increments that address modulo
 128 KiB. Only bit 0 of $2183 is used. Address registers are write-only; reading
 $2180 requires a non-const bus because it advances state. The default bus still
 rejects these addresses.
 
-Channel-0 registers $4300â€“4306 are readable/writable: control, B-bus target,
+Channel-0 registers $4300–4306 are readable/writable: control, B-bus target,
 A-bus address low/high/bank and size low/high. A byte write of 1 to $420B starts
 the supported transfer synchronously. A zero mask does nothing; other channel
 masks are rejected. Only mode 0, A-to-B, target $80 (WRAM port) is implemented.

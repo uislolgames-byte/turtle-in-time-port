@@ -1,38 +1,38 @@
-# TMNT Native â€” CI prototype
+# TMNT Native — CI prototype
 
 Experimento de engenharia reversa do **Teenage Mutant Ninja Turtles IV: Turtles in Time** (SNES) para Windows e Linux.
 
-**Importante:** este repositÃ³rio contÃ©m ferramentas **preliminares** de inspeÃ§Ã£o e uma primeira recompilaÃ§Ã£o estÃ¡tica de programas sintÃ©ticos 65C816. Ainda nÃ£o Ã© o jogo jogÃ¡vel nem uma recompilaÃ§Ã£o do jogo.
+**Importante:** este repositório contém ferramentas **preliminares** de inspeção e uma primeira recompilação estática de programas sintéticos 65C816. Ainda não é o jogo jogável nem uma recompilação do jogo.
 
 ## Ferramentas
-- Base do Marco 3: [barramento de memÃ³ria em C++](system/README.md), com ROM
-  LoROM parcial, RAM, bancos e integraÃ§Ã£o ao runtime recompilado com reinicializaÃ§Ã£o.
-  Inclui relÃ³gio lÃ³gico e diagnÃ³stico de pedidos NMI/IRQ. TemporizaÃ§Ã£o do hardware,
-  handlers gerais/aninhados e DMA completo continuam pendentes. HÃ¡ DMA restrito
-  do canal 0 para a porta WRAM, com contagem parcial de clocks. A opÃ§Ã£o `--interrupts`
-  recompila handlers lineares com RTI validado. MVN/MVP jÃ¡
-  transferem blocos entre bancos no cÃ³digo recompilado, com testes sintÃ©ticos.
-- O runtime tambÃ©m conta ciclos nominais da CPU e aceita eventos NMI/IRQ por
-  ciclo. A sincronizaÃ§Ã£o em master clocks com os dispositivos SNES ainda falta.
-- `tmnt_recompile`: primeira traduÃ§Ã£o estÃ¡tica **escrita em C++** de programas
-  sintÃ©ticos para C++ compilÃ¡vel, com modos, fluxo e chamadas folha JSR/RTS.
+- Base do Marco 3: [barramento de memória em C++](system/README.md), com ROM
+  LoROM parcial, RAM, bancos e integração ao runtime recompilado com reinicialização.
+  Inclui relógio lógico e diagnóstico de pedidos NMI/IRQ. Temporização do hardware,
+  handlers gerais/aninhados e DMA completo continuam pendentes. Há DMA restrito
+  do canal 0 para a porta WRAM, com contagem parcial de clocks. A opção `--interrupts`
+  recompila handlers lineares com RTI validado. MVN/MVP já
+  transferem blocos entre bancos no código recompilado, com testes sintéticos.
+- O runtime também conta ciclos nominais da CPU e aceita eventos NMI/IRQ por
+  ciclo. A sincronização em master clocks com os dispositivos SNES ainda falta.
+- `tmnt_recompile`: primeira tradução estática **escrita em C++** de programas
+  sintéticos para C++ compilável, com modos, fluxo e chamadas folha JSR/RTS.
   Veja [recompiler/](recompiler/README.md) para o subconjunto e os testes.
-- `tmnt_rominfo`: cabeÃ§alho e vetor de reset de ROM LoROM sem copier header.
-- `tmnt_disasm`: scanner de bytes com nomes de poucos opcodes; **nÃ£o Ã© um desmontador completo**.
-- `tmnt_flow`: scanner linear conservador; **nÃ£o calcula um grafo de fluxo real**.
-- `tmnt_hwscan`: localiza padrÃµes candidatos de escrita na PPU; pode gerar falsos positivos.
-- `tmnt_vectors`: lÃª os vetores de interrupÃ§Ã£o nativos e de emulaÃ§Ã£o do 65C816, mostrando endereÃ§os e offsets LoROM quando aplicÃ¡vel.
+- `tmnt_rominfo`: cabeçalho e vetor de reset de ROM LoROM sem copier header.
+- `tmnt_disasm`: scanner de bytes com nomes de poucos opcodes; **não é um desmontador completo**.
+- `tmnt_flow`: scanner linear conservador; **não calcula um grafo de fluxo real**.
+- `tmnt_hwscan`: localiza padrões candidatos de escrita na PPU; pode gerar falsos positivos.
+- `tmnt_vectors`: lê os vetores de interrupção nativos e de emulação do 65C816, mostrando endereços e offsets LoROM quando aplicável.
 - `tmnt_entrydump`: mostra os bytes nos pontos de entrada dos vetores.
-- `tmnt_callscan`: encontra chamadas JSR/JSL em uma sequÃªncia linear conhecida.
-- `tmnt_exec`: executor experimental e limitado de algumas instruÃ§Ãµes 65C816, com BRA/BEQ/BNE, ADC/SBC/CMP binÃ¡rios e AND/ORA/EOR e incrementos/decrementos de A/X/Y e transferÃªncias TAX/TAY/TXA/TYA/TXY/TYX, flags N/V e desvios BMI/BPL/BVS/BVC e STA/LDA absoluto, indexado X/Y e Direct Page indexado X (registrador D, TCD/TDC) para RAM baixa simulada; mostra registradores e motivo da parada. NÃ£o executa o jogo nem emula o hardware do SNES.\n- `tmnt_lift`: exporta um prefixo linear do RESET em CSV com opcode, operando e larguras M/X; interrompe em instruÃ§Ãµes desconhecidas, operaÃ§Ãµes de fluxo nÃ£o suportadas e limites de banco; nÃ£o recompila nem executa o jogo.\n- `tmnt_cfg`: exporta um grafo parcial de fluxo de controle, incluindo BRA/BRL, os oito desvios condicionais (BPL/BMI/BVC/BVS/BCC/BCS/BNE/BEQ), JMP/JML e sequÃªncia linear. NÃ£o percorre chamadas e para em opcodes desconhecidos.\n- `tmnt_callgraph`: exporta chamadas diretas e alvos de JMP/JML e desvios relativos encontrados em formato Graphviz DOT. A anÃ¡lise **nÃ£o** segue caminhos de execuÃ§Ã£o completos nem decodifica automaticamente rotinas chamadas com estado de CPU desconhecido.
+- `tmnt_callscan`: encontra chamadas JSR/JSL em uma sequência linear conhecida.
+- `tmnt_exec`: executor experimental e limitado de algumas instruções 65C816, com BRA/BEQ/BNE, ADC/SBC/CMP binários e AND/ORA/EOR e incrementos/decrementos de A/X/Y e transferências TAX/TAY/TXA/TYA/TXY/TYX, flags N/V e desvios BMI/BPL/BVS/BVC e STA/LDA absoluto, indexado X/Y e Direct Page indexado X (registrador D, TCD/TDC) para RAM baixa simulada; mostra registradores e motivo da parada. Não executa o jogo nem emula o hardware do SNES.\n- `tmnt_lift`: exporta um prefixo linear do RESET em CSV com opcode, operando e larguras M/X; interrompe em instruções desconhecidas, operações de fluxo não suportadas e limites de banco; não recompila nem executa o jogo.\n- `tmnt_cfg`: exporta um grafo parcial de fluxo de controle, incluindo BRA/BRL, os oito desvios condicionais (BPL/BMI/BVC/BVS/BCC/BCS/BNE/BEQ), JMP/JML e sequência linear. Não percorre chamadas e para em opcodes desconhecidos.\n- `tmnt_callgraph`: exporta chamadas diretas e alvos de JMP/JML e desvios relativos encontrados em formato Graphviz DOT. A análise **não** segue caminhos de execução completos nem decodifica automaticamente rotinas chamadas com estado de CPU desconhecido.
 
 ## Investigar os pontos de entrada
 
-Execute `tmnt_vectors caminho/para/sua_rom.sfc` para listar RESET, NMI, IRQ e outros vetores. O vetor de RESET indica por onde o processador comeÃ§a a executar apÃ³s reinicializar; NMI costuma ser importante para atualizaÃ§Ã£o grÃ¡fica a cada quadro. **NÃ£o Ã© necessÃ¡rio enviar a ROM ao GitHub**.
+Execute `tmnt_vectors caminho/para/sua_rom.sfc` para listar RESET, NMI, IRQ e outros vetores. O vetor de RESET indica por onde o processador começa a executar após reinicializar; NMI costuma ser importante para atualização gráfica a cada quadro. **Não é necessário enviar a ROM ao GitHub**.
 
 ## Exportar o grafo de chamadas
 
-Execute a ferramenta na sua ROM local (nÃ£o faÃ§a upload dela):
+Execute a ferramenta na sua ROM local (não faça upload dela):
 
 ```sh
 tmnt_callgraph caminho/para/sua_rom.sfc > chamadas.dot
@@ -40,88 +40,88 @@ dot -Tsvg chamadas.dot -o chamadas.svg
 ```
 
 O comando `dot` pertence ao Graphviz, que precisa ser instalado separadamente.
-A saÃ­da padrÃ£o contÃ©m apenas a sintaxe DOT; diagnÃ³sticos sÃ£o enviados para stderr.
-O grafo Ã© **parcial** e nÃ£o prova que os endereÃ§os sÃ£o rotinas vÃ¡lidas.
-A decodificaÃ§Ã£o parte do RESET com o estado inicial conhecido; alvos de chamadas
-sÃ£o listados, mas nÃ£o percorridos sem evidÃªncia sobre os registradores M/X.
-O `tmnt_callgraph` interrompe a anÃ¡lise em XCE quando o carry Ã© desconhecido
-(no RESET ou apÃ³s ADC/SBC/CMP). CLC, SEC e o bit de carry de REP/SEP permitem
-restabelecer esse estado; isso evita inferir larguras M/X e chamadas sem evidÃªncia.
-BRA/BRL e JMP absoluto sÃ£o percorridos quando o destino Ã© vÃ¡lido em LoROM,
-preservando o estado da CPU; ciclos e o limite de instruÃ§Ãµes encerram a anÃ¡lise.
+A saída padrão contém apenas a sintaxe DOT; diagnósticos são enviados para stderr.
+O grafo é **parcial** e não prova que os endereços são rotinas válidas.
+A decodificação parte do RESET com o estado inicial conhecido; alvos de chamadas
+são listados, mas não percorridos sem evidência sobre os registradores M/X.
+O `tmnt_callgraph` interrompe a análise em XCE quando o carry é desconhecido
+(no RESET ou após ADC/SBC/CMP). CLC, SEC e o bit de carry de REP/SEP permitem
+restabelecer esse estado; isso evita inferir larguras M/X e chamadas sem evidência.
+BRA/BRL e JMP absoluto são percorridos quando o destino é válido em LoROM,
+preservando o estado da CPU; ciclos e o limite de instruções encerram a análise.
 JML continua sendo apenas registrado, sem percorrer seu destino.
 
-Para inspecionar desvios e loops conhecidos: `tmnt_cfg caminho/para/sua_rom.sfc > fluxo.dot`. O grafo Ã© limitado aos opcodes implementados (incluindo novos LDY, ADC, CMP, STX e instruÃ§Ãµes de pilha) e nÃ£o equivale ao fluxo completo do jogo. As instruÃ§Ãµes sÃ£o reconhecidas pelo tamanho, mas o analisador ainda nÃ£o modela todos os efeitos sobre flags e registradores. O CFG agora rastreia quando o carry Ã© conhecido para XCE e interrompe a anÃ¡lise em PLP, cujo estado de flags nÃ£o pode ser recuperado sem modelar a pilha.\n\n## Compilar e testar
+Para inspecionar desvios e loops conhecidos: `tmnt_cfg caminho/para/sua_rom.sfc > fluxo.dot`. O grafo é limitado aos opcodes implementados (incluindo novos LDY, ADC, CMP, STX e instruções de pilha) e não equivale ao fluxo completo do jogo. As instruções são reconhecidas pelo tamanho, mas o analisador ainda não modela todos os efeitos sobre flags e registradores. O CFG agora rastreia quando o carry é conhecido para XCE e interrompe a análise em PLP, cujo estado de flags não pode ser recuperado sem modelar a pilha.\n\n## Compilar e testar
 ```sh
 cmake -S . -B build -DBUILD_TESTING=ON
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-O GitHub Actions executa em `windows-2022` e `ubuntu-24.04`. Veja os resultados na aba Actions; configuraÃ§Ã£o do workflow nÃ£o significa que os testes jÃ¡ passaram.
+O GitHub Actions executa em `windows-2022` e `ubuntu-24.04`. Veja os resultados na aba Actions; configuração do workflow não significa que os testes já passaram.
 
-O teste de integraÃ§Ã£o cria uma ROM sintÃ©tica, sem arquivos comerciais. **NÃ£o publique a ROM original.**
+O teste de integração cria uma ROM sintética, sem arquivos comerciais. **Não publique a ROM original.**
 
-Para compilar e executar toda a bateria de uma vez, apÃ³s configurar com
+Para compilar e executar toda a bateria de uma vez, após configurar com
 `-DBUILD_TESTING=ON`, execute `cmake --build build --config Release --target check --parallel`.
-O alvo `check` compila as ferramentas, os testes e a janela Windows quando aplicÃ¡vel,
+O alvo `check` compila as ferramentas, os testes e a janela Windows quando aplicável,
 executa todos os testes CTest e gera `build/ctest-results.xml`. Uma falha retorna
-erro ao comando e ao CI. A bateria inclui instruÃ§Ãµes isoladas e uma cadeia com
-mudanÃ§as de largura, comparaÃ§Ãµes, lÃ³gica e loop, conferindo cada estado intermediÃ¡rio
-em 144 execuÃ§Ãµes, com/sem copier header e chamadas repetidas. TambÃ©m verifica que
-o diagnÃ³stico nÃ£o modifica os bytes da ROM carregada. A interface grÃ¡fica ainda
-exige verificaÃ§Ã£o manual; esses testes nÃ£o comprovam execuÃ§Ã£o completa do jogo.
+erro ao comando e ao CI. A bateria inclui instruções isoladas e uma cadeia com
+mudanças de largura, comparações, lógica e loop, conferindo cada estado intermediário
+em 144 execuções, com/sem copier header e chamadas repetidas. Também verifica que
+o diagnóstico não modifica os bytes da ROM carregada. A interface gráfica ainda
+exige verificação manual; esses testes não comprovam execução completa do jogo.
 
-## PrÃ³ximos passos
-Expandir a decodificaÃ§Ã£o com propagaÃ§Ã£o explÃ­cita de estado do 65C816, acompanhar desvios com seguranÃ§a e validar Windows/Linux em cada alteraÃ§Ã£o.
+## Próximos passos
+Expandir a decodificação com propagação explícita de estado do 65C816, acompanhar desvios com segurança e validar Windows/Linux em cada alteração.
 
-## ProtÃ³tipo de janela nativa Windows
-O Windows tambÃ©m compila tmnt_native.exe. O aplicativo abre uma janela Win32 e permite escolher localmente uma ROM .sfc/.smc, exibindo tamanho, vetor RESET e consistÃªncia do checksum. Nenhuma ROM Ã© incluÃ­da ou enviada Ã  rede. Ainda nÃ£o executa o jogo nem renderiza grÃ¡ficos ou Ã¡udio.
+## Protótipo de janela nativa Windows
+O Windows também compila tmnt_native.exe. O aplicativo abre uma janela Win32 e permite escolher localmente uma ROM .sfc/.smc, exibindo tamanho, vetor RESET e consistência do checksum. Nenhuma ROM é incluída ou enviada à rede. Ainda não executa o jogo nem renderiza gráficos ou áudio.
 
-## DiagnÃ³stico limitado de CPU
-O aplicativo Windows possui o botÃ£o Probe CPU, que executa no mÃ¡ximo 32 instruÃ§Ãµes de um subconjunto conhecido do 65C816 a partir de RESET, exibindo PC/A/X/Y e motivo da parada. O mesmo nÃºcleo de diagnÃ³stico estÃ¡ disponÃ­vel em tmnt_cpuprobe e Ã© testado com ROM sintÃ©tica em Windows/Linux. NÃ£o hÃ¡ barramento SNES, grÃ¡ficos, Ã¡udio ou execuÃ§Ã£o completa do jogo. A ROM permanece local.
+## Diagnóstico limitado de CPU
+O aplicativo Windows possui o botão Probe CPU, que executa no máximo 32 instruções de um subconjunto conhecido do 65C816 a partir de RESET, exibindo PC/A/X/Y e motivo da parada. O mesmo núcleo de diagnóstico está disponível em tmnt_cpuprobe e é testado com ROM sintética em Windows/Linux. Não há barramento SNES, gráficos, áudio ou execução completa do jogo. A ROM permanece local.
 
-O diagnÃ³stico tambÃ©m suporta BRA, os oito desvios condicionais e INX/DEX,
+O diagnóstico também suporta BRA, os oito desvios condicionais e INX/DEX,
 respeitando larguras de 8/16 bits e atualizando N/Z em cargas e incrementos.
-REP/SEP permitem estabelecer N/V/Z/C. Flags desconhecidas apÃ³s RESET encerram
-o diagnÃ³stico quando um desvio depende delas; XCE tambÃ©m exige carry conhecido.
+REP/SEP permitem estabelecer N/V/Z/C. Flags desconhecidas após RESET encerram
+o diagnóstico quando um desvio depende delas; XCE também exige carry conhecido.
 Saltos usam deslocamento assinado e preservam o banco do PC. O limite de
-instruÃ§Ãµes encerra loops; destinos fora do mapeamento ROM encerram o diagnÃ³stico.
-Os testes adicionais sÃ£o escritos em C++ e usam apenas uma ROM sintÃ©tica.
+instruções encerra loops; destinos fora do mapeamento ROM encerram o diagnóstico.
+Os testes adicionais são escritos em C++ e usam apenas uma ROM sintética.
 
 CMP/CPX/CPY imediato comparam A/X/Y em 8 ou 16 bits, estabelecendo C/N/Z
-sem alterar os registradores ou V. Isso permite diagnosticar loops de comparaÃ§Ã£o
+sem alterar os registradores ou V. Isso permite diagnosticar loops de comparação
 com desvios condicionais. Os testes conferem os 256 valores de 8 bits contra $80,
-casos de 16 bits, preservaÃ§Ã£o de V/B e operandos truncados no limite do banco.
+casos de 16 bits, preservação de V/B e operandos truncados no limite do banco.
 
-AND/ORA/EOR imediato tambÃ©m respeitam a largura M (8/16 bits), atualizando
+AND/ORA/EOR imediato também respeitam a largura M (8/16 bits), atualizando
 somente N/Z e preservando o byte B de A em modo de 8 bits. Os testes C++ cobrem
-todos os 256 valores de 8 bits com mÃ¡scara $80, combinaÃ§Ãµes de C/V, resultados
-explÃ­citos de 16 bits, flags desconhecidas e truncamento no limite do banco.
+todos os 256 valores de 8 bits com máscara $80, combinações de C/V, resultados
+explícitos de 16 bits, flags desconhecidas e truncamento no limite do banco.
 
-ADC/SBC imediato binÃ¡rio em 8/16 bits atualiza C/V/N/Z e preserva B em 8 bits.
-Carry de entrada desconhecido encerra o diagnÃ³stico antes da operaÃ§Ã£o. O bit D
-comeÃ§a limpo no RESET e pode ser alterado por CLD/SED ou REP/SEP; com D ligado,
+ADC/SBC imediato binário em 8/16 bits atualiza C/V/N/Z e preserva B em 8 bits.
+Carry de entrada desconhecido encerra o diagnóstico antes da operação. O bit D
+começa limpo no RESET e pode ser alterado por CLD/SED ou REP/SEP; com D ligado,
 ADC/SBC para com `decimal arithmetic unsupported`, sem alterar A nem consumir
-a instruÃ§Ã£o. O teste de aritmÃ©tica usa um orÃ¡culo de somas/subtraÃ§Ãµes e limites
+a instrução. O teste de aritmética usa um oráculo de somas/subtrações e limites
 assinados para conferir resultados, carry, overflow e desvios em toda a bateria.
 
-LDA/STA/STX/STY/STZ absoluto acessam apenas RAM sintÃ©tica em $0000â€“$1FFF,
-com DBR fixo em zero. A RAM comeÃ§a zerada a cada chamada de diagnÃ³stico,
+LDA/STA/STX/STY/STZ absoluto acessam apenas RAM sintética em $0000–$1FFF,
+com DBR fixo em zero. A RAM começa zerada a cada chamada de diagnóstico,
 independente da ROM carregada. LDA respeita M e altera N/Z; STA/STZ respeitam M,
-STX/STY respeitam X, e as escritas preservam flags. TransferÃªncias de 16 bits
-usam a ordem little-endian e validam os dois bytes antes de acessar a memÃ³ria.
-Acesso fora dessa regiÃ£o (incluindo registradores de hardware e espaÃ§o ROM)
-para com `address outside probe RAM`. Isso ainda nÃ£o Ã© um barramento SNES.
-O teste de memÃ³ria cobre larguras M/X independentes, fronteiras, flags, ordem dos
-bytes, isolamento entre chamadas e preservaÃ§Ã£o da ROM original.
+STX/STY respeitam X, e as escritas preservam flags. Transferências de 16 bits
+usam a ordem little-endian e validam os dois bytes antes de acessar a memória.
+Acesso fora dessa região (incluindo registradores de hardware e espaço ROM)
+para com `address outside probe RAM`. Isso ainda não é um barramento SNES.
+O teste de memória cobre larguras M/X independentes, fronteiras, flags, ordem dos
+bytes, isolamento entre chamadas e preservação da ROM original.
 
-LDA/STA absoluto indexado por X ou Y tambÃ©m usa a RAM de diagnÃ³stico. O endereÃ§o
-efetivo soma base e Ã­ndice, sem truncar o resultado para 16 bits; acessos que
-ultrapassem a regiÃ£o permitida param antes de acessar os dados. M define a largura
-da transferÃªncia, X define a largura dos Ã­ndices. Os testes cruzam as quatro
-combinaÃ§Ãµes M/X e verificam os endereÃ§os com acessos absolutos independentes,
-alÃ©m de uma sequÃªncia que preenche e percorre um buffer com loop.
+LDA/STA absoluto indexado por X ou Y também usa a RAM de diagnóstico. O endereço
+efetivo soma base e índice, sem truncar o resultado para 16 bits; acessos que
+ultrapassem a região permitida param antes de acessar os dados. M define a largura
+da transferência, X define a largura dos índices. Os testes cruzam as quatro
+combinações M/X e verificam os endereços com acessos absolutos independentes,
+além de uma sequência que preenche e percorre um buffer com loop.
 
 A etapa de temporização do Marco 3 também classifica acessos por endereço em
 6/8/12 master clocks e aceita o controle MEMSEL/FastROM no barramento opcional.
