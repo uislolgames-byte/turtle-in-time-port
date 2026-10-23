@@ -4,6 +4,9 @@
 #include <vector>
 #include <cstdint>
 inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
+  if (name == "bus_call_native") return recompiler_fixture("calls");
+  if (name == "bus_call_emulation") return recompiler_fixture("emulation_calls");
+  if (name == "bus_call_corrupt") return recompiler_fixture("corrupt_return");
   if (name == "bus_move_fastrom" || name == "bus_move_fault") {
     auto code = recompiler_fixture("move_rom");
     if (name == "bus_move_fastrom") code[15] = 0x80;

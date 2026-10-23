@@ -328,7 +328,7 @@ written byte values, boundaries, rejected accesses, isolation and reset.
 `recompiled_memsel` checks 28 fixed traces of actual generated LDA/STA/STP code,
 including enable/disable, four data-bank aliases, partial budgets and unchanged
 nominal CPU/DMA accounting. The default strict bus rejects the generated write.
-Both join the existing Windows/Linux regression chain (50 tests total).
+Both join the existing Windows/Linux regression chain (53 tests total).
 
 This is a timing-decoder foundation, not an instruction master-clock counter.
 The optional first CPU timing counter below now applies these speeds to a
@@ -346,7 +346,8 @@ alongside literal CPU operations. It requires a connected bus, including for
 budget zero; it is mutually exclusive with `--interrupts`. The option supports
 the existing NOP, CLC/SEC, XCE, REP/SEP, INX/DEX, immediate LDA/LDX/LDY,
 absolute LDA/STA, BRA/conditional branches, MVN/MVP per byte and bounded STP
-entry. Calls/returns are rejected at generation time. Existing generation without the
+entry and leaf JSR/RTS. Nested calls and control-flow/mode changes inside a leaf
+remain rejected at generation time. Existing generation without the
 option keeps its behavior and does not increment the new counter.
 
 `State::master_clocks` is a uint64 CPU-only counter, separately from nominal
@@ -389,7 +390,7 @@ changes, ROM/WRAM, FastROM enable/disable, taken/untaken branches across pages i
 emulation/native mode, loop budgets and faults. They also check overflow before
 CPU/MMIO effects, reset, missing bus, MMIO rejection and existing event timelines.
 The original 37 tests remain; the five instruction tests and eight timed block-move
-tests bring the total to 50 tests in Windows/Linux CI. References for
+tests plus three timed leaf-call tests bring the total to 53 tests in Windows/Linux CI. References for
 instruction decomposition: upstream bsnes
 [other instructions](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-other.cpp)
 and [branches](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-pc.cpp).
@@ -426,7 +427,47 @@ fixture checks preserved progress, exact counter capacity, exhaustion before the
 next byte and rejected MMIO. Master-clock capacity and NMI boundary checks are
 also applied to the successful timed transfer fixtures. The 99 original untimed
 transfer comparisons remain, for 228 transfer comparisons plus fault checks.
-Full interleaving, DMA/refresh, PPU/APU synchronization and timed stack/interrupt
-operations remain future work. Reference: upstream bsnes
+Full interleaving, DMA/refresh, PPU/APU synchronization and timed interrupt operations remain future work. Reference: upstream bsnes
 [block-move access sequence](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-other.cpp).
+No upstream source code was copied.
+
+### Timed leaf JSR/RTS
+
+`--bus-timing` now accepts the existing short, bank-zero leaf calls/returns.
+JSR reserves three code fetches, two bank-zero stack writes and one internal
+cycle. RTS reserves one code fetch, two stack reads and three internal cycles.
+With the supported WRAM stack and bank-zero code these cost 46 and 42 master
+clocks respectively, with six nominal CPU cycles each, in both CPU modes.
+Data-bank selection and MEMSEL do not redirect the bank-zero stack or accelerate
+bank-zero fetches. Emulation wraps within page $01; native mode wraps at 16 bits.
+The plan only classifies addresses; existing push/pop helpers do actual accesses.
+
+The counter's capacity is reserved before touching the frame. JSR preflights both
+writes: a rejected second byte changes neither the first byte, S nor any clocks.
+RTS intentionally preserves the earlier count-before-pop-validation policy: after
+reservation it commits its step/cycles/master clocks before checking the frame.
+A corrupted return therefore still counts RTS and exposes the popped S/PC with
+`Stop::stack`. A failed stack read counts RTS but leaves S/PC unchanged. This is
+our diagnostic fault contract, not hardware fault timing. Counter exhaustion
+stops before either call/return; no pop, push or cycle charge occurs in that case.
+Stack MMIO is still rejected before port effects, never read as ordinary data.
+
+Three generated tests add 7,680 independent interpreter comparisons of CPU,
+all 8 KiB mirrored RAM/stack, logical steps, nominal cycles and master clocks.
+They cover repeated leaf calls in native and emulation mode, corrupted return,
+all 64 valid initial flag combinations, 40 budgets, data-bank aliases and MEMSEL.
+Fixed full-program totals are 480 clocks / 64 CPU cycles (native calls),
+224 / 31 (emulation calls) and 136 / 18 (corrupted return including RTS).
+Additional checks reserve one clock too few or exactly enough before each
+JSR/RTS and sample NMI at those boundaries using both event timelines.
+Helper tests cover emulation page wrap, native bank wrap, atomic push faults,
+MMIO guards and invalid stack pointers. Generated entry still requires S=$01FF;
+these helper boundary tests do not add TXS or arbitrary initial-S program entry.
+The full regression chain contains 53 tests, retaining the previous 50.
+
+Calls remain restricted to straight-line, mode-preserving leaves; nested calls,
+leaf branches/mode changes/block moves and JSL/RTL are unsupported. Compiled
+interrupt handlers cannot be combined with bus timing yet. CPU/DMA/refresh and
+PPU/APU interleaving remain absent. Reference for instruction access sequences:
+upstream bsnes [JSR/RTS](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-pc.cpp).
 No upstream source code was copied.

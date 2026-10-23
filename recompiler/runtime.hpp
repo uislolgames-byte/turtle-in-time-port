@@ -120,6 +120,29 @@ inline bool begin_move_instruction(State& s, unsigned limit, unsigned pc,
     s.stop = Stop::memory; s.diagnostic = error.what(); return false;
   }
 }
+// JSR/RTS use bank-zero stack accesses independently of DBR. The plan only
+// classifies addresses; push/pop perform the checked memory accesses later.
+inline bool begin_stack_instruction(State& s, unsigned limit, unsigned pc, bool pulling) {
+  if (!begin_instruction(s, limit, 6)) return false;
+  s.pending_master_clocks = 0;
+  if (!s.bus || s.s > 65535 || (s.e && (s.s < 0x100 || s.s > 0x1ff))) {
+    s.stop = Stop::contract; s.diagnostic = "JSR/RTS timing requires a bus and bounded stack pointer"; return false;
+  }
+  const auto next = [&](unsigned address) {
+    return s.e ? (0x100 | ((address + (pulling ? 1 : 255)) & 255))
+               : ((address + (pulling ? 1 : 65535)) & 65535);
+  };
+  try {
+    unsigned cost = pulling ? 18 : 6;
+    for (unsigned i = 0; i < (pulling ? 1u : 3u); ++i) cost += s.bus->cpu_access_clocks(pc+i);
+    const unsigned first = pulling ? next(s.s) : s.s;
+    cost += s.bus->cpu_access_clocks(first);
+    cost += s.bus->cpu_access_clocks(next(first));
+    return reserve_master_clocks(s, cost);
+  } catch (const system816::BusError& error) {
+    s.stop = Stop::stack; s.diagnostic = error.what(); return false;
+  }
+}
 inline void complete_bus_instruction(State& s, unsigned cycles) {
   complete_instruction(s, cycles);
   s.master_clocks += s.pending_master_clocks;
@@ -239,7 +262,7 @@ inline bool push_return(State& s, unsigned address) {
     write_byte(s, s.s, static_cast<uint8_t>(address >> 8));
     write_byte(s, next, static_cast<uint8_t>(address));
   } catch (const system816::BusError& e) {
-    s.stop = Stop::stack; s.diagnostic = e.what(); return false;
+    s.pending_master_clocks = 0; s.stop = Stop::stack; s.diagnostic = e.what(); return false;
   }
   s.s = s.e ? (0x100 | ((next - 1) & 255)) : ((next - 1) & 65535);
   return true;
