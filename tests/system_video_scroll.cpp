@@ -13,9 +13,9 @@ static void word(Bus& b, unsigned at, unsigned value) {
   b.write8(0x2115,128); b.write8(0x2116,uint8_t(at/2)); b.write8(0x2117,uint8_t(at/512));
   b.write8(0x2118,uint8_t(value)); b.write8(0x2119,uint8_t(value/256));
 }
-static void scroll(Bus& b, unsigned x, unsigned y) {
-  b.write8(0x210d,uint8_t(x)); b.write8(0x210d,uint8_t(x/256));
-  b.write8(0x210e,uint8_t(y)); b.write8(0x210e,uint8_t(y/256));
+static void scroll(Bus& b, unsigned x, unsigned y, unsigned alias = 0) {
+  b.write8(alias+0x210d,uint8_t(x)); b.write8(alias+0x210d,uint8_t(x/256));
+  b.write8(alias+0x210e,uint8_t(y)); b.write8(alias+0x210e,uint8_t(y/256));
 }
 static PreviewRGB reference(unsigned x, unsigned y) {
   x %= 256; y %= 256;
@@ -39,7 +39,7 @@ int main() {
     auto b = std::make_unique<Bus>(image,true);
     for (unsigned low = 0; low < 256; ++low) for (unsigned high = 0; high < 256; ++high) {
       const unsigned alias = (low%4 == 0 ? 0 : low%4 == 1 ? 0x3f0000 : low%4 == 2 ? 0x800000 : 0xbf0000);
-      scroll(*b,low+256*high,high+256*low);
+      scroll(*b,low+256*high,high+256*low,alias);
       check(b->video_registers().bg1_x == low+256*(high%4) && b->video_registers().bg1_y == high+256*(low%4),
             "all scroll byte pairs/aliases/high-bit mask mismatch");
       // Expected bytes come from a three-write history, independently of the bus state.
