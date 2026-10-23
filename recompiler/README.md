@@ -262,3 +262,9 @@ VRAM CPU/DMA writes and buffered reads also support all four VMAIN address
 mappings. Twelve generated remapping/readback fixtures preserve the identity
 cases and compare CPU, all WRAM/VRAM, DMA registers, buffered bytes and timing
 against an independent bit-wiring reference. See the [system contract](../system/README.md#vram-address-remapping).
+
+
+Bounded reverse DMA now reads buffered VRAM/CGRAM into mapped WRAM, preserving
+per-byte progress and source-port state on a destination fault. Six synthetic
+generated fixtures compare CPU/memory/registers/buffers/timing, including partial
+failure with a pending NMI. See [reverse DMA contract](../system/README.md#reverse-dma-into-wram).

@@ -64,6 +64,23 @@ inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
   if (name == "bus_raster_loop") return {0xea,0x80,0xfd};
   if (name == "bus_raster_fault") return recompiler_fixture("dma_cgram_fault");
   if (name.rfind("bus_dma_",0) == 0) return recompiler_fixture(name.substr(4));
+  if (name == "dma_reverse_vram" || name == "dma_reverse_cgram" || name == "dma_reverse_fault") {
+    std::vector<uint8_t> image(32768,0), code;
+    const auto write = [&](unsigned at, unsigned value) {
+      code.insert(code.end(),{0xa9,static_cast<uint8_t>(value),0x8d,static_cast<uint8_t>(at),static_cast<uint8_t>(at >> 8)});
+    };
+    write(0x2115,0x8c); write(0x2116,0x23); write(0x2117,1);
+    for (unsigned i = 0; i < 6; ++i) write(0x2118+i%2,0x11+i*0x41);
+    write(0x2121,255); for (unsigned value : {0xa1u,0xf2u,0xb3u,0xc4u}) write(0x2122,value);
+    write(0x2121,255); write(0x2116,0x23); write(0x2117,1);
+    const bool cg = name == "dma_reverse_cgram", fault = name == "dma_reverse_fault";
+    const unsigned source = fault ? 0x001ffd : cg ? 0x7ffffd : 0x7efffd;
+    const unsigned regs[] = {cg ? 0x82u : 0x81u,cg ? 0x3bu : 0x39u,source%256,(source/256)%256,source/65536,cg ? 7u : fault ? 7u : 9u,0};
+    for (unsigned r = 0; r < 7; ++r) write(0x4300+r,regs[r]);
+    write(0x420b,1);
+    code.push_back(0xdb); for (unsigned i = 0; i < code.size(); ++i) image[i] = code[i];
+    image[0x7ffd] = 0x80; return image;
+  }
   if (name == "dma_pattern_matrix" || name == "dma_pattern_fault") {
     std::vector<uint8_t> image(32768,0), code;
     const auto write = [&](unsigned at, unsigned value) {

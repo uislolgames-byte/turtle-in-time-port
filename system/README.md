@@ -1186,3 +1186,56 @@ clocks when timed; final logical VMADD is $0126. Existing identity fixtures rema
 Semantics checked against [ares PPU address and buffer I/O](https://github.com/ares-emulator/ares/blob/master/ares/sfc/ppu/io.cpp),
 with independently written code. This extends the bounded memory/device subset;
 no display-access restrictions, per-cycle PPU pipeline or game execution is added.
+
+
+## Reverse DMA into WRAM
+
+DMAP bit 7 now selects B-to-A DMA for the bounded readable ports $2139/$213A
+(buffered VRAM) and $213B (CGRAM). The seven A-bus descriptor bytes retain their
+layout; A1T is the WRAM destination in this direction. All eight byte patterns
+use the same offsets, restart per channel/trigger, and apply BBAD wrap. Bits
+5/6 remain rejected. A selected descriptor must reach only readable ports for
+its actual count: mode 4/$39/count 3 is valid, count 4 rejects $3C before any
+selected channel starts. Forward destinations and existing behavior are unchanged.
+
+Each reverse byte resolves its A-bus destination to mapped WRAM before consuming
+its B-bus read. Direct banks $7E/$7F and existing low-WRAM mirrors are allowed;
+ROM, unmapped regions and CPU/PPU I/O fail explicitly. No I/O write can retrigger
+DMA or change a descriptor. A failed byte preserves its source buffer/latch,
+A1T and count. Earlier bytes and startup/channel/byte clocks survive; later
+channels do not run. This is a strict diagnostic policy, not hardware open-bus
+or ignored-write emulation. The WRAM data read port is not enabled for reverse
+DMA: the bounded writable A-bus is WRAM, so it would be a prohibited WRAM-to-WRAM
+transfer. HDMA remains absent.
+
+VRAM reads preserve the existing initial duplicate prefetched word, VMAIN mapping,
+selected low/high increment and logical wrap. CGRAM reads preserve the shared
+read/write phase and retained high-byte bit 7. Fixed/increment/decrement A1T
+works in both directions, with fixed taking precedence; low address wrap stays
+within its bank. Mixed forward/reverse channels execute in numerical order and
+share device state. Cost remains 8 shared + 8 per selected channel + 8 per byte;
+the timed runtime reserves maximum capacity before any device effect, charges
+actual partial progress and preserves a pending NMI on failure without charging
+the failed CPU STA.
+
+The direct independent reference checks 12288 count-aware reverse descriptors,
+2899 full-memory/register traces (all eight patterns, four source controls,
+four VMAIN mappings, odd counts, bank wrap, count zero=65536 and all 256 channel
+masks), and retained buffer bytes. Additional guards cover invalid destinations,
+whole-mask rejection, later-channel skipping, partial reads and exact/exhausted
+master-clock capacity. The reference uses literal DMA patterns and VRAM bit wiring.
+
+Six generated fixtures use original synthetic VRAM/CGRAM bytes and exercise
+reverse readback and a destination fault after three bytes, with/without timing.
+They add 3960 full-state budget/flag/origin comparisons and 149 scheduled-NMI
+boundaries plus a partial-fault NMI check. Full VRAM/CGRAM programs complete
+51 instructions and 153 nominal cycles, with 1258/1242 master clocks when timed
+(88/72 DMA clocks, nine/seven bytes). The partial fault completes 49 instructions,
+146 cycles and 1160 master clocks (40 DMA clocks, three bytes), at PC $807A.
+Only mapped WRAM changes; all VRAM/CGRAM storage, buffers and channel registers
+are compared against an independently implemented CPU/device reference.
+
+Transfer direction/address/pattern semantics were checked against [ares DMA](https://github.com/ares-emulator/ares/blob/master/ares/sfc/cpu/dma.cpp),
+with independently written code. Timing remains instruction-boundary based,
+without DMA alignment/arbitration, refresh, per-byte video scheduling, general
+B-bus destinations or a full PPU. This does not complete M3/M4 or run the game.
