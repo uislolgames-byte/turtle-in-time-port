@@ -84,6 +84,22 @@ inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
     for (unsigned i = 0; i < 4; ++i) code.insert(code.end(),{0xad,0x3b,0x21,0x8d,uint8_t(i),0x10});
     code.push_back(0xdb); return code;
   }
+  if (name == "bus_video_layers") return recompiler_fixture("video_layers");
+  if (name == "video_layers") {
+    auto image = recompiler_fixture("video_4bpp");
+    std::vector<uint8_t> code(image.begin(),image.begin()+325);
+    const auto write = [&](unsigned at, unsigned value) {
+      code.insert(code.end(),{0xa9,uint8_t(value),0x8d,uint8_t(at),uint8_t(at >> 8)});
+    };
+    write(0x2108,255); write(0x210b,0x44);
+    write(0x210f,3); write(0x210f,0); write(0x2110,5); write(0x2110,0);
+    write(0x212c,3); write(0x212c,2); write(0x212c,1); write(0x212c,3);
+    write(0x2105,49); write(0x2105,0); write(0x212c,0); write(0x212c,3);
+    write(0x2105,1); write(0x2105,33); write(0x2105,17); write(0x2105,1);
+    code.push_back(0xdb);
+    for (unsigned i = 0; i < code.size(); ++i) image[i] = code[i];
+    return image;
+  }
   if (name == "bus_video_4bpp") return recompiler_fixture("video_4bpp");
   if (name == "video_4bpp") {
     auto image = recompiler_fixture("video_large");

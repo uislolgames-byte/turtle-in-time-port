@@ -5,7 +5,7 @@
 #include <vector>
 
 namespace system816 {
-// Host diagnostic snapshots, not a running PPU: no scanlines or composition.
+// Host diagnostic snapshots with BG1/BG2 composition, not a running scanline PPU.
 struct PreviewRGB {
   uint8_t r, g, b;
   bool operator==(const PreviewRGB& o) const { return r == o.r && g == o.g && b == o.b; }
@@ -65,45 +65,61 @@ inline PreviewFrame render_2bpp_preview(const Bus& bus, const PreviewConfig& c) 
   }
   return frame;
 }
-// Mode 0/1 BG1 (2bpp/4bpp), 8x8/16x16 tiles, all four BG1SC map geometries.
-// Width/height are host crop controls only; map and character addresses come from MMIO.
+namespace preview_detail {
+struct Sample { unsigned color, rank; };
+inline Sample background(const Bus& bus, unsigned bg, unsigned x, unsigned y) {
+  const auto& r = bus.video_registers();
+  const unsigned map = bg ? r.bg2_map : r.bg1_map;
+  const unsigned ox = bg ? r.bg2_x : r.bg1_x, oy = bg ? r.bg2_y : r.bg1_y;
+  const unsigned screens_wide = (map & 1) ? 2 : 1;
+  const unsigned tile_size = (r.mode & (16u << bg)) ? 16 : 8, screen_size = tile_size*32;
+  const unsigned map_width = screens_wide*screen_size, map_height = (map & 2) ? screen_size*2 : screen_size;
+  const unsigned map_base = ((map >> 2)*2048)&65535;
+  const unsigned tile_base = (((unsigned(r.bg12_tiles) >> (bg*4))&15)*8192)&65535;
+  const bool four_bpp = (r.mode & 1) != 0;
+  const unsigned sx = (x+ox)%map_width, sy = (y+oy)%map_height;
+  const unsigned screen = (sy/screen_size)*screens_wide+sx/screen_size;
+  const unsigned at = (map_base+screen*2048+2*((sy/tile_size%32)*32+sx/tile_size%32))&65535;
+  const unsigned entry = bus.vram_byte(at) | (unsigned(bus.vram_byte((at+1)&65535)) << 8);
+  const unsigned px = (entry & 0x4000) ? tile_size-1-sx%tile_size : sx%tile_size;
+  const unsigned py = (entry & 0x8000) ? tile_size-1-sy%tile_size : sy%tile_size;
+  const unsigned character = ((entry&1023)+px/8+(py/8)*16)&1023;
+  const unsigned row = py%8, bit = 7-px%8;
+  const unsigned planes = (tile_base+character*(four_bpp ? 32 : 16)+row*2)&65535;
+  unsigned index = ((bus.vram_byte(planes) >> bit)&1) | (((bus.vram_byte((planes+1)&65535) >> bit)&1) << 1);
+  if (four_bpp) index |= (((bus.vram_byte((planes+16)&65535) >> bit)&1) << 2) |
+                         (((bus.vram_byte((planes+17)&65535) >> bit)&1) << 3);
+  const unsigned palette = (four_bpp ? 0 : bg*32)+((entry >> 10)&7)*(four_bpp ? 16 : 4);
+  return {index ? palette+index : 0,index ? ((entry&0x2000) ? 4-bg : 2-bg) : 0};
+}
+}
+// Mode 0/1 BG1+BG2. Crop arguments stay in 8-pixel units, independent of tile size.
+inline PreviewFrame capture_main_preview(const Bus& bus, unsigned width_tiles = 32, unsigned height_tiles = 32) {
+  const auto& r = bus.video_registers();
+  if ((r.mode & ~49u) || (r.main_screen & ~3u))
+    throw std::invalid_argument("Main capture requires Mode 0/1, BG1/BG2 tile-size bits and BG1/BG2-only main screen");
+  if (!width_tiles || width_tiles > 32 || !height_tiles || height_tiles > 32)
+    throw std::invalid_argument("Invalid main capture crop");
+  PreviewFrame frame{width_tiles*8,height_tiles*8,{}};
+  frame.pixels.resize(frame.width*frame.height);
+  const unsigned brightness = r.display&15;
+  const bool blank = (r.display&128) || brightness == 0;
+  for (unsigned y = 0; y < frame.height; ++y) for (unsigned x = 0; x < frame.width; ++x) {
+    preview_detail::Sample selected{0,0};
+    if (!blank) for (unsigned bg = 0; bg < 2; ++bg) if (r.main_screen & (1u << bg)) {
+      const auto sample = preview_detail::background(bus,bg,x,y);
+      if (sample.rank > selected.rank) selected = sample;
+    }
+    frame.pixels[y*frame.width+x] = blank ? PreviewRGB{0,0,0} : preview_rgb(bus.cgram_color(selected.color),brightness);
+  }
+  return frame;
+}
+// Retain the previous single-layer contract; use capture_main_preview for BG2/composition.
 inline PreviewFrame capture_bg1_preview(const Bus& bus, unsigned width_tiles = 32, unsigned height_tiles = 32) {
   const auto& r = bus.video_registers();
   if ((r.mode & ~17u) || (r.main_screen & ~1u))
     throw std::invalid_argument("BG1 capture requires Mode 0/1, BG1 tile-size bit only and BG1-only main screen");
-  if (!width_tiles || width_tiles > 32 || !height_tiles || height_tiles > 32)
-    throw std::invalid_argument("Invalid BG1 capture crop");
-  const unsigned brightness = r.display & 15;
-  if ((r.display & 128) || brightness == 0 || !(r.main_screen & 1)) {
-    const auto backdrop = preview_rgb(bus.cgram_color(0),brightness);
-    const PreviewRGB color = (r.display & 128) || brightness == 0 ? PreviewRGB{0,0,0} : backdrop;
-    return {width_tiles*8,height_tiles*8,std::vector<PreviewRGB>(width_tiles*height_tiles*64,color)};
-  }
-  const unsigned screens_wide = (r.bg1_map & 1) ? 2 : 1;
-  const unsigned tile_size = (r.mode & 16) ? 16 : 8, screen_size = tile_size*32;
-  const unsigned map_width = screens_wide*screen_size, map_height = (r.bg1_map & 2) ? screen_size*2 : screen_size;
-  const unsigned map_base = ((unsigned(r.bg1_map) >> 2)*2048)&65535;
-  const unsigned tile_base = ((unsigned(r.bg12_tiles)&15)*8192)&65535;
-  const bool four_bpp = (r.mode & 1) != 0;
-  PreviewFrame frame{width_tiles*8,height_tiles*8,{}};
-  frame.pixels.resize(frame.width*frame.height);
-  for (unsigned y = 0; y < frame.height; ++y) for (unsigned x = 0; x < frame.width; ++x) {
-    const unsigned sx = (x+r.bg1_x)%map_width, sy = (y+r.bg1_y)%map_height;
-    const unsigned screen = (sy/screen_size)*screens_wide+sx/screen_size;
-    const unsigned at = (map_base+screen*2048+2*((sy/tile_size%32)*32+sx/tile_size%32))&65535;
-    const unsigned entry = bus.vram_byte(at) | (unsigned(bus.vram_byte((at+1)&65535)) << 8);
-    const unsigned px = (entry & 0x4000) ? tile_size-1-sx%tile_size : sx%tile_size;
-    const unsigned py = (entry & 0x8000) ? tile_size-1-sy%tile_size : sy%tile_size;
-    const unsigned character = ((entry&1023)+px/8+(py/8)*16)&1023;
-    const unsigned row = py%8, bit = 7-px%8;
-    const unsigned planes = (tile_base+character*(four_bpp ? 32 : 16)+row*2)&65535;
-    unsigned index = ((bus.vram_byte(planes) >> bit)&1) | (((bus.vram_byte((planes+1)&65535) >> bit)&1) << 1);
-    if (four_bpp) index |= (((bus.vram_byte((planes+16)&65535) >> bit)&1) << 2) |
-                           (((bus.vram_byte((planes+17)&65535) >> bit)&1) << 3);
-    const unsigned palette = ((entry >> 10)&7)*(four_bpp ? 16 : 4);
-    frame.pixels[y*frame.width+x] = preview_rgb(bus.cgram_color(index ? palette+index : 0),brightness);
-  }
-  return frame;
+  return capture_main_preview(bus,width_tiles,height_tiles);
 }
 // Portable, uncompressed 24-bit BMP. The diagnostic frame itself is top-down RGB.
 inline void write_preview_bmp(std::ostream& out, const PreviewFrame& frame) {

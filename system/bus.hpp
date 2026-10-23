@@ -14,7 +14,8 @@ enum class Fault { address, unmapped, rom_bounds, read_only };
 // Diagnostic lifecycle defaults, not hardware power-on state. CPU reads remain unsupported.
 struct VideoRegisters {
   uint8_t display = 0x80, mode = 0, bg1_map = 0, bg12_tiles = 0, main_screen = 0;
-  unsigned bg1_x = 0, bg1_y = 0;
+  uint8_t bg2_map = 0;
+  unsigned bg1_x = 0, bg1_y = 0, bg2_x = 0, bg2_y = 0;
 };
 class BusError : public std::runtime_error {
 public:
@@ -155,7 +156,8 @@ private:
     return io >= 0x4300 && io <= 0x4376 && (io & 15) <= 6;
   }
   static bool writable_io(uint32_t io) {
-    return io == 0x2100 || io == 0x2105 || io == 0x2107 || io == 0x210b || io == 0x210d || io == 0x210e || io == 0x212c ||
+    return io == 0x2100 || io == 0x2105 || io == 0x2107 || io == 0x2108 || io == 0x210b ||
+      (io >= 0x210d && io <= 0x2110) || io == 0x212c ||
       (io >= 0x2115 && io <= 0x2119) || io == 0x2121 || io == 0x2122 || (io >= 0x2180 && io <= 0x2183) || dma_register(io) || io == 0x420b || io == 0x420d;
   }
   void prefetch_vram() {
@@ -175,14 +177,17 @@ private:
     if (io == 0x2100) { video_.display = value & 0x8f; return; }
     if (io == 0x2105) { video_.mode = value; return; }
     if (io == 0x2107) { video_.bg1_map = value; return; }
+    if (io == 0x2108) { video_.bg2_map = value; return; }
     if (io == 0x210b) { video_.bg12_tiles = value; return; }
     if (io == 0x212c) { video_.main_screen = value & 31; return; }
-    if (io == 0x210d) {
-      video_.bg1_x = (unsigned(value&3) << 8) | (bg_offset_shared_ & 248) | (bg_offset_horizontal_ & 7);
+    if (io == 0x210d || io == 0x210f) {
+      auto& offset = io == 0x210d ? video_.bg1_x : video_.bg2_x;
+      offset = (unsigned(value&3) << 8) | (bg_offset_shared_ & 248) | (bg_offset_horizontal_ & 7);
       bg_offset_shared_ = value; bg_offset_horizontal_ = value; return;
     }
-    if (io == 0x210e) {
-      video_.bg1_y = (unsigned(value&3) << 8) | bg_offset_shared_;
+    if (io == 0x210e || io == 0x2110) {
+      auto& offset = io == 0x210e ? video_.bg1_y : video_.bg2_y;
+      offset = (unsigned(value&3) << 8) | bg_offset_shared_;
       bg_offset_shared_ = value; return;
     }
     if (io == 0x2115) {

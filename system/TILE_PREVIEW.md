@@ -208,10 +208,50 @@ O CI salva sete BMPs `preview-4bpp-*`: small, large, dim, blank, restored,
 2bpp e 4bpp, nos limites 116, 118, 120, 122, 124, 128 e 130. Cada captura
 é escrita depois da comparação com a referência independente.
 
+## Composição BG1/BG2
+
+`capture_main_preview` acrescenta composição das duas primeiras camadas da
+main screen nos Modes 0/1. BG2SC ($2108), BG2HOFS ($210F) e BG2VOFS ($2110)
+são escritas de byte opt-in, com os mesmos aliases e restrições de leitura/palavra
+das portas anteriores. O nibble alto de BG12NBA seleciona a base de BG2;
+BGMODE bit 5 seleciona seu tile 16×16 independentemente do bit 4 de BG1.
+Mapas, geometrias e offsets são próprios por camada. Os latches horizontal e
+compartilhado de scroll são comuns às quatro portas H/V de BG1/BG2. Reset
+limpa também BG2; inspeção/captura/limpeza de dados preservam os latches.
+
+TM permite zero, BG1, BG2 ou ambas (bits 0–1). Pixels de índice zero são
+transparentes: não vencem outra camada, independentemente da prioridade. A
+ordem de pixels opacos é BG1 alta, BG2 alta, BG1 baixa, BG2 baixa. No Mode 0,
+BG2 usa o bloco CGRAM 32–63; no Mode 1, ambas usam grupos de 16 em CGRAM
+0–127. O backdrop global só aparece quando nenhum pixel visível vence.
+Brilho é aplicado à cor resultante; forced blank continua produzindo preto.
+Referências: [I/O e prioridades no ares](https://github.com/ares-emulator/ares/blob/master/ares/sfc/ppu/io.cpp)
+e [offset de paleta e transparência](https://github.com/ares-emulator/ares/blob/master/ares/sfc/ppu/background.cpp).
+
+A API `capture_bg1_preview` mantém o contrato anterior, inclusive rejeitando
+TM com BG2 ou bit de tamanho BG2; chama o compositor apenas após validar esse
+contrato. A nova API aceita BGMODE bits 0/4/5 e TM bits 0/1. BG3/BG4, OBJ,
+subscreen, janelas e efeitos de cor permanecem rejeitados ou ausentes. Não há
+PPU por scanlines nem sincronização de vídeo implementada por esta composição.
+
+`system_video_layers` verifica 65536 históricos H/V entre camadas e aliases,
+279680 snapshots e 18120704 pixels independentes. A matriz completa combina
+os índices opacos/transparentes, quatro pares de prioridade, oito paletas em
+cada camada e todas as quatro máscaras TM em ambos os modos. Também cobre
+BG2 com geometrias, offsets/bordas e tamanho oposto a BG1, rejeições e reset.
+
+Duas fixtures geradas percorrem 170 limites cada, com 348160 comparações de
+pixels, CPU/flags/tempo/controles e toda memória. Rastro final: 167 instruções,
+501 ciclos nominais, 79662 master clocks (75824 DMA/9472 bytes). O CI salva
+oito BMPs `preview-layers-*`: combined, bg2, bg1, large, mode0, bg2-large,
+bg1-large e restored, nos limites 144, 146, 148, 152, 154, 162, 164 e 166.
+O programa altera somente os controles depois do DMA inicial, sem reescrever
+o conteúdo gráfico. Todos os dados e imagens são originais sintéticos.
+
 ## Limite do avanço
 
 Esta é uma ferramenta de diagnóstico chamada pelo host depois da execução.
 A configuração agora pode vir do programa via MMIO, mas ainda faltam scanlines,
-demais modos de vídeo, composição de camadas/sprites, janelas,
+demais modos de vídeo, BG3/BG4, sprites, efeitos de cor e janelas,
 sincronização completa e apresentação pela interface. Não conclui os Marcos
 3 ou 4 e não significa que o jogo execute.
