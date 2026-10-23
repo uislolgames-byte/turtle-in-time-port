@@ -21,10 +21,10 @@ normalized `data`; no file loader or commercial data is added here.
 WRAM banks take precedence over ROM mapping. Banks `$80–FF` mirror the
 corresponding lower ROM banks. The mapped offset must exist in the supplied
 cartridge; smaller ROMs do not wrap to fill unpopulated banks. Additional LoROM
-aliases in the lower half of banks are deliberately unsupported. No SRAM,
-PPU/APU registers, open-bus behavior or cartridge chips. CPU instruction cycles
+aliases in the lower half of banks are deliberately unsupported. The default
+bus has no SRAM, PPU/APU registers, open-bus behavior or cartridge chips. CPU instruction cycles
 are nominal; address timing is a separate query described below.
-MMIO is disabled by default; an explicit optional DMA/WRAM-port subset is below.
+MMIO is disabled by default; an explicit optional DMA/WRAM/VRAM-port subset is below.
 The model is intentionally stricter and smaller than real SNES hardware.
 
 `read8`/`write8` are byte operations on checked 24-bit addresses. A ROM write,
@@ -112,7 +112,8 @@ rejects these addresses.
 Registers $43n0–43n6 are readable/writable for all eight channels: control, B-bus
 target, A-bus address low/high/bank and size low/high. Each bit of a byte write
 to $420B selects a channel; they run synchronously in ascending order. A zero
-mask does nothing. Only mode 0, A-to-B, target $80 (WRAM port) is implemented.
+mask does nothing. Target $80 (WRAM port) supports mode 0, A-to-B only.
+Additional VRAM destinations and mode 1 are described in the VRAM section below.
 Control $00 increments the source, $10 decrements it, $08/$18 fixes it. The
 16-bit source wraps without changing its bank. Count zero means 65,536 bytes.
 After each successful byte, source/size registers and the WRAM pointer advance.
@@ -135,7 +136,7 @@ byte. This cannot establish frame timing or complete milestone 3.
 Runtime loads/stores involving MMIO must be 8-bit. Sixteen-bit MMIO, stack MMIO
 and MVN/MVP MMIO are rejected before effects. `reset_cpu` resets these devices
 and their counters while preserving WRAM. `clear_ram` only clears RAM. There are
-no video ports or image output yet. Reference for DMA ordering/byte overhead:
+no image output; the minimal VRAM write ports are described below. Reference for DMA ordering/byte overhead:
 upstream bsnes [DMA implementation](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/sfc/cpu/dma.cpp).
 No upstream source code was copied.
 
@@ -163,7 +164,7 @@ emulation. Transfers in leaf subroutines remain unsupported. There is no
 mid-program restart API after stopping partway through a block.
 
 These are CPU instructions, **not SNES DMA/HDMA**. The optional DMA subset above is separate; general DMA/HDMA, bus arbitration
-and PPU ports remain absent. Tests cover
+and PPU scheduling remain absent. Tests cover
 increment/decrement, ROM-to-WRAM, wrapping, separate M/X widths, a complete 64 KiB
 bank, partial budgets, NMI, immutable ROM and errors partway through a block.
 Reference for instruction behavior: upstream bsnes
@@ -370,7 +371,7 @@ the existing three nominal entry cycles: one fetch plus two internal cycles
 (20 clocks); idle time after STP is not accumulated. This is an explicit subset
 accounting convention, not a full model of hardware stop/wakeup.
 
-Timed byte MMIO covers the existing MEMSEL, WRAM-port and eight-channel mode-0 DMA subset
+Timed byte MMIO covers MEMSEL, WRAM/VRAM write ports and the supported eight-channel DMA subset
 (see the CPU/DMA contract below). Unsupported MMIO stops before effects.
 Ordinary faults and rejected ROM writes charge no partial
 instruction time, consistent with the existing diagnostic fault policy. Capacity
@@ -747,7 +748,7 @@ no source code was copied.
 A new direct test independently compares all 65536 VRAM bytes in 96 CPU-port
 cases and 1152 DMA cases, including increment selection, aliases, mode 0/1,
 fixed/increment/decrement, odd counts and ROM/WRAM/mirrored-WRAM sources. Extra
-checks cover a full 64 KiB WRAM copy, mixed WRAM→VRAM channel chaining, unsupported
+checks cover a full 64 KiB WRAM copy, mixed WRAM→VRAM channel chaining, odd-sized channel phase reset, unsupported
 settings/reads, opt-in, word guards, capacity and reset/preservation. Six generated
 fixtures add 186 complete CPU/VRAM/WRAM/register/time traces and 920 master-event
 boundaries. A partial source fault retains its first VRAM byte, 24 DMA clocks

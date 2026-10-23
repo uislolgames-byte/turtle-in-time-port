@@ -75,6 +75,13 @@ int main() {
     for (unsigned i = 0; i < 4; ++i) check(bus->vram_byte(i) == rom[0x1000+i],"mixed WRAM/VRAM channel order");
     check(bus->dma_clocks() == 88 && bus->dma_bytes() == 8 && bus->vram_address() == 2 && bus->wram_address() == 0x1004,
           "mixed WRAM/VRAM counters");
+    // Each channel starts mode-1 at the low port, even after an odd previous count.
+    bus->reset_devices(); bus->clear_vram(); bus->write8(0x2115,0x80);
+    channel(*bus,0,1,0x18,0x9000,1); channel(*bus,7,1,0x18,0x9001,1); bus->write8(0x420b,0x81);
+    check(bus->vram_byte(0) == rom[0x1001] && bus->vram_byte(1) == 0 && bus->vram_address() == 0 &&
+          bus->dma_clocks() == 40 && bus->dma_bytes() == 2,"mode-1 phase leaked between odd-sized channels");
+    // Restore the fixed state used by the following atomic-control guards.
+    bus->write8(0x2118,rom[0x1000]); bus->write8(0x2116,2);
     // Unsupported VMAIN values are atomic and preserve earlier contents/control.
     for (unsigned value : {4u,8u,16u,32u,64u,255u}) {
       rejected([&] { bus->write8(0x2115,static_cast<uint8_t>(value)); });
