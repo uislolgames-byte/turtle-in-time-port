@@ -84,6 +84,22 @@ inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
     for (unsigned i = 0; i < 4; ++i) code.insert(code.end(),{0xad,0x3b,0x21,0x8d,uint8_t(i),0x10});
     code.push_back(0xdb); return code;
   }
+  if (name == "bus_video_scroll") return recompiler_fixture("video_scroll");
+  if (name == "video_scroll") {
+    auto image = recompiler_fixture("video_registers");
+    std::vector<uint8_t> code(image.begin(),image.begin()+190);
+    const auto write = [&](unsigned at, unsigned value) {
+      code.insert(code.end(),{0xa9,uint8_t(value),0x8d,uint8_t(at),uint8_t(at >> 8)});
+    };
+    write(0x210d,3); write(0x210d,0); write(0x210e,5); write(0x210e,0);
+    write(0x210d,255); write(0x210d,3); write(0x210e,255); write(0x210e,3);
+    // Interleaved H/V writes exercise the shared latch and separate horizontal low bits.
+    write(0x210d,0xab); write(0x210e,0xc7); write(0x210d,2);
+    write(0x210d,0); write(0x210d,0); write(0x210e,0); write(0x210e,0);
+    code.push_back(0xdb);
+    for (unsigned i = 0; i < code.size(); ++i) image[i] = code[i];
+    return image;
+  }
   if (name == "bus_video_registers") return recompiler_fixture("video_registers");
   if (name == "video_registers") {
     auto image = recompiler_fixture("tile_preview");

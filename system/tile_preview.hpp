@@ -58,7 +58,7 @@ inline PreviewFrame render_2bpp_preview(const Bus& bus, const PreviewConfig& c) 
   }
   return frame;
 }
-// One supported register configuration: Mode 0 BG1, 8x8 tiles, 32x32 map, no scroll.
+// One supported register configuration: Mode 0 BG1, 8x8 tiles, 32x32 map.
 // Width/height are host crop controls only; map and character addresses come from MMIO.
 inline PreviewFrame capture_bg1_preview(const Bus& bus, unsigned width_tiles = 32, unsigned height_tiles = 32) {
   const auto& r = bus.video_registers();
@@ -72,9 +72,18 @@ inline PreviewFrame capture_bg1_preview(const Bus& bus, unsigned width_tiles = 3
     const PreviewRGB color = (r.display & 128) || brightness == 0 ? PreviewRGB{0,0,0} : backdrop;
     return {width_tiles*8,height_tiles*8,std::vector<PreviewRGB>(width_tiles*height_tiles*64,color)};
   }
+  const bool shifted = (r.bg1_x%256) || (r.bg1_y%256);
   const PreviewConfig c{((unsigned(r.bg1_map) >> 2)*2048)&65535,
-                        ((unsigned(r.bg12_tiles)&15)*8192)&65535,width_tiles,height_tiles,0};
+                        ((unsigned(r.bg12_tiles)&15)*8192)&65535,
+                        shifted ? 32 : width_tiles,shifted ? 32 : height_tiles,0};
   auto frame = render_2bpp_preview(bus,c);
+  if (shifted) {
+    PreviewFrame crop{width_tiles*8,height_tiles*8,{}};
+    crop.pixels.resize(crop.width*crop.height);
+    for (unsigned y = 0; y < crop.height; ++y) for (unsigned x = 0; x < crop.width; ++x)
+      crop.pixels[y*crop.width+x] = frame.pixels[((y+r.bg1_y)%256)*256+(x+r.bg1_x)%256];
+    frame = std::move(crop);
+  }
   if (brightness != 15) {
     // Recover the exact 5-bit channels from their bit-replicated representation.
     for (auto& p : frame.pixels)

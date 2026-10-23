@@ -44,9 +44,9 @@ paleta estão definidos em `tests/recompiler_fixtures.hpp`.
 
 ## Captura comandada por registradores
 
-`capture_bg1_preview(bus, largura_tiles, altura_tiles)` usa cinco registradores
+`capture_bg1_preview(bus, largura_tiles, altura_tiles)` usa registradores
 escritos pelo programa recompilado: INIDISP ($2100), BGMODE ($2105), BG1SC
-($2107), BG12NBA ($210B) e TM ($212C). O host só escolhe o recorte. O barramento
+($2107), BG12NBA ($210B), TM ($212C) e BG1HOFS/BG1VOFS ($210D/$210E). O host só escolhe o recorte. O barramento
 opt-in aceita escrita de byte nos aliases $00–$3F/$80–$BF; leituras CPU e palavras
 MMIO permanecem rejeitadas. Escritas guardam inclusive configurações ainda não
 suportadas; é a captura que as diagnostica, antes de produzir qualquer imagem.
@@ -61,7 +61,7 @@ Forced blank produz preto; brilho 0 produz preto; os 16 níveis afetam inclusive
 backdrop quando BG1 está desativada. Não há restrições de acesso VRAM por blank.
 
 Construção/reset de dispositivos/CPU deixam display em $80 e os quatro outros
-controles em zero: política determinística de diagnóstico, sem alegar power-on
+controles e deslocamentos em zero: política determinística de diagnóstico, sem alegar power-on
 real. Reset preserva memórias e as limpezas de memória preservam controles.
 Referências: [registradores no bsnes](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/sfc/ppu/io.cpp)
 e [tabela digital de brilho](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/sfc/ppu/ppu.cpp).
@@ -78,10 +78,40 @@ O CI inclui três BMPs extras nos artefatos `synthetic-preview-*`:
 `preview-registers-blank.bmp`. São capturados respectivamente nos limites
 70, 72 e 74, depois de verificar todos os pixels esperados.
 
+## Scroll BG1 horizontal e vertical
+
+$210D/$210E agora atualizam deslocamentos de 10 bits a cada escrita, sem um
+commit alternado de dois bytes. O histórico de bytes é compartilhado: a escrita
+vertical usa o byte compartilhado anterior; a horizontal combina seus cinco bits
+superiores com três bits retidos da última escrita horizontal. Escritas em outras
+portas, inspeção/captura e limpezas de memória preservam esse histórico. Reset de
+CPU/dispositivos limpa deslocamentos e os dois latches. Não há espelho Mode 7,
+pois esse modo permanece fora do subconjunto.
+
+A captura amostra `(x+HOFS, y+VOFS)` no mapa de 256×256 pixels com wrap nos dois
+eixos; deslocamentos separados por 256 são equivalentes neste mapa 32×32. O recorte
+do host continua começando na origem da saída. Espelhamentos/paletas são aplicados
+nos tiles de origem, antes de brilho/blank. O snapshot é calculado da memória
+atual, sem simular a busca antecipada de pixels de uma PPU por scanlines.
+Referência: [escritas de offset no bsnes](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/sfc/ppu/io.cpp).
+
+`system_video_scroll` verifica 65536 pares de bytes, 327680 históricos H/V
+intercalados, aliases e máscara de 10 bits; 1310720 pixels independentes cobrem
+todos os 1024 offsets em cada eixo, subtiles, flips, paletas e wrap, incluindo
+capturas completas nas bordas. Testa acesso rejeitado, latches preservados e reset.
+Duas fixtures geradas percorrem 110 limites cada, com 225280 comparações de pixels,
+CPU/flags/controles, toda memória e tempo. O programa final tem 107 instruções,
+321 ciclos nominais e 5322 master clocks (2864 DMA/352 bytes).
+
+O CI salva `preview-scroll-shift.bmp` (offset 3,5), `preview-scroll-wrap.bmp`
+(1023,1023) e `preview-scroll-restored.bmp` (0,0), nos limites 84, 92 e 106.
+Todos os pixels são comparados antes de escrever os arquivos, incluídos nos
+artefatos `synthetic-preview-*` e nos registros para comparação entre plataformas.
+
 ## Limite do avanço
 
 Esta é uma ferramenta de diagnóstico chamada pelo host depois da execução.
 A configuração agora pode vir do programa via MMIO, mas ainda faltam scanlines,
-scroll, outros modos/tamanhos, composição de camadas/sprites, janelas,
+outros modos/tamanhos, composição de camadas/sprites, janelas,
 sincronização completa e apresentação pela interface. Não conclui os Marcos
 3 ou 4 e não significa que o jogo execute.

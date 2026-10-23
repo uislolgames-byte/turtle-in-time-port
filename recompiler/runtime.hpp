@@ -102,7 +102,8 @@ inline bool begin_bus_instruction(State& s, unsigned limit, unsigned cycles,
       if (s.bus->is_mmio(at) && !(bytes == 1 && (((at & 65535) >= 0x4300 && (at & 65535) <= 0x4376 && (at & 15) <= 6) ||
           ((at & 65535) == 0x2180) || (!writing && ((at & 65535) == 0x2139 || (at & 65535) == 0x213a || (at & 65535) == 0x213b)) || (writing && (((at & 65535) >= 0x2115 && (at & 65535) <= 0x2119) || ((at & 65535) >= 0x2181 && (at & 65535) <= 0x2183) ||
           (at & 65535) == 0x2121 || (at & 65535) == 0x2122 || (at & 65535) == 0x420b || (at & 65535) == 0x420d ||
-          (at & 65535) == 0x2100 || (at & 65535) == 0x2105 || (at & 65535) == 0x2107 || (at & 65535) == 0x210b || (at & 65535) == 0x212c))))) {
+          (at & 65535) == 0x2100 || (at & 65535) == 0x2105 || (at & 65535) == 0x2107 || (at & 65535) == 0x210b ||
+          (at & 65535) == 0x210d || (at & 65535) == 0x210e || (at & 65535) == 0x212c))))) {
         s.stop = Stop::contract; s.diagnostic = "Unsupported timed MMIO access"; return false;
       }
       cost += s.bus->cpu_access_clocks(at);
