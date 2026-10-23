@@ -5,6 +5,23 @@
 #include <cstdint>
 #include <utility>
 inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
+  if (name == "irq_horizontal") return recompiler_fixture("bus_irq_horizontal");
+  if (name == "bus_horizontal_irq_fault") return recompiler_fixture("dma_cgram_fault");
+  if (name == "bus_irq_horizontal" || name == "bus_irq_combined" || name == "bus_irq_combined_native") {
+    std::vector<uint8_t> image(32768,0), code;
+    if (name == "bus_irq_combined_native") code = {0x18,0xfb};
+    const unsigned control = name == "bus_irq_horizontal" ? 16 : 176;
+    for (const auto& pair : std::vector<std::pair<unsigned,unsigned>>{{0x4207,127},{0x4208,0},{0x4209,225},{0x420a,0},{0x4200,control}})
+      code.insert(code.end(),{0xa9,static_cast<uint8_t>(pair.second),0x8d,static_cast<uint8_t>(pair.first),static_cast<uint8_t>(pair.first >> 8)});
+    code.insert(code.end(),{0x58,0xea,0x80,0xfd});
+    for (unsigned i = 0; i < code.size(); ++i) image[i] = code[i];
+    const std::vector<uint8_t> nmi{0xad,0x10,0x42,0x8d,0,0x10,0xca,0x40};
+    const std::vector<uint8_t> irq{0xad,0x11,0x42,0x8d,1,0x10,0xe8,0x40};
+    for (unsigned i = 0; i < nmi.size(); ++i) { image[0x100+i] = nmi[i]; image[0x120+i] = irq[i]; }
+    for (unsigned v : {0x7feau,0x7ffau}) { image[v] = 0; image[v+1] = 0x81; }
+    for (unsigned v : {0x7feeu,0x7ffeu}) { image[v] = 0x20; image[v+1] = 0x81; }
+    image[0x7ffd] = 0x80; return image;
+  }
   if (name == "irq_vertical_emulation") return recompiler_fixture("bus_irq_vertical_emulation");
   if (name == "bus_video_irq_fault") return recompiler_fixture("dma_cgram_fault");
   if (name == "bus_irq_vertical_emulation" || name == "bus_irq_vertical_native") {

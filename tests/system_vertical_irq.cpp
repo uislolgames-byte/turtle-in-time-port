@@ -53,7 +53,7 @@ int main() {
       bus->write8(base+0x4209,225); bus->write8(base+0x420a,254); // Only bit 0 is wired.
       bus->write8(base+0x4200,160); bus->synchronize_video(306900);
       check(bus->vertical_irq().line() == 225 && bus->vertical_irq().asserted() && bus->video_interrupts().pending(),"VIRQ aliases");
-      for (unsigned invalid : {1u,16u,48u,255u}) {
+      for (unsigned invalid : {1u,2u,64u,255u}) {
         rejects([&] { bus->write8(base+0x4200,static_cast<uint8_t>(invalid)); });
         check(bus->vertical_irq().enabled() && bus->vertical_irq().asserted() && bus->video_interrupts().enabled() &&
               bus->video_interrupts().pending() && bus->vertical_irq().line() == 225,"invalid control changed active sources");

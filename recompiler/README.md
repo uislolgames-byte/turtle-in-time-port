@@ -236,5 +236,13 @@ The optional [vertical-only IRQ subset](../system/README.md#vertical-only-irq-bo
 adds byte VTIME writes ($4209/$420A), NMITIMEN bit 5 and mutable byte TIMEUP reads
 ($4211). Timed CPU/DMA progress can assert a held IRQ; IRQ entry respects P.I and
 does not clear the source. TIMEUP clears only this source. NMI retains priority.
-Untimed generated code can configure it without advancing raster time. Horizontal
-IRQ and hardware comparator/hold/pipeline delays remain outside this boundary model.
+Untimed generated code can configure it without advancing raster time. Hardware comparator/hold/pipeline delays remain outside this boundary model;
+the H/HV extension is described below.
+
+
+The [H/HV IRQ extension](../system/README.md#horizontal-and-combined-hv-irq-boundary-subset)
+adds byte HTIME writes ($4207/$4208) and NMITIMEN bit 4. H-only compares on every
+line; combined H+V compares only on VTIME. The encoded phase (HTIME+1)*4 deliberately
+omits hardware polling delays and is not a PPU dot counter. Timed CPU/DMA intervals
+retain crossed requests, accounting for absent short-line phases; untimed code does
+not advance the raster. TIMEUP and IRQ entry semantics are unchanged.

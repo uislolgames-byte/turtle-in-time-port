@@ -867,7 +867,7 @@ not advance it. Existing host diagnostic captures remain snapshots of memory.
 
 RasterClock itself is an observer, not a running PPU or full hardware scheduler.
 The optional vblank NMI source below now consumes the same completed master time.
-There is no horizontal/combined IRQ, dot/rendering pipeline, HDMA, DRAM refresh, bus arbitration,
+There is no dot/rendering pipeline, HDMA, DRAM refresh, bus arbitration,
 PAL/interlace/overscan selection, APU synchronization or rendering per scanline.
 External scheduled interrupts retain the existing boundary policy.
 The direct test compares every master clock across four frames against an
@@ -878,9 +878,9 @@ Existing timed interrupt and timed/untimed graphics comparisons also check the o
 
 ## Vblank NMI boundary subset
 
-With optional device I/O enabled, byte writes to $4200 now support bits 7 (NMI enable) and 5
-(vertical-only IRQ enable, described below); only $00/$20/$80/$A0 are accepted.
-Horizontal/combined IRQ and autojoy bits reject before mutation. Mutable byte reads at $4210 return the unread vblank
+With optional device I/O enabled, byte writes to $4200 now support bits 7 (NMI enable), 4 (H IRQ) and 5 (V IRQ).
+Only $00/$10/$20/$30/$80/$90/$A0/$B0 are accepted; autojoy and other bits reject
+before mutation. The comparator modes are described below. Mutable byte reads at $4210 return the unread vblank
 latch in bit 7, a fixed diagnostic CPU version 2 in bits 0-3 and zero in bits 4-6.
 This is not a general CPU open-bus model. Reads clear the latch, but do not cancel
 an already pending NMI. Read-only host inspection is available through
@@ -954,7 +954,7 @@ starting boundary and advances clocks at completion, following the same boundary
 approximation as the NMI subset. Untimed generated code never advances the
 raster; a status-polling loop therefore reaches its instruction budget rather
 than inventing video progress. Host reads never advance clocks. No autojoy,
-horizontal/combined IRQ, per-cycle read phase, hardware hold/pipeline delay, rendering per
+per-cycle read phase, hardware hold/pipeline delay, rendering per
 scanline or game execution is added.
 
 The direct test compares 1429465 master positions across four frames against an
@@ -973,9 +973,9 @@ reference tests also verify HBlank at every position. Reference:
 The optional device bus adds a 9-bit VTIME comparator: byte $4209 writes bits 0-7,
 $420A writes bit 8 from bit 0 (other high-byte bits are ignored). Reset selects
 line 0. NMITIMEN $4200 bit 5 enables vertical-only IRQ; bit 7 still independently
-enables NMI. Only $00/$20/$80/$A0 controls are accepted, with validation before
-mutating either source. Horizontal/combined modes (bit 4), autojoy and other bits
-remain rejected. HTIME $4207/$4208 is unsupported. Targets 262..511 are stored
+enables NMI. The H/HV extension below also accepts bit 4; only bits 7/5/4 are allowed,
+with validation before mutating either source. Autojoy and other bits remain
+rejected. HTIME $4207/$4208 is described in that extension. Targets 262..511 are stored
 but cannot match the fixed 262-line progressive raster.
 
 A false-to-true match of current scanline and VTIME asserts a held IRQ level.
@@ -1010,7 +1010,8 @@ handler. IRQ entry capacity failure retains the request and writes no frame.
 This remains a boundary approximation, not cycle-exact SNES IRQ timing: there
 is no four-clock hold, delayed comparator sampling, last-dot suppression, pipeline
 or IRQ-lock delay, per-bus-cycle ordering, refresh/arbitration or PPU/APU scheduler.
-No horizontal/combined IRQ, HDMA, rendering per scanline or game execution is added.
+The H/HV extension below remains subject to these timing limits. No HDMA,
+rendering per scanline or game execution is added.
 Reference: [ares IRQ match, NMITIMEN and TIMEUP](https://github.com/ares-emulator/ares/blob/master/ares/sfc/cpu/irq.cpp)
 and [CPU port mapping](https://github.com/ares-emulator/ares/blob/master/ares/sfc/cpu/io.cpp).
 
@@ -1022,3 +1023,59 @@ plus a partial DMA fault. Independent interpreters compare CPU/flags/full WRAM,
 stack/RTI, all clocks, NMI priority, P.I masking, TIMEUP and comparator state across
 13 origins, four initial P values, 61 budgets and long multi-frame loops. Fixed
 checks cover IRQ-entry capacity and external IRQ independence. All data is original.
+
+
+## Horizontal and combined H/V IRQ boundary subset
+
+HTIME byte writes are now supported at $4207 (low 8 bits) and $4208 (bit 8 from
+bit 0; other high-byte bits ignored). NMITIMEN bits 4/5 select disabled, H-only,
+V-only or combined H+V; bit 7 controls NMI independently. All eight combinations
+of bits 7/5/4 are accepted, other bits reject atomically. TIMEUP $4211 remains a
+single held IRQ level, not separate requests for each axis. Reading it clears
+only this source; external IRQs and NMI are unchanged. P.I masking, NMI priority,
+non-nested handlers and RTI behavior are preserved.
+
+The horizontal comparator uses the encoded master phase **(HTIME+1)*4** before
+hardware communication/poll delays. This follows the register encoding in the
+[ares CPU I/O implementation](https://github.com/ares-emulator/ares/blob/master/ares/sfc/cpu/io.cpp),
+with an explicitly simplified timing model. H-only mode matches that phase on
+every line; combined mode requires both that phase and VTIME. The comparison is
+true at the exact master phase, not throughout a four-clock bucket. Thus HTIME
+0 matches phase 4, 339 matches phase 1360 on normal lines, and 340..511 never
+match the fixed raster. The odd short line 240 has only 1360 clocks, so HTIME
+339 is skipped on that line. Combined HTIME 339/VTIME 240 matches only even
+frames; H-only skips only that one short line.
+
+Completed-interval accounting counts all valid comparator edges, including large
+CPU/DMA jumps that end outside a match. Multiple events coalesce into the held
+level. Counting is constant-time with an explicit subtraction for missing short-
+line events; it does not iterate per line at uint64-sized host origins. Mode or
+target writes re-evaluate at the current boundary. A false-to-true comparison
+asserts the level, but repeating a true comparison after reading TIMEUP does not
+rearm it. Changing among enabled modes retains a held level; disabling both axes
+clears it. VTIME is ignored in H-only mode and HTIME in V-only mode. Unreachable
+values remain stored. Reset clears targets/modes/level/time and keeps memories.
+
+`raster_irq()` is the host's const inspection API. The existing `vertical_irq()`
+accessor, `VerticalIrq` type and `enable(bool)` vertical-only API remain compatible.
+No host read advances clocks. Writes to read-only status, CPU reads of timer
+registers, words, stack/MVN/MVP and I/O DMA sources remain rejected. Optional I/O
+and the existing source-ahead/capacity checks remain in force.
+
+**Limits:** this is an encoded comparator at instruction boundaries, not a
+cycle-exact SNES H IRQ or a PPU dot counter. It omits delayed H/V sampling,
+four-clock hold, IRQ lock, last-dot suppression and per-bus-cycle register timing.
+HTIME encoding is not a conversion of the PPU's variable-length dots. No PPU/APU
+scheduler, DMA arbitration/refresh, HDMA or rendering per scanline is added.
+[ares IRQ polling](https://github.com/ares-emulator/ares/blob/master/ares/sfc/cpu/irq.cpp)
+shows the delayed hardware details deliberately outside this subset. No game runs.
+
+A four-frame independent iterative oracle changes all modes, targets and reads.
+All 512 H values are checked on normal/short lines and against six V targets in
+even/odd frames, plus split/multiframe jumps, uint64/rewind, eight controls, 128
+aliases and independent NMI/TIMEUP. Five original generated fixtures cover H-only,
+combined emulation/native, untimed H-only and partial DMA failure. They compare
+CPU/flags, all WRAM/stack, interrupt return state, all clocks and both sources at
+13 host origins, four initial P values and 61 budgets, with long loops, entry
+capacity and external IRQ checks. Prior V-only tests remain unchanged except
+that control validation recognizes the added H-mode values.

@@ -101,6 +101,7 @@ public:
       throw BusError(Fault::unmapped, address, "16-bit MMIO transfers unsupported");
   }
   const VblankNmi& video_interrupts() const { return video_nmi_; }
+  const VerticalIrq& raster_irq() const { return vertical_irq_; }
   const VerticalIrq& vertical_irq() const { return vertical_irq_; }
   void synchronize_video(uint64_t absolute) {
     if (devices_io_) { video_nmi_.synchronize(absolute); vertical_irq_.synchronize(absolute); }
@@ -171,7 +172,7 @@ private:
   static bool writable_io(uint32_t io) {
     return io == 0x2100 || io == 0x2105 || io == 0x2107 || io == 0x2108 || io == 0x210b ||
       (io >= 0x210d && io <= 0x2110) || io == 0x212c ||
-      (io >= 0x2115 && io <= 0x2119) || io == 0x2121 || io == 0x2122 || (io >= 0x2180 && io <= 0x2183) || dma_register(io) || io == 0x4200 || io == 0x4209 || io == 0x420a || io == 0x420b || io == 0x420d;
+      (io >= 0x2115 && io <= 0x2119) || io == 0x2121 || io == 0x2122 || (io >= 0x2180 && io <= 0x2183) || dma_register(io) || io == 0x4200 || io == 0x4207 || io == 0x4208 || io == 0x4209 || io == 0x420a || io == 0x420b || io == 0x420d;
   }
   void prefetch_vram() {
     const unsigned low = (vram_word_*2) & 65535;
@@ -188,9 +189,11 @@ private:
   }
   void write_io(uint32_t io, uint8_t value, uint32_t address) {
     if (io == 0x4200) {
-      if (value & ~0xa0u) throw BusError(Fault::unmapped,address,"NMITIMEN supports only NMI and vertical IRQ enable bits");
-      video_nmi_.enable((value & 128) != 0); vertical_irq_.enable((value & 32) != 0); return;
+      if (value & ~0xb0u) throw BusError(Fault::unmapped,address,"NMITIMEN supports only NMI and H/V IRQ enable bits");
+      video_nmi_.enable((value & 128) != 0); vertical_irq_.configure((value & 16) != 0,(value & 32) != 0); return;
     }
+    if (io == 0x4207) { vertical_irq_.write_horizontal_low(value); return; }
+    if (io == 0x4208) { vertical_irq_.write_horizontal_high(value); return; }
     if (io == 0x4209) { vertical_irq_.write_low(value); return; }
     if (io == 0x420a) { vertical_irq_.write_high(value); return; }
     if (io == 0x2100) { video_.display = value & 0x8f; return; }
