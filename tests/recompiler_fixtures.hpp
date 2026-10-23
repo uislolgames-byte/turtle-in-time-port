@@ -5,6 +5,21 @@
 #include <cstdint>
 inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
   if (name.rfind("bus_dma_",0) == 0) return recompiler_fixture(name.substr(4));
+  if (name == "bus_irq_dma_emulation" || name == "bus_irq_dma_native") {
+    std::vector<uint8_t> image(32768,0);
+    auto main = recompiler_fixture("dma_wram");
+    if (name == "bus_irq_dma_native") main.insert(main.begin(),{0x18,0xfb});
+    for (unsigned i = 0; i < main.size(); ++i) image[i] = main[i];
+    // Save/restore A so an interrupt between LDA #mask and STA $420B is safe.
+    const std::vector<uint8_t> nmi{0x8d,2,0x10,0xad,0,0,0x8d,0,0x10,0xad,2,0x10,0xe8,0x40};
+    const std::vector<uint8_t> irq{0x8d,2,0x10,0xad,1,0,0x8d,1,0x10,0xad,2,0x10,0xca,0x40};
+    for (unsigned i = 0; i < nmi.size(); ++i) { image[0x100+i] = nmi[i]; image[0x120+i] = irq[i]; }
+    for (unsigned v : {0x7feau,0x7ffau}) { image[v] = 0; image[v+1] = 0x81; }
+    for (unsigned v : {0x7feeu,0x7ffeu}) { image[v] = 0x20; image[v+1] = 0x81; }
+    image[0x7ffd] = 0x80;
+    image[0x1000] = 0xde; image[0x1001] = 0xad; image[0x1002] = 0xbe; image[0x1003] = 0xef;
+    return image;
+  }
   if (name == "bus_master_events") return recompiler_fixture("bus_memory");
   if (name.rfind("bus_irq_",0) == 0) return recompiler_fixture(name.substr(4));
   if (name == "bus_call_native") return recompiler_fixture("calls");

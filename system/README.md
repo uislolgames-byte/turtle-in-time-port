@@ -328,7 +328,7 @@ written byte values, boundaries, rejected accesses, isolation and reset.
 `recompiled_memsel` checks 28 fixed traces of actual generated LDA/STA/STP code,
 including enable/disable, four data-bank aliases, partial budgets and unchanged
 nominal CPU/DMA accounting. The default strict bus rejects the generated write.
-Both join the existing Windows/Linux regression chain (61 tests total).
+Both join the existing Windows/Linux regression chain (63 tests total).
 
 This is a timing-decoder foundation, not an instruction master-clock counter.
 The optional first CPU timing counter below now applies these speeds to a
@@ -393,7 +393,7 @@ emulation/native mode, loop budgets and faults. They also check overflow before
 CPU/MMIO effects, reset, missing bus, MMIO rejection and existing event timelines.
 The original 37 tests remain; the five instruction tests and eight timed block-move
 tests, three timed leaf-call tests, five timed interrupt tests the master-event
-sweep and two DMA fixtures bring the total to 61 tests in Windows/Linux CI. References for
+sweep and two DMA fixtures bring the total to 63 tests in Windows/Linux CI. References for
 instruction decomposition: upstream bsnes
 [other instructions](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-other.cpp)
 and [branches](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-pc.cpp).
@@ -467,7 +467,7 @@ JSR/RTS and sample NMI at those boundaries using both event timelines.
 Helper tests cover emulation page wrap, native bank wrap, atomic push faults,
 MMIO guards and invalid stack pointers. Generated entry still requires S=$01FF;
 these helper boundary tests do not add TXS or arbitrary initial-S program entry.
-The full regression chain contains 61 tests, retaining these leaf-call tests.
+The full regression chain contains 63 tests, retaining these leaf-call tests.
 
 Calls remain restricted to straight-line, mode-preserving leaves; nested calls,
 leaf branches/mode changes/block moves and JSL/RTL are unsupported. Restricted compiled
@@ -520,7 +520,7 @@ Fixed program totals for one NMI are 160 master clocks / 22 CPU cycles in
 emulation and 226 / 31 in native mode. Additional cases check one clock too few
 and exact capacity at entry and RTI, atomic frame faults, NMI acknowledgement,
 wrong vectors and MMIO. CLI generation exercises both option orders. Total:
-61 tests in Windows/Linux CI, retaining all previous tests.
+63 tests in Windows/Linux CI, retaining all previous tests.
 
 These are aggregate CPU costs at instruction boundaries. Full IRQ polling delay,
 per-access interleaving, DMA arbitration/refresh and PPU/APU synchronization remain
@@ -576,7 +576,7 @@ acknowledgement and deferral. `recompiled_bus_master_events` sweeps 858 fixed
 boundary traces over all timestamps through a program with MEMSEL/FastROM,
 checking both slow and fast ROM paths. It also checks budget zero, failed stores,
 reset, host origins, ahead/rewound clocks and exact/exhausted capacity. Total:
-61 Windows/Linux regression tests, including the two CPU/DMA fixtures below.
+63 Windows/Linux regression tests, including the two CPU/DMA fixtures below.
 
 This is a CPU-owned event queue. It does not generate video interrupts, emulate
 NMITIMEN/IRQ timer registers, run devices between bus accesses, arbitrate DMA,
@@ -616,4 +616,27 @@ Two generated tests cover 16 fixed success/fault budget traces, plus 606 NMI
 positions through setup, DMA stall and subsequent CPU boundaries. Direct runtime
 checks cover aliases, full-size and exact/exhausted capacity, partial faults,
 zero/unsupported masks and timed WRAM port side effects. The complete CI chain
-now has 61 tests. This does not finish M3, produce video/audio or run the game.
+now has 63 tests. This does not finish M3, produce video/audio or run the game.
+
+
+### DMA followed by compiled NMI/IRQ handlers
+
+Two additional generated integration fixtures combine `--interrupts --bus-timing`
+with DMA setup/trigger, restricted handlers and RTI, in emulation and native mode.
+Their original synthetic handlers save A to WRAM before reading the transferred
+data and restore A before RTI. This protects the DMA enable mask when an event
+falls between LDA immediate and STA $420B. Handlers update separate result bytes
+and X, so the test observes actual handler execution and return.
+
+An independent test interpreter models the fixture's channel registers, WRAM
+pointer, byte copy, DMA clocks, stack frames and event delivery without calling
+runtime bus/timing/interrupt helpers. 3,080 comparisons cover all WRAM/stack,
+CPU registers/flags, DMA registers/progress, active-handler state and three time
+counters, with varied budgets and I/D flags. Scenarios include NMI coalescence
+inside DMA, IRQ pulses entirely inside a stall, IRQ held across the next CPU
+boundary, simultaneous NMI/IRQ, and a second NMI while a handler is active.
+Six additional fixed completion traces check observed WRAM results and exact
+costs: the main fixture takes 604 master clocks in emulation or 632 in native;
+one complete handler adds 240 or 256 respectively. The 63-test Windows/Linux
+chain retains every previous test. This block validates integration of existing
+features; it adds no device register or instruction support, and no game execution.

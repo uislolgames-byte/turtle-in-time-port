@@ -106,7 +106,7 @@ The optional system bus also accepts byte MEMSEL ($420D) writes from generated
 code and exposes address-speed queries (6/8/12 master clocks). These queries do
 not advance `cycle_clock` or supply a CPU master-clock total. See the explicit
 [system timing contract](../system/README.md#address-access-speeds-and-memsel).
-The regression chain now contains 61 tests, including generated MEMSEL traces.
+The regression chain now contains 63 tests, including generated MEMSEL traces.
 
 
 ## First optional CPU master-clock counter
@@ -120,7 +120,7 @@ combined with `--interrupts` for restricted compiled handlers; nested calls rema
 iterations now support timing with separate source and destination access costs.
 Timed byte MMIO now covers the existing opt-in MEMSEL, WRAM port and channel-0 DMA subset. Ordinary generation is unchanged.
 The shared CPU/DMA counter drives host events in master units; PPU/APU
-synchronization remains absent. The 61-test regression chain includes 187 fixed generated instruction traces
+synchronization remains absent. The 63-test regression chain includes 187 fixed generated instruction traces
 and 129 timed block-transfer comparisons, alongside the 99 untimed comparisons
 and a separate partial-fault fixture. Full 64 KiB WRAM transfer costs and
 slow/FastROM differences have fixed expected results.
@@ -149,8 +149,16 @@ The timeline advances with committed costs, latches requests at instruction/byte
 completion and combines them with the original step/cycle sources. Reset clears
 all three queues; zero budget delivers none. Counter/timeline rewind is rejected.
 The regression chain adds 4,400 master-event reference comparisons and 858 fixed
-MEMSEL/FastROM boundary traces (61 tests total). See the
+MEMSEL/FastROM boundary traces (63 tests total). See the
 [master event contract](../system/README.md#cpu-master-clock-event-timeline).
 The synchronous channel-0 DMA stall now contributes to the master timeline;
 refresh, hardware DMA arbitration and video/audio scheduling remain future work.
 See the [CPU/DMA contract](../system/README.md#shared-cpudma-master-time) for fault/capacity policy.
+
+
+Two synthetic DMA/handler programs now run with both timing and compiled
+interrupts, including native/emulation entry and RTI. 3,080 independent reference
+comparisons and six fixed completion traces check the full path from DMA setup
+to handler-observed WRAM and return to STP. They preserve A across the handler,
+including an interrupt between loading the DMA mask and writing $420B. See the
+[combined integration tests](../system/README.md#dma-followed-by-compiled-nmiirq-handlers).

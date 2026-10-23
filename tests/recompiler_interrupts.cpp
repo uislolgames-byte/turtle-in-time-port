@@ -13,7 +13,9 @@ struct Event { unsigned tick; Signal signal; };
 struct Reference {
   unsigned a = 0x1200, x = 255, y = 128, pc = 0x8000, s = 0x1ff, p = 0x34, db = 0, steps = 0;
   bool e = true, active = false, nmi = false, irq = false;
-  uint64_t cycles = 0, master = 0;
+  uint64_t cycles = 0, master = 0, dma_clocks = 0, dma_bytes = 0;
+  unsigned wram_address = 0;
+  std::array<unsigned,7> channel{};
   recompiled::Stop stop = recompiled::Stop::limit;
   unsigned return_pc = 0, return_p = 0, return_s = 0;
   std::vector<uint8_t> ram = std::vector<uint8_t>(0x20000, 0);
@@ -38,11 +40,36 @@ static Reference reference(const std::vector<uint8_t>& image, std::vector<Event>
     const unsigned bank = address / 65536, low = address % 65536;
     if (bank == 0x7e || bank == 0x7f) return r.ram.at((bank-0x7e)*65536+low);
     if (bank == 0 && low < 8192) return r.ram.at(low);
+    if (bank == 0 && low >= 0x4300 && low <= 0x4306) return r.channel.at(low-0x4300);
     if (bank == 0 && low >= 32768) return image.at(low-32768);
     throw std::runtime_error("reference read outside implemented fixture mapping");
   };
   const auto write = [&](unsigned address, unsigned value) {
     const unsigned bank = address / 65536, low = address % 65536;
+    if (bank == 0 && low >= 0x4300 && low <= 0x4306) { r.channel.at(low-0x4300) = value%256; return; }
+    if (bank == 0 && low >= 0x2181 && low <= 0x2183) {
+      if (low == 0x2181) r.wram_address = (r.wram_address/256)*256+value%256;
+      if (low == 0x2182) r.wram_address = (r.wram_address/65536)*65536+(value%256)*256+r.wram_address%256;
+      if (low == 0x2183) r.wram_address = (value%2)*65536+r.wram_address%65536;
+      return;
+    }
+    if (bank == 0 && low == 0x420b) {
+      if (value%256 == 0) return;
+      check(value%256 == 1 && r.channel[0] == 0 && r.channel[1] == 0x80,"reference DMA fixture contract");
+      unsigned count = r.channel[5]+256*r.channel[6];
+      if (!count) count = 65536;
+      r.dma_clocks += 16;
+      while (count) {
+        const unsigned from = 65536*r.channel[4]+r.channel[2]+256*r.channel[3];
+        r.ram.at(r.wram_address) = static_cast<uint8_t>(read(from));
+        r.wram_address = (r.wram_address+1)%131072;
+        const unsigned next = (r.channel[2]+256*r.channel[3]+1)%65536;
+        r.channel[2] = next%256; r.channel[3] = next/256;
+        --count; r.channel[5] = count%256; r.channel[6] = count/256;
+        ++r.dma_bytes; r.dma_clocks += 8;
+      }
+      return;
+    }
     unsigned offset;
     if (bank == 0x7e || bank == 0x7f) offset = (bank-0x7e)*65536+low;
     else if (bank == 0 && low < 8192) offset = low;
@@ -94,6 +121,8 @@ static Reference reference(const std::vector<uint8_t>& image, std::vector<Event>
     if (op == 0x60) master = 42;
     if (op == 0x54) master = 52;
     if (op == 0x40) master = r.e ? 44 : 52;
+    if ((op == 0xad || op == 0x8d) && value >= 0x2100 && value < 0x4380) master = 30;
+    const auto dma_before = r.dma_clocks;
     switch (op) {
       case 0x18: r.p &= ~1u; break;
       case 0xfb: { const bool old = r.e; r.e = (r.p & 1) != 0; r.p = (r.p & ~1u) | unsigned(old);
@@ -132,7 +161,7 @@ static Reference reference(const std::vector<uint8_t>& image, std::vector<Event>
       case 0xdb: r.stop = recompiled::Stop::stp; break;
       default: throw std::runtime_error("reference opcode unsupported");
     }
-    r.pc = next; ++r.steps; r.cycles += cycles; r.master += master; poll();
+    r.pc = next; ++r.steps; r.cycles += cycles; r.master += master + r.dma_clocks-dma_before; poll();
     if (r.stop == recompiled::Stop::stp) return r;
   }
   return r;
@@ -263,6 +292,59 @@ static void mixed_master_sources(const std::vector<uint8_t>& image) {
         s.master_clocks == 272 && s.master_clock.now() == 272 && !pending_nmi(s),
         "master NMI arriving during handler was not deferred to RTI");
 }
+// Combined integration chain: the reference has its own MMIO/register copy model.
+static unsigned dma_handler_tests(const std::vector<uint8_t>& image, bool native) {
+  using namespace recompiled;
+  const unsigned offset = native ? 28 : 0;
+  std::vector<std::vector<Event>> scenarios{{}};
+  for (unsigned at : {0u,14u,28u,475u,476u,477u,500u,523u,553u,554u,555u,583u,584u,585u,604u}) {
+    scenarios.push_back({{at+offset,Signal::nmi}});
+    scenarios.push_back({{at+offset,Signal::irq_on},{1000+offset,Signal::irq_off}});
+  }
+  scenarios.push_back({{477+offset,Signal::nmi},{500+offset,Signal::nmi},{553+offset,Signal::nmi}});
+  scenarios.push_back({{477+offset,Signal::irq_on},{553+offset,Signal::irq_off}});
+  scenarios.push_back({{500+offset,Signal::irq_on},{500+offset,Signal::nmi},{900+offset,Signal::irq_off}});
+  scenarios.push_back({{500+offset,Signal::nmi},{600+offset,Signal::nmi}});
+  auto bus = std::make_unique<system816::Bus>(image,true);
+  unsigned cases = 0;
+  for (unsigned flags : {0x34u,0x38u}) for (const auto& scenario : scenarios) {
+    for (unsigned limit : {0u,1u,2u,20u,21u,22u,23u,24u,25u,26u,27u,28u,29u,30u,31u,32u,33u,34u,35u,40u,60u,100u}) {
+      bus->clear_ram(); State actual; reset_cpu(actual,*bus);
+      actual.a = 0x1200; actual.x = 255; actual.y = 128; actual.p = flags;
+      for (const auto& event : scenario) actual.master_clock.schedule(event.tick,event.signal);
+      const auto expected = reference(image,scenario,flags,limit,false,true);
+      const bool result = run_generated(actual,limit);
+      check(std::tie(actual.a,actual.x,actual.y,actual.pc,actual.s,actual.p,actual.db,actual.e,actual.steps,actual.stop) ==
+            std::tie(expected.a,expected.x,expected.y,expected.pc,expected.s,expected.p,expected.db,expected.e,expected.steps,expected.stop) &&
+            actual.master_clocks == expected.master && actual.master_clock.now() == expected.master &&
+            actual.cycle_clock.now() == expected.cycles && actual.clock.now() == expected.steps &&
+            actual.pending_master_clocks == 0 && actual.interrupt.active == expected.active &&
+            pending_nmi(actual) == expected.nmi && pending_irq(actual) == expected.irq &&
+            result == (expected.stop == Stop::stp),"combined DMA/handler CPU state or timeline mismatch");
+      check(bus->dma_clocks() == expected.dma_clocks && bus->dma_bytes() == expected.dma_bytes &&
+            bus->wram_address() == expected.wram_address,"combined DMA progress mismatch");
+      for (unsigned i = 0; i < 7; ++i) check(bus->read8(0x4300+i) == expected.channel[i],"combined DMA register mismatch");
+      for (unsigned i = 0; i < expected.ram.size(); ++i)
+        check(bus->read8(0x7e0000+i) == expected.ram[i],"combined DMA/handler WRAM/stack mismatch");
+      ++cases;
+    }
+  }
+  // Fixed end-to-end expectations: interrupt inside the stall sees copied data,
+  // preserves the trigger mask, returns to main and reaches STP exactly once.
+  for (unsigned kind : {0u,1u,2u}) {
+    const bool nmi = kind == 1;
+    bus->clear_ram(); State actual; reset_cpu(actual,*bus); actual.p = 0x38;
+    actual.master_clock.schedule(500+offset,nmi ? Signal::nmi : Signal::irq_on);
+    if (!nmi) actual.master_clock.schedule((kind == 0 ? 550 : 600)+offset,Signal::irq_off);
+    const bool serviced = kind != 0; // IRQ pulse ended during the same aggregate stall.
+    check(run_generated(actual,100) && actual.steps == 24+(native ? 2u : 0u)+(serviced ? 7u : 0u) &&
+          actual.master_clocks == 604+offset+(serviced ? (native ? 256u : 240u) : 0u) &&
+          actual.a == 4 && actual.s == 0x1ff && !actual.interrupt.active && bus->dma_bytes() == 4 &&
+          bus->read8(0x7e1000) == (nmi ? 0xbe : 0) &&
+          bus->read8(0x7e1001) == (kind == 2 ? 0xef : 0),"fixed DMA/handler completion trace");
+  }
+  return cases;
+}
 int main(int argc, char** argv) {
   if (argc != 2) return 2;
   using namespace recompiled;
@@ -271,6 +353,12 @@ int main(int argc, char** argv) {
     const bool timed = fixture.rfind("bus_",0) == 0;
     const std::string name = timed ? fixture.substr(4) : fixture;
     const auto image = recompiler_fixture(fixture);
+    if (name == "irq_dma_emulation" || name == "irq_dma_native") {
+      const unsigned cases = dma_handler_tests(image,name == "irq_dma_native");
+      std::cout << fixture << ": " << cases << " DMA/handler reference comparisons and fixed traces passed\n";
+      return 0;
+    }
+
     const std::vector<std::vector<Event>> scenarios = {
       {}, {{0,Signal::nmi}}, {{1,Signal::nmi}}, {{2,Signal::nmi}}, {{4,Signal::nmi}}, {{7,Signal::nmi}},
       {{1,Signal::nmi},{2,Signal::nmi},{3,Signal::nmi}},
