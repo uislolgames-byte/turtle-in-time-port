@@ -1147,8 +1147,8 @@ modes, odd counts, bank/pointer wrapping, per-channel/trigger phase reset and
 CPU/flags, all WRAM/VRAM/CGRAM, scroll, all channels and all clocks over budgets,
 host origins and scheduled events. Timing still omits alignment, refresh,
 arbitration and per-byte scheduling; reverse DMA is covered by the later extension,
-while HDMA, scanline rendering,
-full PPU/APU synchronization or game execution is added.
+while HDMA, scanline rendering, full PPU/APU synchronization and game execution
+remain absent.
 Reference: [ares DMA transfer patterns and index reset](https://github.com/ares-emulator/ares/blob/master/ares/sfc/cpu/dma.cpp).
 All fixture content and reference logic are original.
 
