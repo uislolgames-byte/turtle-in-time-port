@@ -89,7 +89,7 @@ int main() {
     const auto two = square.str();
     const std::string expected("\x09\x08\x07\x0c\x0b\x0a\0\0\x03\x02\x01\x06\x05\x04\0\0",16);
     check(two.size() == 70 && two.substr(54) == expected,"BMP bottom-up rows/padding");
-    for (const auto f : {PreviewFrame{},PreviewFrame{257,1,{}},PreviewFrame{1,257,{}},PreviewFrame{2,2,{{0,0,0}}}})
+    for (const auto& f : {PreviewFrame{},PreviewFrame{257,1,{}},PreviewFrame{1,257,{}},PreviewFrame{2,2,{{0,0,0}}}})
       invalid([&]{ std::ostringstream out; write_preview_bmp(out,f); });
     std::ostringstream bad; bad.setstate(std::ios::badbit); bool failed = false;
     try { write_preview_bmp(bad,{1,1,{{0,0,0}}}); } catch (const std::runtime_error&) { failed = true; }
