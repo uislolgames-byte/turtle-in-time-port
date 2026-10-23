@@ -19,7 +19,6 @@ struct Instruction { unsigned pc, op, value, length; Mode mode; int leaf; };
 
 // Closed, flat synthetic code at $8000. Analyze only proven entry points.
 inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = false, bool bus_timing = false) {
-  if (interrupts && bus_timing) throw std::runtime_error("--bus-timing cannot compile interrupt handlers yet");
   if (code.empty() || code.size() > 32768) throw std::runtime_error("code size must be 1..32768");
   if (interrupts && (code.size() != 32768 || code[0x7ffc] != 0 || code[0x7ffd] != 0x80))
     throw std::runtime_error("--interrupts requires a 32 KiB synthetic image with RESET $8000");
@@ -159,21 +158,24 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
       cycles = op == 0x80 ? std::to_string(2+penalty) : "(2+("+condition+"?"+std::to_string(penalty)+":0))";
     }
     const std::string completion = bus_timing ? "complete_bus_instruction" : "complete_instruction";
+    std::ostringstream begin;
+    if (bus_timing && op == 0x40)
+      begin << "begin_rti_instruction(s,limit," << pc << ")";
+    else if (bus_timing && (op == 0x20 || op == 0x60))
+      begin << "begin_stack_instruction(s,limit," << pc << "," << (op == 0x60) << ")";
+    else if (bus_timing && (op == 0x44 || op == 0x54))
+      begin << "begin_move_instruction(s,limit," << pc << "," << (v & 255) << "," << (v >> 8) << "," << x << ")";
+    else if (bus_timing) {
+      begin << "begin_bus_instruction(s,limit," << cycles << "," << pc << "," << n.length << ",";
+      if (op == 0xad || op == 0x8d) begin << "(s.db<<16)|" << v;
+      else begin << "0";
+      begin << "," << ((op == 0xad || op == 0x8d) ? (m ? 1 : 2) : 0) << "," << (op == 0x8d) << ")";
+    } else begin << "begin_instruction(s,limit," << cycles << ")";
     out << "L" << pc << ":\n";
     if (interrupts && n.leaf != -2)
-      out << "while(!begin_instruction(s,limit," << cycles << ")){if(s.stop!=Stop::interrupt||!interrupt_mode"
+      out << "while(!" << begin.str() << "){if(s.stop!=Stop::interrupt||!interrupt_mode"
           << mode_id(n.mode) << "(s,limit))return false;}\n";
-    else if (bus_timing && (op == 0x20 || op == 0x60))
-      out << "if(!begin_stack_instruction(s,limit," << pc << "," << (op == 0x60) << "))return false;\n";
-    else if (bus_timing && (op == 0x44 || op == 0x54))
-      out << "if(!begin_move_instruction(s,limit," << pc << "," << (v & 255) << "," << (v >> 8)
-          << "," << x << "))return false;\n";
-    else if (bus_timing) {
-      out << "if(!begin_bus_instruction(s,limit," << cycles << "," << pc << "," << n.length << ",";
-      if (op == 0xad || op == 0x8d) out << "(s.db<<16)|" << v;
-      else out << "0";
-      out << "," << ((op == 0xad || op == 0x8d) ? (m ? 1 : 2) : 0) << "," << (op == 0x8d) << "))return false;\n";
-    } else out << "if(!begin_instruction(s,limit," << cycles << "))return false;\n";
+    else out << "if(!" << begin.str() << ")return false;\n";
     if (op == 0x40) { out << "if(!return_interrupt(s))return false;" << completion << "(s," << cycles << ");return true;\n"; return; }
     if (op == 0xa9) out << "s.a=" << (m ? "(s.a&65280)|" : "") << v << ";nz(s,s.a," << m << ");\n";
     if (op == 0xa2 || op == 0xa0) out << "s." << (op==0xa2?'x':'y') << "=" << v << ";nz(s," << v << "," << x << ");\n";
@@ -215,9 +217,12 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
     const auto nmi = variant.second[0], irq = variant.second[1];
     const unsigned entry_cycles = handler_modes.at(variant.first).e ? 7 : 8;
     out << "static bool interrupt_mode" << variant.first << "(State& s,unsigned limit){\n"
-        << "if(!reserve_cycles(s," << entry_cycles << "))return false;bool nmi=pending_nmi(s);if(!enter_interrupt(s,nmi?" << nmi << ":" << irq << ",nmi))return false;\n"
-        << "complete_instruction(s," << entry_cycles << ");return nmi?handler" << variant.first << "_" << nmi
-        << "(s,limit):handler" << variant.first << "_" << irq << "(s,limit);}\n";
+        << "bool nmi=pending_nmi(s);";
+    if (bus_timing) out << "if(!prepare_interrupt_timing(s,nmi))return false;";
+    else out << "if(!reserve_cycles(s," << entry_cycles << "))return false;";
+    out << "if(!enter_interrupt(s,nmi?" << nmi << ":" << irq << ",nmi))return false;\n"
+        << (bus_timing ? "complete_bus_instruction" : "complete_instruction") << "(s," << entry_cycles << ");return nmi?handler"
+        << variant.first << "_" << nmi << "(s,limit):handler" << variant.first << "_" << irq << "(s,limit); }\n";
   }
   for (const auto& leaf : leaves) {
     out << "static bool leaf" << leaf.first << "(State& s,unsigned limit,unsigned expected){goto L" << leaf.first << ";\n";

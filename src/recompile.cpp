@@ -4,8 +4,16 @@
 #include <iterator>
 
 int main(int argc, char** argv) {
-  if ((argc != 3 && argc != 4) || (argc == 4 && std::string(argv[3]) != "--interrupts" && std::string(argv[3]) != "--bus-timing")) {
-    std::cerr << "Usage: tmnt_recompile synthetic.bin output.cpp [--interrupts|--bus-timing]\n"; return 2;
+  const auto usage = []() {
+    std::cerr << "Usage: tmnt_recompile synthetic.bin output.cpp [--interrupts] [--bus-timing]\n"; return 2;
+  };
+  if (argc < 3 || argc > 5) return usage();
+  bool interrupts = false, bus_timing = false;
+  for (int i = 3; i < argc; ++i) {
+    const std::string option = argv[i];
+    if (option == "--interrupts" && !interrupts) interrupts = true;
+    else if (option == "--bus-timing" && !bus_timing) bus_timing = true;
+    else return usage();
   }
   try {
     std::ifstream in(argv[1],std::ios::binary);
@@ -14,8 +22,7 @@ int main(int argc, char** argv) {
     in.read(reinterpret_cast<char*>(bytes.data()),static_cast<std::streamsize>(bytes.size()));
     if (in.bad()) throw std::runtime_error("cannot read input");
     bytes.resize(static_cast<size_t>(in.gcount()));
-    const auto source = static816::compile(bytes, argc == 4 && std::string(argv[3]) == "--interrupts",
-                                            argc == 4 && std::string(argv[3]) == "--bus-timing"); // Validate before opening output.
+    const auto source = static816::compile(bytes,interrupts,bus_timing); // Validate before opening output.
     std::ofstream out(argv[2],std::ios::binary);
     out << source;
     if (!out) throw std::runtime_error("cannot write output");

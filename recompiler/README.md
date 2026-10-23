@@ -106,7 +106,7 @@ The optional system bus also accepts byte MEMSEL ($420D) writes from generated
 code and exposes address-speed queries (6/8/12 master clocks). These queries do
 not advance `cycle_clock` or supply a CPU master-clock total. See the explicit
 [system timing contract](../system/README.md#address-access-speeds-and-memsel).
-The regression chain now contains 53 tests, including generated MEMSEL traces.
+The regression chain now contains 58 tests, including generated MEMSEL traces.
 
 
 ## First optional CPU master-clock counter
@@ -115,12 +115,12 @@ Use `tmnt_recompile synthetic.bin generated.cpp --bus-timing` for the restricted
 subset described in the [system timing contract](../system/README.md#optional-generated-cpu-master-clock-accounting).
 It emits fetch/data/internal-cycle costs and increments `State::master_clocks`
 on each successful instruction, using current MEMSEL and address speeds. It
-requires a bus and supports the existing short leaf JSR/RTS. It cannot yet be
-combined with compiled interrupt handlers; nested calls remain rejected. MVN/MVP byte
+requires a bus and supports the existing short leaf JSR/RTS. It can be
+combined with `--interrupts` for restricted compiled handlers; nested calls remain rejected. MVN/MVP byte
 iterations now support timing with separate source and destination access costs.
 Only MEMSEL writes are accepted as timed MMIO. Ordinary generation is unchanged.
 The separate CPU counter does not yet synchronize DMA, PPU/APU or master-unit
-events. The 53-test regression chain includes 187 fixed generated instruction traces
+events. The 58-test regression chain includes 187 fixed generated instruction traces
 and 129 timed block-transfer comparisons, alongside the 99 untimed comparisons
 and a separate partial-fault fixture. Full 64 KiB WRAM transfer costs and
 slow/FastROM differences have fixed expected results.
@@ -131,3 +131,13 @@ nominal CPU cycles. RTS keeps its previous count-before-return-validation fault
 policy. Three tests add 7,680 reference comparisons plus exact/exhausted capacity,
 NMI boundaries and stack guards. See the explicit
 [stack timing contract](../system/README.md#timed-leaf-jsrrts) for restrictions.
+
+Use both `--interrupts --bus-timing` to time the existing NMI/IRQ handlers and
+RTI as well. The order of these two options is interchangeable. Emulation entry
+and RTI cost 54/44 master clocks; native entry and RTI cost 62/52, with the
+supported bank-zero code/vector and WRAM stack mapping. Capacity is reserved
+before frame effects, and rejected entry/RTI adds no time. Five tests add 4,400
+reference comparisons, preserving the original 4,400 untimed cases. See the
+[timed interrupt contract](../system/README.md#timed-compiled-nmiirq-and-rti).
+Events still use steps or nominal CPU cycles. No master-clock scheduler or
+video/audio synchronization is added.

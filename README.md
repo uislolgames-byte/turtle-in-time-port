@@ -125,16 +125,17 @@ além de uma sequência que preenche e percorre um buffer com loop.
 
 A etapa de temporização do Marco 3 também classifica acessos por endereço em
 6/8/12 master clocks e aceita o controle MEMSEL/FastROM no barramento opcional.
-A bateria tem 53 testes, incluindo varredura de todos os endereços com os dois
+A bateria tem 58 testes, incluindo varredura de todos os endereços com os dois
 valores de MEMSEL e execução de alterações do controle pelo C++ gerado.
 Essa consulta ainda precisa ser ligada à sequência de acessos de cada instrução;
 não representa um relógio mestre completo. Veja [o contrato](system/README.md#address-access-speeds-and-memsel).
 
 
 A ferramenta agora oferece `--bus-timing`: contagem de master clocks da CPU
-para um subconjunto com chamadas folha JSR/RTS e MVN/MVP, sem handlers compilados.
+para um subconjunto com chamadas folha JSR/RTS, MVN/MVP e handlers compilados
+quando combinado com `--interrupts`.
 Ela soma acessos e ciclos internos por instrucao, respeitando MEMSEL/FastROM.
-A bateria passa a ter 53 testes, com copia de 64 KiB e falhas entre bytes. Ainda falta sincronizar essa contagem com DMA,
+A bateria passa a ter 58 testes, com copia de 64 KiB e falhas entre bytes. Ainda falta sincronizar essa contagem com DMA,
 video e audio; nao representa um agendador completo do SNES. Detalhes e limites
 no [contrato de temporizacao](system/README.md#optional-generated-cpu-master-clock-accounting).
 
@@ -148,4 +149,10 @@ A contagem de master clocks tambem cobre JSR/RTS para rotinas folha, com os
 acessos a pilha no banco zero e reserva antes dos efeitos. Tres novos testes
 acrescentam 7.680 comparacoes contra referencia, incluindo retorno corrompido,
 limites exatos do contador e interrupcoes nas fronteiras das chamadas.
-Chamadas aninhadas e handlers com essa temporizacao continuam pendentes.
+Chamadas aninhadas e handlers gerais continuam pendentes.
+
+As opcoes `--interrupts --bus-timing` agora funcionam juntas: entrada NMI/IRQ,
+instrucoes do handler e RTI acumulam master clocks, com reserva de capacidade
+antes de alterar a pilha. Cinco testes acrescentam 4.400 comparacoes contra
+referencia, preservando as 4.400 anteriores sem temporizacao master. A bateria
+completa tem 58 testes. Ainda falta intercalar CPU/DMA e sincronizar video/audio.

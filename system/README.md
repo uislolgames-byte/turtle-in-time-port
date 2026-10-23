@@ -328,7 +328,7 @@ written byte values, boundaries, rejected accesses, isolation and reset.
 `recompiled_memsel` checks 28 fixed traces of actual generated LDA/STA/STP code,
 including enable/disable, four data-bank aliases, partial budgets and unchanged
 nominal CPU/DMA accounting. The default strict bus rejects the generated write.
-Both join the existing Windows/Linux regression chain (53 tests total).
+Both join the existing Windows/Linux regression chain (58 tests total).
 
 This is a timing-decoder foundation, not an instruction master-clock counter.
 The optional first CPU timing counter below now applies these speeds to a
@@ -343,7 +343,8 @@ No upstream source code was copied.
 
 `tmnt_recompile synthetic.bin output.cpp --bus-timing` emits bus timing plans
 alongside literal CPU operations. It requires a connected bus, including for
-budget zero; it is mutually exclusive with `--interrupts`. The option supports
+budget zero; it can be combined with `--interrupts` for the restricted
+compiled handlers described below. The option supports
 the existing NOP, CLC/SEC, XCE, REP/SEP, INX/DEX, immediate LDA/LDX/LDY,
 absolute LDA/STA, BRA/conditional branches, MVN/MVP per byte and bounded STP
 entry and leaf JSR/RTS. Nested calls and control-flow/mode changes inside a leaf
@@ -380,7 +381,8 @@ The runtime is single-threaded and no host callback runs inside an instruction.
 
 This is **instruction-boundary CPU accounting**, not an interleaved master-clock
 scheduler. It does not expose bus events per cycle, schedule IRQ/NMI in master
-units, time interrupt handlers, or combine CPU time with DMA/refresh/PPU/APU.
+units or combine CPU time with DMA/refresh/PPU/APU. Optional compiled handler
+timing is described below.
 Existing step/cycle events still stop at instruction boundaries. Hardware delayed
 polling, idleIRQ bus substitutions, STP idle behavior and arbitration are not
 modeled. No new video or game execution is enabled.
@@ -390,7 +392,7 @@ changes, ROM/WRAM, FastROM enable/disable, taken/untaken branches across pages i
 emulation/native mode, loop budgets and faults. They also check overflow before
 CPU/MMIO effects, reset, missing bus, MMIO rejection and existing event timelines.
 The original 37 tests remain; the five instruction tests and eight timed block-move
-tests plus three timed leaf-call tests bring the total to 53 tests in Windows/Linux CI. References for
+tests plus three timed leaf-call tests and five timed interrupt tests bring the total to 58 tests in Windows/Linux CI. References for
 instruction decomposition: upstream bsnes
 [other instructions](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-other.cpp)
 and [branches](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-pc.cpp).
@@ -427,7 +429,7 @@ fixture checks preserved progress, exact counter capacity, exhaustion before the
 next byte and rejected MMIO. Master-clock capacity and NMI boundary checks are
 also applied to the successful timed transfer fixtures. The 99 original untimed
 transfer comparisons remain, for 228 transfer comparisons plus fault checks.
-Full interleaving, DMA/refresh, PPU/APU synchronization and timed interrupt operations remain future work. Reference: upstream bsnes
+Full interleaving, DMA/refresh, PPU/APU synchronization and general interrupt operations remain future work. Reference: upstream bsnes
 [block-move access sequence](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-other.cpp).
 No upstream source code was copied.
 
@@ -463,11 +465,64 @@ JSR/RTS and sample NMI at those boundaries using both event timelines.
 Helper tests cover emulation page wrap, native bank wrap, atomic push faults,
 MMIO guards and invalid stack pointers. Generated entry still requires S=$01FF;
 these helper boundary tests do not add TXS or arbitrary initial-S program entry.
-The full regression chain contains 53 tests, retaining the previous 50.
+The full regression chain contains 58 tests, retaining these leaf-call tests.
 
 Calls remain restricted to straight-line, mode-preserving leaves; nested calls,
-leaf branches/mode changes/block moves and JSL/RTL are unsupported. Compiled
-interrupt handlers cannot be combined with bus timing yet. CPU/DMA/refresh and
+leaf branches/mode changes/block moves and JSL/RTL are unsupported. Restricted compiled
+interrupt handlers can now be combined with bus timing as below. CPU/DMA/refresh and
 PPU/APU interleaving remain absent. Reference for instruction access sequences:
 upstream bsnes [JSR/RTS](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-pc.cpp).
+No upstream source code was copied.
+
+### Timed compiled NMI/IRQ and RTI
+
+`tmnt_recompile synthetic.bin output.cpp --interrupts --bus-timing` now combines
+the existing restricted handler compiler with CPU master-clock accounting.
+Options can be supplied in either order; duplicate/unknown options are rejected.
+Input is still an original synthetic 32 KiB bank-zero image with RESET=$8000.
+No runtime opcode interpretation, new handler instructions or nesting are added.
+
+| Operation | CPU cycles | Master clocks for bank-zero code/vectors and WRAM stack |
+| --- | --- | --- |
+| NMI/IRQ entry, emulation | 7 | 54 |
+| NMI/IRQ entry, native | 8 | 62 |
+| RTI, emulation | 6 | 44 |
+| RTI, native | 7 | 52 |
+
+Entry reserves one discarded PC-read cost, one six-clock internal cycle, three
+or four stack writes and two vector reads. The discarded read only contributes
+cost: compiled code PCs are in immutable ROM and no runtime value is required.
+RTI reserves its opcode fetch, two internal cycles and three/four stack reads.
+The actual stack/vector checks and accesses remain in the existing helpers.
+Handler instructions, interrupted main code, leaf calls and MVN/MVP all use
+plans; returning from a handler rechecks the original instruction boundary.
+Code-identity checks are host checks and do not count as bus cycles.
+
+All entry capacity is reserved before pushing a frame or acknowledging NMI.
+Rejected vectors/frames discard the pending reservation, leave time/registers
+unchanged and preserve a pending NMI. RTI capacity is checked before restoring
+P/PC/S. A rejected/corrupted RTI discards its reserved cost and retains the active
+frame, unlike the explicitly different historical RTS fault policy above.
+Successful entry/RTI commit both nominal and master costs and the existing
+single logical step. I/D/P restoration, NMI coalescing/priority, IRQ masking,
+return-frame validation and non-nesting behavior are unchanged. Requests arriving
+in a handler remain deferred until RTI. Events are still scheduled in logical
+steps or nominal CPU cycles, not master-clock units.
+
+Five timed interrupt fixtures add 4,400 independent byte-interpreter comparisons
+of CPU, all WRAM/stack, active context, signals, steps, CPU cycles and master
+clocks. Together with the 4,400 original untimed cases there are 8,800 interrupt
+comparisons. They include emulation/native, IRQ release/re-entry, NMI deferral,
+priority, handler effects, JSR and block-move continuity and corrupted frames.
+Fixed program totals for one NMI are 160 master clocks / 22 CPU cycles in
+emulation and 226 / 31 in native mode. Additional cases check one clock too few
+and exact capacity at entry and RTI, atomic frame faults, NMI acknowledgement,
+wrong vectors and MMIO. CLI generation exercises both option orders. Total:
+58 tests in Windows/Linux CI, retaining all 53 previous tests.
+
+These are aggregate CPU costs at instruction boundaries. Full IRQ polling delay,
+per-access interleaving, DMA arbitration/refresh and PPU/APU synchronization remain
+absent. This does not establish frame timing, complete M3 or run the game.
+References: upstream bsnes [interrupt entry](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instruction.cpp)
+and [RTI](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-pc.cpp).
 No upstream source code was copied.

@@ -4,6 +4,7 @@
 #include <vector>
 #include <cstdint>
 inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
+  if (name.rfind("bus_irq_",0) == 0) return recompiler_fixture(name.substr(4));
   if (name == "bus_call_native") return recompiler_fixture("calls");
   if (name == "bus_call_emulation") return recompiler_fixture("emulation_calls");
   if (name == "bus_call_corrupt") return recompiler_fixture("corrupt_return");

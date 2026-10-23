@@ -13,7 +13,7 @@ struct Event { unsigned tick; Signal signal; };
 struct Reference {
   unsigned a = 0x1200, x = 255, y = 128, pc = 0x8000, s = 0x1ff, p = 0x34, db = 0, steps = 0;
   bool e = true, active = false, nmi = false, irq = false;
-  uint64_t cycles = 0;
+  uint64_t cycles = 0, master = 0;
   recompiled::Stop stop = recompiled::Stop::limit;
   unsigned return_pc = 0, return_p = 0, return_s = 0;
   std::vector<uint8_t> ram = std::vector<uint8_t>(0x20000, 0);
@@ -63,7 +63,7 @@ static Reference reference(const std::vector<uint8_t>& image, std::vector<Event>
       const unsigned vector = nmi ? (r.e ? 0xfffa : 0xffea) : (r.e ? 0xfffe : 0xffee);
       r.pc = read(vector) + 256*read(vector+1); r.active = true;
       if (nmi) r.nmi = false;
-      ++r.steps; r.cycles += r.e ? 7 : 8; poll(); continue;
+      ++r.steps; r.cycles += r.e ? 7 : 8; r.master += r.e ? 54 : 62; poll(); continue;
     }
     const unsigned op = image.at(r.pc-0x8000);
     const bool m = (r.p & 32) != 0, x = (r.p & 16) != 0;
@@ -83,6 +83,17 @@ static Reference reference(const std::vector<uint8_t>& image, std::vector<Event>
     unsigned value = length > 1 ? image.at(r.pc-0x8000+1) : 0;
     if (length == 3) value += 256u * image.at(r.pc-0x8000+2);
     unsigned next = r.pc + length;
+    // Independent constants for these fixtures: bank-zero code/vectors and
+    // WRAM data/stack, no access to runtime timing helpers.
+    unsigned master = 14;
+    if (op == 0xc2) master = 22;
+    if (op == 0xdb) master = 20;
+    if (op == 0xa9 || op == 0xa2 || op == 0xa0) master = length == 2 ? 16 : 24;
+    if (op == 0xad || op == 0x8d) master = m ? 32 : 40;
+    if (op == 0x20) master = 46;
+    if (op == 0x60) master = 42;
+    if (op == 0x54) master = 52;
+    if (op == 0x40) master = r.e ? 44 : 52;
     switch (op) {
       case 0x18: r.p &= ~1u; break;
       case 0xfb: { const bool old = r.e; r.e = (r.p & 1) != 0; r.p = (r.p & ~1u) | unsigned(old);
@@ -121,7 +132,7 @@ static Reference reference(const std::vector<uint8_t>& image, std::vector<Event>
       case 0xdb: r.stop = recompiled::Stop::stp; break;
       default: throw std::runtime_error("reference opcode unsupported");
     }
-    r.pc = next; ++r.steps; r.cycles += cycles; poll();
+    r.pc = next; ++r.steps; r.cycles += cycles; r.master += master; poll();
     if (r.stop == recompiled::Stop::stp) return r;
   }
   return r;
@@ -156,11 +167,86 @@ static void frame_tests(const std::vector<uint8_t>& image) {
         "wrong compiled vector accepted");
   check(!return_interrupt(s) && s.stop == Stop::stack,"RTI outside handler accepted");
 }
+static void compare_timed_frame(const recompiled::State& actual, const Reference& expected, uint64_t origin) {
+  check(std::tie(actual.a,actual.x,actual.y,actual.pc,actual.s,actual.p,actual.db,actual.e,actual.steps) ==
+        std::tie(expected.a,expected.x,expected.y,expected.pc,expected.s,expected.p,expected.db,expected.e,expected.steps) &&
+        actual.interrupt.active == expected.active && actual.clock.now() == expected.steps &&
+        actual.cycle_clock.now() == expected.cycles && actual.master_clocks == origin+expected.master &&
+        actual.pending_master_clocks == 0,"timed frame capacity CPU/clock state");
+  for (unsigned i = 0; i < expected.ram.size(); ++i)
+    check(actual.bus->read8(0x7e0000+i) == expected.ram[i],"timed frame capacity changed stack/RAM");
+}
+static void timed_capacity_tests(const std::vector<uint8_t>& image, bool native) {
+  using namespace recompiled;
+  auto bus = std::make_unique<system816::Bus>(image);
+  const unsigned entry_step = native ? 3 : 0, before_rti = native ? 5 : 2;
+  const unsigned entry_cost = native ? 62 : 54, rti_cost = native ? 52 : 44;
+  const std::vector<Event> events{{entry_step,Signal::nmi}};
+  const auto init = [&](uint64_t origin) {
+    bus->clear_ram(); State s; reset_cpu(s,*bus);
+    s.a = 0x1200; s.x = 255; s.y = 128; s.p = 0x34; s.master_clocks = origin;
+    s.clock.schedule(entry_step,Signal::nmi); return s;
+  };
+  const auto maximum = std::numeric_limits<uint64_t>::max();
+  const auto before_entry = reference(image,events,0x34,entry_step,false);
+  uint64_t origin = maximum-(before_entry.master+entry_cost-1);
+  auto s = init(origin);
+  check(!run_generated(s,40) && s.stop == Stop::contract && s.clock.nmi_pending() &&
+        s.diagnostic == "CPU master clock counter exhausted","entry overflow acknowledged NMI");
+  compare_timed_frame(s,before_entry,origin);
+  origin = maximum-(before_entry.master+entry_cost);
+  s = init(origin); const auto after_entry = reference(image,events,0x34,entry_step+1,false);
+  check(!run_generated(s,entry_step+1) && s.stop == Stop::limit && s.interrupt.active &&
+        !s.clock.nmi_pending() && s.master_clocks == maximum,"exact entry capacity rejected");
+  compare_timed_frame(s,after_entry,origin);
+  const auto at_rti = reference(image,events,0x34,before_rti,false);
+  origin = maximum-(at_rti.master+rti_cost-1);
+  s = init(origin);
+  check(!run_generated(s,40) && s.stop == Stop::contract && s.interrupt.active &&
+        s.diagnostic == "CPU master clock counter exhausted","RTI overflow restored frame");
+  compare_timed_frame(s,at_rti,origin);
+  origin = maximum-(at_rti.master+rti_cost);
+  s = init(origin); const auto restored = reference(image,events,0x34,before_rti+1,false);
+  check(!run_generated(s,before_rti+1) && s.stop == Stop::limit && !s.interrupt.active &&
+        s.master_clocks == maximum,"exact RTI capacity rejected");
+  compare_timed_frame(s,restored,origin);
+}
+static void timed_frame_faults(const std::vector<uint8_t>& image) {
+  using namespace recompiled;
+  auto bus = std::make_unique<system816::Bus>(image,true);
+  State s; reset_cpu(s,*bus); s.e = false; s.p = 0; s.s = 1;
+  bus->write8(0,71); bus->write8(1,72);
+  s.clock.schedule(0,Signal::nmi); s.clock.advance(0);
+  check(prepare_interrupt_timing(s,true) && s.pending_master_clocks == 62 &&
+        !enter_interrupt(s,0x8100,true) && s.stop == Stop::stack && s.master_clocks == 0 &&
+        s.pending_master_clocks == 0 && s.steps == 0 && s.cycle_clock.now() == 0 &&
+        s.clock.nmi_pending() && bus->read8(0) == 71 && bus->read8(1) == 72,
+        "failed timed frame partially committed time/RAM/NMI acknowledgement");
+  reset_cpu(s,*bus);
+  check(prepare_interrupt_timing(s,true) && !enter_interrupt(s,0x8120,true) &&
+        s.stop == Stop::contract && s.pending_master_clocks == 0 && s.master_clocks == 0,
+        "wrong timed vector retained reservation");
+  reset_cpu(s,*bus);
+  check(prepare_interrupt_timing(s,true) && enter_interrupt(s,0x8100,true),"timed RTI fault setup");
+  complete_bus_instruction(s,7); s.pc = 0x8101;
+  bus->write8(0x1ff,0x81); // Corrupt return PC high byte.
+  check(begin_rti_instruction(s,2,0x8101) && s.pending_master_clocks == 44 &&
+        !return_interrupt(s) && s.stop == Stop::stack && s.pending_master_clocks == 0 &&
+        s.master_clocks == 54 && s.steps == 1 && s.cycle_clock.now() == 7 &&
+        s.pc == 0x8101 && s.s == 0x1fc && s.interrupt.active,"faulting RTI charged time/restored frame");
+  reset_cpu(s,*bus); s.e = false; s.p = 4; s.s = 0x2181;
+  check(prepare_interrupt_timing(s,true) && !enter_interrupt(s,0x8100,true) &&
+        s.stop == Stop::stack && s.pending_master_clocks == 0 && s.master_clocks == 0 &&
+        bus->wram_address() == 0,"timed interrupt frame used MMIO");
+}
 int main(int argc, char** argv) {
   if (argc != 2) return 2;
   using namespace recompiled;
   try {
-    const auto image = recompiler_fixture(argv[1]);
+    const std::string fixture = argv[1];
+    const bool timed = fixture.rfind("bus_",0) == 0;
+    const std::string name = timed ? fixture.substr(4) : fixture;
+    const auto image = recompiler_fixture(fixture);
     const std::vector<std::vector<Event>> scenarios = {
       {}, {{0,Signal::nmi}}, {{1,Signal::nmi}}, {{2,Signal::nmi}}, {{4,Signal::nmi}}, {{7,Signal::nmi}},
       {{1,Signal::nmi},{2,Signal::nmi},{3,Signal::nmi}},
@@ -179,6 +265,7 @@ int main(int argc, char** argv) {
         const bool stopped = run_generated(actual,limit);
         if (std::tie(actual.a,actual.x,actual.y,actual.pc,actual.s,actual.p,actual.db,actual.e,actual.steps,actual.stop) !=
             std::tie(expected.a,expected.x,expected.y,expected.pc,expected.s,expected.p,expected.db,expected.e,expected.steps,expected.stop) ||
+            actual.master_clocks != (timed ? expected.master : 0) || actual.pending_master_clocks != 0 ||
             actual.interrupt.active != expected.active || actual.clock.now() != expected.steps || actual.cycle_clock.now() != expected.cycles ||
             (actual.clock.nmi_pending() || actual.cycle_clock.nmi_pending()) != expected.nmi ||
             (actual.clock.irq_asserted() || actual.cycle_clock.irq_asserted()) != expected.irq ||
@@ -193,16 +280,26 @@ int main(int argc, char** argv) {
       }
     }
     // Independent fixed expected state for one emulation NMI: entry + INX + RTI.
-    if (std::string(argv[1]) == "irq_emulation") {
+    if (name == "irq_emulation") {
       bus->clear_ram(); State s; reset_cpu(s,*bus); s.clock.schedule(1,Signal::nmi);
       check(run_generated(s,20) && s.steps == 6 && s.clock.now() == 6 && s.cycle_clock.now() == 22 && s.x == 1 &&
-            s.pc == 0x8003 && s.s == 0x1ff && s.p == 0x34 && !s.interrupt.active &&
+            s.master_clocks == (timed ? 160u : 0u) && s.pc == 0x8003 && s.s == 0x1ff && s.p == 0x34 && !s.interrupt.active &&
             bus->read8(0x1ff) == 0x80 && bus->read8(0x1fe) == 1 && bus->read8(0x1fd) == 0x24,
             "hand-specified NMI/RTI state differs");
     }
+    if (name == "irq_native") {
+      bus->clear_ram(); State s; reset_cpu(s,*bus); s.clock.schedule(3,Signal::nmi);
+      check(run_generated(s,20) && s.steps == 9 && s.cycle_clock.now() == 31 &&
+            s.master_clocks == (timed ? 226u : 0u) && s.pc == 0x8007 && s.x == 1 &&
+            s.s == 0x1ff && s.p == 5 && !s.interrupt.active,"fixed native NMI master clocks");
+    }
     frame_tests(image);
-    if (std::string(argv[1]) == "irq_emulation" || std::string(argv[1]) == "irq_native") {
-      const bool native = std::string(argv[1]) == "irq_native";
+    if (timed) {
+      timed_frame_faults(image);
+      if (name == "irq_emulation" || name == "irq_native") timed_capacity_tests(image,name == "irq_native");
+    }
+    if (name == "irq_emulation" || name == "irq_native") {
+      const bool native = name == "irq_native";
       bus->clear_ram(); State s; reset_cpu(s,*bus);
       const auto maximum = std::numeric_limits<uint64_t>::max();
       s.cycle_clock.advance(maximum - (native ? 14 : 6));

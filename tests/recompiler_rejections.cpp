@@ -36,14 +36,19 @@ int main() {
         image[0x100] = 0xa9; image[0x101] = 1; image[0x102] = 0xea; image[0x103] = 0x40;
         break; // Conflicting immediate widths in specialized handler paths.
     }
-    try { static816::compile(image,true); std::cerr << "invalid interrupt image accepted\n"; return 1; }
-    catch (const std::runtime_error&) {}
+    for (bool timed_irq : {false,true}) {
+      try { static816::compile(image,true,timed_irq); std::cerr << "invalid interrupt image accepted\n"; return 1; }
+      catch (const std::runtime_error&) {}
+    }
   }
   const auto interrupt_output = static816::compile(recompiler_fixture("irq_native"),true);
   if (interrupt_output.find("return_interrupt") == std::string::npos ||
       interrupt_output.find("switch") != std::string::npos || interrupt_output.find("code[") != std::string::npos) return 1;
-  try { static816::compile(recompiler_fixture("irq_emulation"),true,true); return 1; }
-  catch (const std::runtime_error&) {}
+  const auto timed_irq = static816::compile(recompiler_fixture("irq_native"),true,true);
+  if (timed_irq.find("prepare_interrupt_timing") == std::string::npos ||
+      timed_irq.find("begin_rti_instruction") == std::string::npos ||
+      timed_irq.find("complete_bus_instruction") == std::string::npos ||
+      timed_irq.find("switch") != std::string::npos || timed_irq.find("code[") != std::string::npos) return 1;
   const auto timed = static816::compile(recompiler_fixture("bus_memory"),false,true);
   if (timed.find("begin_bus_instruction") == std::string::npos ||
       timed.find("complete_bus_instruction") == std::string::npos ||

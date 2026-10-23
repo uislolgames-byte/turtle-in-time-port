@@ -143,6 +143,50 @@ inline bool begin_stack_instruction(State& s, unsigned limit, unsigned pc, bool 
     s.stop = Stop::stack; s.diagnostic = error.what(); return false;
   }
 }
+// Called by the compiled dispatcher after the instruction-boundary guard.
+// Reserve entry before any frame write or NMI acknowledgement.
+inline bool prepare_interrupt_timing(State& s, bool nmi) {
+  s.pending_master_clocks = 0;
+  if (!s.clock.can_tick()) {
+    s.stop = Stop::contract; s.diagnostic = "Logical event clock exhausted"; return false;
+  }
+  if (!reserve_cycles(s,s.e ? 7 : 8)) return false;
+  if (!s.bus || s.interrupt.active || s.pc > 65535 || s.s > 65535 ||
+      (s.e && (s.s < 0x100 || s.s > 0x1ff))) {
+    s.stop = Stop::contract; s.diagnostic = "Invalid timed interrupt entry context"; return false;
+  }
+  try {
+    unsigned cost = s.bus->cpu_access_clocks(s.pc) + 6;
+    unsigned cursor = s.s;
+    for (unsigned i = 0; i < (s.e ? 3u : 4u); ++i) {
+      cost += s.bus->cpu_access_clocks(cursor);
+      cursor = s.e ? (0x100 | ((cursor+255)&255)) : ((cursor+65535)&65535);
+    }
+    const unsigned vector = nmi ? (s.e ? 0xfffa : 0xffea) : (s.e ? 0xfffe : 0xffee);
+    cost += s.bus->cpu_access_clocks(vector) + s.bus->cpu_access_clocks(vector+1);
+    return reserve_master_clocks(s,cost);
+  } catch (const system816::BusError& error) {
+    s.stop = Stop::stack; s.diagnostic = error.what(); return false;
+  }
+}
+inline bool begin_rti_instruction(State& s, unsigned limit, unsigned pc) {
+  if (!begin_instruction(s,limit,s.e ? 6 : 7)) return false;
+  s.pending_master_clocks = 0;
+  if (!s.bus || s.s > 65535 || (s.e && (s.s < 0x100 || s.s > 0x1ff))) {
+    s.stop = Stop::contract; s.diagnostic = "Invalid timed RTI stack context"; return false;
+  }
+  try {
+    unsigned cost = s.bus->cpu_access_clocks(pc) + 12;
+    unsigned cursor = s.s;
+    for (unsigned i = 0; i < (s.e ? 3u : 4u); ++i) {
+      cursor = s.e ? (0x100 | ((cursor+1)&255)) : ((cursor+1)&65535);
+      cost += s.bus->cpu_access_clocks(cursor);
+    }
+    return reserve_master_clocks(s,cost);
+  } catch (const system816::BusError& error) {
+    s.stop = Stop::stack; s.diagnostic = error.what(); return false;
+  }
+}
 inline void complete_bus_instruction(State& s, unsigned cycles) {
   complete_instruction(s, cycles);
   s.master_clocks += s.pending_master_clocks;
@@ -287,13 +331,13 @@ inline unsigned stack_next(unsigned address, bool e, bool pull) {
 }
 inline bool enter_interrupt(State& s, unsigned target, bool nmi) {
   if (!s.bus || s.interrupt.active) {
-    s.stop = Stop::contract; s.diagnostic = "Interrupt requires a bus and no active handler"; return false;
+    s.pending_master_clocks = 0; s.stop = Stop::contract; s.diagnostic = "Interrupt requires a bus and no active handler"; return false;
   }
   try {
     const unsigned vector = nmi ? (s.e ? 0xfffa : 0xffea) : (s.e ? 0xfffe : 0xffee);
     const unsigned actual = s.bus->read8(vector) | (unsigned(s.bus->read8(vector+1)) << 8);
     if (actual != target) {
-      s.stop = Stop::contract; s.diagnostic = "Interrupt vector differs from compiled target"; return false;
+      s.pending_master_clocks = 0; s.stop = Stop::contract; s.diagnostic = "Interrupt vector differs from compiled target"; return false;
     }
     const unsigned count = s.e ? 3 : 4;
     const std::array<unsigned,4> values = s.e
@@ -311,13 +355,13 @@ inline bool enter_interrupt(State& s, unsigned target, bool nmi) {
     s.stop = Stop::limit; s.diagnostic.clear();
     return true;
   } catch (const system816::BusError& e) {
-    s.stop = Stop::stack; s.diagnostic = e.what(); return false;
+    s.pending_master_clocks = 0; s.stop = Stop::stack; s.diagnostic = e.what(); return false;
   }
 }
 inline bool return_interrupt(State& s) {
   const auto saved = s.interrupt;
   if (!saved.active || s.e != saved.e || s.s != saved.frame_s) {
-    s.stop = Stop::stack; s.diagnostic = "RTI outside handler or changed stack/mode"; return false;
+    s.pending_master_clocks = 0; s.stop = Stop::stack; s.diagnostic = "RTI outside handler or changed stack/mode"; return false;
   }
   try {
     unsigned cursor = s.s;
@@ -327,14 +371,14 @@ inline bool return_interrupt(State& s) {
     const unsigned bank = s.e ? 0 : pull();
     if (s.e) p |= 48;
     if (p != saved.p || (low | (high << 8)) != saved.pc || bank != 0 || cursor != saved.s) {
-      s.stop = Stop::stack; s.diagnostic = "RTI frame differs from static continuation"; return false;
+      s.pending_master_clocks = 0; s.stop = Stop::stack; s.diagnostic = "RTI frame differs from static continuation"; return false;
     }
     s.s = cursor; s.p = p; s.pc = saved.pc;
     if (s.p & 16) { s.x &= 255; s.y &= 255; }
     s.interrupt = InterruptContext{};
     return true;
   } catch (const system816::BusError& e) {
-    s.stop = Stop::stack; s.diagnostic = e.what(); return false;
+    s.pending_master_clocks = 0; s.stop = Stop::stack; s.diagnostic = e.what(); return false;
   }
 }
 bool run_generated(State& s, unsigned limit);
