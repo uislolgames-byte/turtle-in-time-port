@@ -39,7 +39,7 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
     const unsigned pos = pc - 0x8000, op = code[pos];
     unsigned length = 1;
     switch (op) {
-      case 0xea: case 0x18: case 0x38: case 0xfb: case 0xdb: case 0x60: case 0xe8: case 0xca: break;
+      case 0xea: case 0x58: case 0x78: case 0x18: case 0x38: case 0xfb: case 0xdb: case 0x60: case 0xe8: case 0xca: break;
       case 0xc2: case 0xe2: case 0x80: length = 2; break;
       case 0xa9: length = mode.m ? 2 : 3; break;
       case 0xa2: case 0xa0: length = mode.x ? 2 : 3; break;
@@ -112,7 +112,7 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
           const unsigned pos = pc - 0x8000, op = code[pos];
           unsigned length = 1;
           switch (op) {
-            case 0xea: case 0xe8: case 0xca: case 0x40: break;
+            case 0xea: case 0x58: case 0x78: case 0xe8: case 0xca: case 0x40: break;
             case 0xa9: length = mode.m ? 2 : 3; break;
             case 0xa2: case 0xa0: length = mode.x ? 2 : 3; break;
             case 0xad: case 0x8d: length = 3; break;
@@ -182,6 +182,8 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
     if (op == 0xe8 || op == 0xca) out << "s.x=(s.x+" << (op==0xe8?1:65535) << ")&" << (x?255:65535) << ";nz(s,s.x," << x << ");\n";
     if (op == 0x18) out << "s.p&=254;\n";
     if (op == 0x38) out << "s.p|=1;\n";
+    if (op == 0x58) out << "s.p&=~4u;\n";
+    if (op == 0x78) out << "s.p|=4u;\n";
     if (op == 0xc2) out << "s.p&=~" << v << "u;if(s.e)s.p|=48;\n";
     if (op == 0xe2) out << "s.p|=" << v << ";if(s.p&16){s.x&=255;s.y&=255;}\n";
     if (op == 0xfb) out << "{bool old=s.e;s.e=(s.p&1)!=0;s.p=(s.p&254)|unsigned(old);if(s.e){s.p|=48;s.x&=255;s.y&=255;s.s=256|(s.s&255);}}\n";

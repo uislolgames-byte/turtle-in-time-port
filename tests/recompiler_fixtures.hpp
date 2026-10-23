@@ -20,6 +20,20 @@ inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
     image[0x1000] = 0xde; image[0x1001] = 0xad; image[0x1002] = 0xbe; image[0x1003] = 0xef;
     return image;
   }
+  if (name == "mask_flags") return {0x78,0x58,0x20,9,0x80,0x78,0x58,0x78,0xdb,0x58,0x78,0x58,0x60};
+  if (name == "irq_mask_emulation" || name == "irq_mask_native") {
+    std::vector<uint8_t> image(32768,0);
+    std::vector<uint8_t> main{0x78,0xea,0x58,0xea,0x78,0x20,0x10,0x80,0xea,0x58,0xea,0xdb};
+    if (name == "irq_mask_native") main.insert(main.begin(),{0x18,0xfb});
+    for (unsigned i = 0; i < main.size(); ++i) image[i] = main[i];
+    image[0x10] = 0x78; image[0x11] = 0x58; image[0x12] = 0x78; image[0x13] = 0x60;
+    image[0x100] = 0x58; image[0x101] = 0x78; image[0x102] = 0xe8; image[0x103] = 0x40;
+    image[0x120] = 0x58; image[0x121] = 0x78; image[0x122] = 0xca; image[0x123] = 0x40;
+    for (unsigned v : {0x7feau,0x7ffau}) { image[v] = 0; image[v+1] = 0x81; }
+    for (unsigned v : {0x7feeu,0x7ffeu}) { image[v] = 0x20; image[v+1] = 0x81; }
+    image[0x7ffd] = 0x80;
+    return image;
+  }
   if (name == "bus_master_events") return recompiler_fixture("bus_memory");
   if (name.rfind("bus_irq_",0) == 0) return recompiler_fixture(name.substr(4));
   if (name == "bus_call_native") return recompiler_fixture("calls");

@@ -36,7 +36,7 @@ O barramento opcional e `reset_cpu` estão descritos em [system/](../system/READ
 - Entrada com PC=$8000, E=1, M=X=1, S=$01FF; A é de 16 bits (B preservado em
   cargas de 8 bits), X/Y inicialmente de 8 bits, P de 8 bits. Demais flags e RAM
   inicial podem ser fornecidas pelo chamador. Não é um reset fiel de hardware.
-- CLC/SEC, XCE com carry estaticamente conhecido, REP/SEP, NOP, STP,
+- CLC/SEC, CLI/SEI, XCE com carry estaticamente conhecido, REP/SEP, NOP, STP,
   LDA/LDX/LDY imediato, INX/DEX, LDA/STA absoluto, BRA e os oito desvios condicionais.
 - MVN/MVP no fluxo principal, com barramento conectado: um byte por repetição,
   A de 16 bits como contador, larguras de índice independentes de M e DBR atualizado.
@@ -106,7 +106,7 @@ The optional system bus also accepts byte MEMSEL ($420D) writes from generated
 code and exposes address-speed queries (6/8/12 master clocks). These queries do
 not advance `cycle_clock` or supply a CPU master-clock total. See the explicit
 [system timing contract](../system/README.md#address-access-speeds-and-memsel).
-The regression chain now contains 63 tests, including generated MEMSEL traces.
+The regression chain now contains 68 tests, including generated MEMSEL traces.
 
 
 ## First optional CPU master-clock counter
@@ -120,7 +120,7 @@ combined with `--interrupts` for restricted compiled handlers; nested calls rema
 iterations now support timing with separate source and destination access costs.
 Timed byte MMIO now covers the existing opt-in MEMSEL, WRAM port and channel-0 DMA subset. Ordinary generation is unchanged.
 The shared CPU/DMA counter drives host events in master units; PPU/APU
-synchronization remains absent. The 63-test regression chain includes 187 fixed generated instruction traces
+synchronization remains absent. The 68-test regression chain includes 187 fixed generated instruction traces
 and 129 timed block-transfer comparisons, alongside the 99 untimed comparisons
 and a separate partial-fault fixture. Full 64 KiB WRAM transfer costs and
 slow/FastROM differences have fixed expected results.
@@ -149,7 +149,7 @@ The timeline advances with committed costs, latches requests at instruction/byte
 completion and combines them with the original step/cycle sources. Reset clears
 all three queues; zero budget delivers none. Counter/timeline rewind is rejected.
 The regression chain adds 4,400 master-event reference comparisons and 858 fixed
-MEMSEL/FastROM boundary traces (63 tests total). See the
+MEMSEL/FastROM boundary traces (68 tests total). See the
 [master event contract](../system/README.md#cpu-master-clock-event-timeline).
 The synchronous channel-0 DMA stall now contributes to the master timeline;
 refresh, hardware DMA arbitration and video/audio scheduling remain future work.
@@ -162,3 +162,14 @@ comparisons and six fixed completion traces check the full path from DMA setup
 to handler-observed WRAM and return to STP. They preserve A across the handler,
 including an interrupt between loading the DMA mask and writing $420B. See the
 [combined integration tests](../system/README.md#dma-followed-by-compiled-nmiirq-handlers).
+
+
+CLI ($58) and SEI ($78) now emit direct updates of the I flag in main code,
+straight-line leaf calls and restricted compiled handlers. They preserve every
+other status bit and register and take two nominal cycles (14 master clocks
+with slow bank-zero fetches). IRQ eligibility follows I at the next existing
+instruction boundary; NMI is unaffected. CLI inside a handler does not enable
+nested dispatch in this restricted engine. Hardware polling delays are not
+modeled. See the [IRQ masking contract](../system/README.md#software-irq-mask-clisei).
+Five new fixtures add 7,840 reference comparisons: 2,560 for flags and leaf
+calls, plus 5,280 interrupt comparisons across modes and time sources.

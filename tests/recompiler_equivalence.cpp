@@ -31,6 +31,8 @@ static recompiled::State reference(const std::vector<uint8_t>& code, recompiled:
     switch (op) {
       case 0x18: s.p -= s.p % 2; break;
       case 0x38: s.p |= 1; break;
+      case 0x58: s.p &= ~4u; break;
+      case 0x78: s.p |= 4u; break;
       case 0xfb: {
         const bool old = s.e; s.e = (s.p % 2) != 0; s.p = (s.p & ~1u) | unsigned(old);
         if (s.e) { s.p |= 48; s.x %= 256; s.y %= 256; s.s = 256 + s.s % 256; } break;
@@ -128,6 +130,8 @@ int main(int argc, char** argv) {
         state.cycle_clock.now() == 14 && state.stop == recompiled::Stop::stp;
       if (name == "timing_native") ok = state.steps == 7 && state.pc == 0x80ff && !state.e &&
         state.cycle_clock.now() == 19 && state.stop == recompiled::Stop::stp;
+      if (name == "mask_flags") ok = state.steps == 11 && state.pc == 0x8009 && state.p == 0x34 &&
+        state.cycle_clock.now() == 31 && state.s == 0x1ff && state.stop == recompiled::Stop::stp;
       if (!ok) throw std::runtime_error("hand-specified state mismatch: " + name);
     };
     verify(golden); verify(oracle);

@@ -125,6 +125,8 @@ static Reference reference(const std::vector<uint8_t>& image, std::vector<Event>
     const auto dma_before = r.dma_clocks;
     switch (op) {
       case 0x18: r.p &= ~1u; break;
+      case 0x58: r.p &= ~4u; break;
+      case 0x78: r.p |= 4u; break;
       case 0xfb: { const bool old = r.e; r.e = (r.p & 1) != 0; r.p = (r.p & ~1u) | unsigned(old);
         if (r.e) { r.p |= 48; r.x %= 256; r.y %= 256; r.s = 256+r.s%256; } break; }
       case 0xc2: r.p &= ~value; if (r.e) r.p |= 48; break;
@@ -416,6 +418,46 @@ int main(int argc, char** argv) {
       check(run_generated(s,20) && s.steps == 9 && s.cycle_clock.now() == 31 &&
             s.master_clocks == (timed ? 226u : 0u) && s.pc == 0x8007 && s.x == 1 &&
             s.s == 0x1ff && s.p == 5 && !s.interrupt.active,"fixed native NMI master clocks");
+    }
+    if (name == "irq_mask_emulation" || name == "irq_mask_native") {
+      const bool native = name == "irq_mask_native";
+      const unsigned offset = native ? 28 : 0;
+      bus->clear_ram(); State s; reset_cpu(s,*bus);
+      // IRQ starts masked, then CLI exposes it. Release while the handler runs;
+      // its own CLI cannot nest a second frame, and RTI restores the caller's I.
+      if (timed) {
+        s.master_clock.schedule(0,Signal::irq_on);
+        s.master_clock.schedule(162+offset,Signal::irq_off);
+      } else {
+        s.clock.schedule(0,Signal::irq_on);
+        s.clock.schedule((native ? 2u : 0u)+7,Signal::irq_off);
+      }
+      check(run_generated(s,60) && s.steps == (native ? 21u : 19u) && s.x == 255 &&
+            s.s == 0x1ff && !s.interrupt.active && !(s.p & 4) && !pending_irq(s) &&
+            s.master_clocks == (timed ? (native ? 446u : 402u) : 0u) &&
+            s.cycle_clock.now() == (native ? 62u : 56u),"fixed CLI pending IRQ/handler/RTI trace");
+      if (timed && !native) {
+        const uint64_t maximum = std::numeric_limits<uint64_t>::max();
+        for (bool exact : {false,true}) {
+          bus->clear_ram(); reset_cpu(s,*bus); s.p = 0x30;
+          s.master_clocks = maximum-14+(exact ? 0 : 1);
+          s.master_clock.schedule(maximum,Signal::nmi);
+          check(!run_generated(s,1) && s.steps == (exact ? 1u : 0u) &&
+                s.stop == (exact ? Stop::limit : Stop::contract) &&
+                s.p == (exact && !native ? 0x34u : 0x30u) && s.pending_master_clocks == 0 &&
+                s.master_clock.nmi_pending() == exact,"mask instruction capacity/event guard");
+        }
+        if (!native) {
+          reset_cpu(s,*bus); s.master_clocks = maximum-41;
+          check(!run_generated(s,3) && s.stop == Stop::contract && s.steps == 2 &&
+                s.pc == 0x8002 && s.p == 0x34 && s.master_clocks == maximum-13,
+                "failed CLI changed I or committed time");
+        }
+      }
+      // NMI ignores SEI; an event after the initial SEI still executes its handler.
+      bus->clear_ram(); reset_cpu(s,*bus); s.clock.schedule(native ? 3 : 1,Signal::nmi);
+      check(run_generated(s,60) && s.x == 1 && s.steps == (native ? 21u : 19u) &&
+            !s.interrupt.active && !pending_nmi(s),"SEI incorrectly masked NMI");
     }
     frame_tests(image);
     if (timed) {

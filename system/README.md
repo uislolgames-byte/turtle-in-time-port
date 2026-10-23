@@ -180,7 +180,7 @@ the current costs are:
 
 | Operation | CPU cycles |
 | --- | --- |
-| NOP, CLC/SEC, XCE, INX/DEX | 2 |
+| NOP, CLC/SEC, CLI/SEI, XCE, INX/DEX | 2 |
 | REP/SEP, STP entry | 3 |
 | Immediate LDA/LDX/LDY | 2 (8-bit), 3 (16-bit) |
 | Absolute LDA/STA | 4 (8-bit), 5 (16-bit) |
@@ -328,7 +328,7 @@ written byte values, boundaries, rejected accesses, isolation and reset.
 `recompiled_memsel` checks 28 fixed traces of actual generated LDA/STA/STP code,
 including enable/disable, four data-bank aliases, partial budgets and unchanged
 nominal CPU/DMA accounting. The default strict bus rejects the generated write.
-Both join the existing Windows/Linux regression chain (63 tests total).
+Both join the existing Windows/Linux regression chain (68 tests total).
 
 This is a timing-decoder foundation, not an instruction master-clock counter.
 The optional first CPU timing counter below now applies these speeds to a
@@ -345,7 +345,7 @@ No upstream source code was copied.
 alongside literal CPU operations. It requires a connected bus, including for
 budget zero; it can be combined with `--interrupts` for the restricted
 compiled handlers described below. The option supports
-the existing NOP, CLC/SEC, XCE, REP/SEP, INX/DEX, immediate LDA/LDX/LDY,
+the existing NOP, CLC/SEC, CLI/SEI, XCE, REP/SEP, INX/DEX, immediate LDA/LDX/LDY,
 absolute LDA/STA, BRA/conditional branches, MVN/MVP per byte and bounded STP
 entry and leaf JSR/RTS. Nested calls and control-flow/mode changes inside a leaf
 remain rejected at generation time. Existing generation without the
@@ -393,7 +393,7 @@ emulation/native mode, loop budgets and faults. They also check overflow before
 CPU/MMIO effects, reset, missing bus, MMIO rejection and existing event timelines.
 The original 37 tests remain; the five instruction tests and eight timed block-move
 tests, three timed leaf-call tests, five timed interrupt tests the master-event
-sweep and two DMA fixtures bring the total to 63 tests in Windows/Linux CI. References for
+sweep, four DMA integration fixtures and five IRQ-mask fixtures bring the total to 68 tests in Windows/Linux CI. References for
 instruction decomposition: upstream bsnes
 [other instructions](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-other.cpp)
 and [branches](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-pc.cpp).
@@ -467,7 +467,7 @@ JSR/RTS and sample NMI at those boundaries using both event timelines.
 Helper tests cover emulation page wrap, native bank wrap, atomic push faults,
 MMIO guards and invalid stack pointers. Generated entry still requires S=$01FF;
 these helper boundary tests do not add TXS or arbitrary initial-S program entry.
-The full regression chain contains 63 tests, retaining these leaf-call tests.
+The full regression chain contains 68 tests, retaining these leaf-call tests.
 
 Calls remain restricted to straight-line, mode-preserving leaves; nested calls,
 leaf branches/mode changes/block moves and JSL/RTL are unsupported. Restricted compiled
@@ -520,7 +520,7 @@ Fixed program totals for one NMI are 160 master clocks / 22 CPU cycles in
 emulation and 226 / 31 in native mode. Additional cases check one clock too few
 and exact capacity at entry and RTI, atomic frame faults, NMI acknowledgement,
 wrong vectors and MMIO. CLI generation exercises both option orders. Total:
-63 tests in Windows/Linux CI, retaining all previous tests.
+68 tests in Windows/Linux CI, retaining all previous tests.
 
 These are aggregate CPU costs at instruction boundaries. Full IRQ polling delay,
 per-access interleaving, DMA arbitration/refresh and PPU/APU synchronization remain
@@ -576,7 +576,7 @@ acknowledgement and deferral. `recompiled_bus_master_events` sweeps 858 fixed
 boundary traces over all timestamps through a program with MEMSEL/FastROM,
 checking both slow and fast ROM paths. It also checks budget zero, failed stores,
 reset, host origins, ahead/rewound clocks and exact/exhausted capacity. Total:
-63 Windows/Linux regression tests, including the two CPU/DMA fixtures below.
+68 Windows/Linux regression tests, including the two CPU/DMA fixtures below.
 
 This is a CPU-owned event queue. It does not generate video interrupts, emulate
 NMITIMEN/IRQ timer registers, run devices between bus accesses, arbitrate DMA,
@@ -616,7 +616,7 @@ Two generated tests cover 16 fixed success/fault budget traces, plus 606 NMI
 positions through setup, DMA stall and subsequent CPU boundaries. Direct runtime
 checks cover aliases, full-size and exact/exhausted capacity, partial faults,
 zero/unsupported masks and timed WRAM port side effects. The complete CI chain
-now has 63 tests. This does not finish M3, produce video/audio or run the game.
+now has 68 tests. This does not finish M3, produce video/audio or run the game.
 
 
 ### DMA followed by compiled NMI/IRQ handlers
@@ -637,6 +637,36 @@ inside DMA, IRQ pulses entirely inside a stall, IRQ held across the next CPU
 boundary, simultaneous NMI/IRQ, and a second NMI while a handler is active.
 Six additional fixed completion traces check observed WRAM results and exact
 costs: the main fixture takes 604 master clocks in emulation or 632 in native;
-one complete handler adds 240 or 256 respectively. The 63-test Windows/Linux
+one complete handler adds 240 or 256 respectively. The 68-test Windows/Linux
 chain retains every previous test. This block validates integration of existing
 features; it adds no device register or instruction support, and no game execution.
+
+
+## Software IRQ mask: CLI/SEI
+
+The static compiler accepts CLI ($58) and SEI ($78) in main code, straight-line
+leaf routines and restricted handlers, with or without `--bus-timing` and
+`--interrupts`. CLI clears I; SEI sets I; no other status bit, data register or
+mode changes. The generated C++ contains literal flag updates, not a runtime
+opcode interpreter. Both instructions are one byte and two nominal CPU cycles,
+using the existing implied-operation timing plan (14 master clocks for slow
+bank-zero code). See WDC's [W65C816S datasheet, instruction table and implied
+addressing](https://www.westerndesigncenter.com/wdc/documentation/w65c816s.pdf).
+
+The existing boundary guard polls before each instruction: an already eligible
+IRQ may run before SEI; an IRQ exposed by CLI is eligible at the next boundary.
+Masked IRQ remains a level, not a latched request; release before CLI means no
+IRQ service. SEI never masks NMI. Handlers may change I locally, but dispatch
+stays non-nested while the handler is active, and RTI restores the caller's saved
+P including I. These are the engine's explicit aggregate boundary semantics;
+per-cycle IRQ sampling, CLI/SEI recognition delays and general nested handlers
+remain outside the model.
+
+Five new fixtures retain the previous 63 tests and add 7,840 independent reference
+comparisons. 2,560 exercise all 64 valid initial P values and instruction budgets,
+including leaf routines, preserving every flag except I. The other 5,280 cover
+emulation/native IRQ/NMI execution, step/cycle/master events, masked requests,
+handler changes and RTI restoration. Fixed traces check pending IRQ after CLI,
+NMI after SEI and exact/exhausted capacity before mask effects. The regression
+chain now has 68 tests. This does not add hardware-generated interrupts,
+NMITIMEN/timers, video/audio synchronization or game execution, and M3 remains open.
