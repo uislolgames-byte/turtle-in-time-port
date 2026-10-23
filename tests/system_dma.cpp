@@ -103,6 +103,60 @@ int main() {
     recompiled::reset_cpu(state,*bus);
     check(bus->wram_address() == 0 && bus->dma_bytes() == 0 && bus->dma_clocks() == 0 &&
           bus->read8(0x4301) == 0 && bus->read8(0x7e1234) == 0x67,"RESET failed to reset devices/preserve WRAM");
+    // Timed stores share DMA progress with master events, but not CPU cycles/steps.
+    for (unsigned alias : {0u,0x3f0000u,0x800000u,0xbf0000u}) {
+      recompiled::reset_cpu(state,*bus); setup(*bus,0,0x9000,4);
+      check(recompiled::begin_bus_instruction(state,1,4,0x8000,3,alias+0x420b,1,true),"timed DMA plan");
+      state.master_clock.schedule(20,Signal::nmi);
+      check(recompiled::store(state,alias+0x420b,1,true),"timed DMA store");
+      check(state.master_clocks == 48 && state.master_clock.nmi_pending() && state.steps == 0 &&
+            state.cycle_clock.now() == 0 && bus->dma_bytes() == 4,"DMA stall changed CPU cycles or lost NMI");
+      recompiled::complete_bus_instruction(state,4);
+      check(state.master_clocks == 78 && state.master_clock.now() == 78 && state.steps == 1 &&
+            state.cycle_clock.now() == 4,"DMA+CPU completion cost");
+    }
+    for (unsigned count : {1u,0u}) {
+      const uint64_t stall = count ? 24 : 524304;
+      for (bool exact : {false,true}) {
+        recompiled::reset_cpu(state,*bus); setup(*bus,8,0x9000,count);
+        state.master_clocks = std::numeric_limits<uint64_t>::max()-stall-30+(exact ? 0 : 1);
+        check(recompiled::begin_bus_instruction(state,1,4,0x8000,3,0x420b,1,true),"capacity plan");
+        check(recompiled::store(state,0x420b,1,true) == exact,"DMA maximum stall capacity guard");
+        if (exact) {
+          recompiled::complete_bus_instruction(state,4);
+          check(state.master_clocks == std::numeric_limits<uint64_t>::max() &&
+                state.master_clock.now() == state.master_clocks && bus->dma_bytes() == (count ? 1u : 65536u),
+                "exact capacity/full-size timed DMA");
+        } else check(state.stop == recompiled::Stop::contract && state.steps == 0 && bus->dma_clocks() == 0 &&
+                     bus->wram_address() == 0x1fffe && bus->read8(0x4305) == count && state.pending_master_clocks == 0,
+                     "exhausted capacity changed DMA state");
+      }
+    }
+    recompiled::reset_cpu(state,*bus); setup(*bus,0,0xfffe,3,0);
+    state.master_clock.schedule(31,Signal::nmi);
+    check(recompiled::begin_bus_instruction(state,1,4,0x8000,3,0x420b,1,true),"partial DMA timing plan");
+    check(!recompiled::store(state,0x420b,1,true) && state.stop == recompiled::Stop::memory &&
+          state.master_clocks == 32 && state.master_clock.now() == 32 && state.master_clock.nmi_pending() &&
+          state.steps == 0 && state.cycle_clock.now() == 0 && state.pending_master_clocks == 0 &&
+          bus->dma_bytes() == 2 && bus->dma_clocks() == 32 && bus->read8(0x4305) == 1 &&
+          bus->wram_address() == 2 && bus->read8(0x7e0000) == rom[0x7ffe] && bus->read8(0x7e0001) == rom[0x7fff],
+          "partial DMA failure lost time, events or committed bytes");
+    for (unsigned mask : {0u,2u}) {
+      recompiled::reset_cpu(state,*bus); setup(*bus,0,0x9000,4);
+      check(recompiled::begin_bus_instruction(state,1,4,0x8000,3,0x420b,1,true),"mask timing plan");
+      check(recompiled::store(state,0x420b,mask,true) == (mask == 0),"DMA mask handling");
+      if (!mask) recompiled::complete_bus_instruction(state,4);
+      check(state.master_clocks == (mask ? 0u : 30u) && bus->dma_clocks() == 0,"no-op/rejected DMA charged stall");
+    }
+    recompiled::reset_cpu(state,*bus); setup(*bus,0,0x9000,4,0);
+    check(recompiled::begin_bus_instruction(state,1,4,0x8000,3,0x2180,1,true) &&
+          recompiled::store(state,0x2180,0x67,true),"timed WRAM port write");
+    recompiled::complete_bus_instruction(state,4);
+    bus->write8(0x2181,0);
+    check(recompiled::begin_bus_instruction(state,2,4,0x8003,3,0x2180,1,false) &&
+          recompiled::load(state,0x2180,true),"timed WRAM port read");
+    recompiled::complete_bus_instruction(state,4);
+    check(state.a == 0x67 && bus->wram_address() == 1 && state.master_clocks == 60,"WRAM port timing/side effects");
     std::cout << "DMA: " << cases << " reference copies, 65536-byte transfer, ports, faults and guards passed\n";
     return 0;
   } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }

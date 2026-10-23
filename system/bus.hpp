@@ -78,6 +78,18 @@ public:
   uint32_t wram_address() const { return wram_address_; }
   uint64_t dma_clocks() const { return dma_clocks_; }
   uint64_t dma_bytes() const { return dma_bytes_; }
+  // Side-effect-free upper bound, including startup. Source faults may consume less.
+  uint64_t dma_max_clocks(uint8_t mask, uint32_t trigger) const {
+    if (mask == 0) return 0;
+    if (mask != 1 || (channel_[0] & ~0x18u) || channel_[1] != 0x80)
+      throw BusError(Fault::unmapped, trigger, "Only channel 0, mode 0, A-to-WRAM-port DMA is supported");
+    unsigned remaining = unsigned(channel_[5]) | (unsigned(channel_[6]) << 8);
+    if (remaining == 0) remaining = 65536;
+    const uint64_t cost = 16 + uint64_t(remaining)*8;
+    if (dma_clocks_ > std::numeric_limits<uint64_t>::max() - cost)
+      throw BusError(Fault::address, trigger, "DMA clock counter exhausted");
+    return cost;
+  }
   void reset_devices() {
     fast_rom_ = false; channel_.fill(0); wram_address_ = 0; dma_clocks_ = 0; dma_bytes_ = 0;
   }
@@ -106,13 +118,9 @@ private:
   }
   void run_dma(uint8_t mask, uint32_t trigger) {
     if (mask == 0) return;
-    if (mask != 1 || (channel_[0] & ~0x18u) || channel_[1] != 0x80)
-      throw BusError(Fault::unmapped, trigger, "Only channel 0, mode 0, A-to-WRAM-port DMA is supported");
+    (void)dma_max_clocks(mask, trigger);
     unsigned remaining = unsigned(channel_[5]) | (unsigned(channel_[6]) << 8);
     if (remaining == 0) remaining = 65536;
-    const uint64_t maximum_cost = 16 + uint64_t(remaining)*8;
-    if (dma_clocks_ > std::numeric_limits<uint64_t>::max() - maximum_cost)
-      throw BusError(Fault::address, trigger, "DMA clock counter exhausted");
     // Startup + channel overhead; alignment/refresh/arbitration are not modeled.
     dma_clocks_ += 16;
     while (remaining) {

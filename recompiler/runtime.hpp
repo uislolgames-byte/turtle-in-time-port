@@ -98,9 +98,11 @@ inline bool begin_bus_instruction(State& s, unsigned limit, unsigned cycles,
     for (unsigned i = 0; i < length; ++i) cost += s.bus->cpu_access_clocks(pc+i);
     for (unsigned i = 0; i < bytes; ++i) {
       const unsigned at = address+i;
-      // MMIO timing currently supports only an 8-bit MEMSEL write.
-      if (s.bus->is_mmio(at) && !(writing && bytes == 1 && (at & 65535) == 0x420d)) {
-        s.stop = Stop::contract; s.diagnostic = "CPU bus timing supports only MEMSEL MMIO writes"; return false;
+      // Only the opt-in device subset supports timed byte MMIO.
+      if (s.bus->is_mmio(at) && !(bytes == 1 && (((at & 65535) >= 0x4300 && (at & 65535) <= 0x4306) ||
+          ((at & 65535) == 0x2180) || (writing && (((at & 65535) >= 0x2181 && (at & 65535) <= 0x2183) ||
+          (at & 65535) == 0x420b || (at & 65535) == 0x420d))))) {
+        s.stop = Stop::contract; s.diagnostic = "Unsupported timed MMIO access"; return false;
       }
       cost += s.bus->cpu_access_clocks(at);
     }
@@ -263,7 +265,26 @@ inline void nz(State& s, unsigned value, bool narrow) {
         ((value & (narrow ? 128 : 32768)) ? 128u : 0u);
 }
 inline bool store(State& s, unsigned address, unsigned value, bool narrow) {
+  // A timed DMA reserves its maximum stall before effects. Actual device progress
+  // survives a source fault; the failed CPU instruction retains its old zero-cost policy.
+  const bool timed_dma = s.bus && s.pending_master_clocks && narrow &&
+    s.bus->is_mmio(address) && (address & 65535) == 0x420b;
+  const uint64_t before = timed_dma ? s.bus->dma_clocks() : 0;
+  const auto account_dma = [&]() {
+    if (!timed_dma) return;
+    const uint64_t elapsed = s.bus->dma_clocks()-before;
+    s.master_clocks += elapsed;
+    s.master_clock.advance(elapsed);
+  };
   try {
+    if (timed_dma) {
+      const uint64_t stall = s.bus->dma_max_clocks(static_cast<uint8_t>(value),address);
+      const uint64_t available = std::numeric_limits<uint64_t>::max()-s.master_clocks;
+      if (s.pending_master_clocks > available || stall > available-s.pending_master_clocks) {
+        s.pending_master_clocks = 0;
+        s.stop = Stop::contract; s.diagnostic = "CPU/DMA master clock counter exhausted"; return false;
+      }
+    }
     if (s.bus && !narrow) s.bus->validate_word(address);
     if (s.bus && !narrow && (address & 65535) == 65535)
       throw system816::BusError(system816::Fault::unmapped, address, "Word across bank boundary unsupported");
@@ -271,8 +292,10 @@ inline bool store(State& s, unsigned address, unsigned value, bool narrow) {
     if (!narrow) validate_write(s, address + 1);
     write_byte(s, address, static_cast<uint8_t>(value));
     if (!narrow) write_byte(s, address + 1, static_cast<uint8_t>(value >> 8));
+    account_dma();
     return true;
   } catch (const system816::BusError& e) {
+    account_dma();
     s.pending_master_clocks = 0; s.stop = Stop::memory; s.diagnostic = e.what(); return false;
   }
 }

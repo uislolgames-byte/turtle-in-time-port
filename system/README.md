@@ -328,7 +328,7 @@ written byte values, boundaries, rejected accesses, isolation and reset.
 `recompiled_memsel` checks 28 fixed traces of actual generated LDA/STA/STP code,
 including enable/disable, four data-bank aliases, partial budgets and unchanged
 nominal CPU/DMA accounting. The default strict bus rejects the generated write.
-Both join the existing Windows/Linux regression chain (59 tests total).
+Both join the existing Windows/Linux regression chain (61 tests total).
 
 This is a timing-decoder foundation, not an instruction master-clock counter.
 The optional first CPU timing counter below now applies these speeds to a
@@ -370,9 +370,9 @@ the existing three nominal entry cycles: one fetch plus two internal cycles
 (20 clocks); idle time after STP is not accumulated. This is an explicit subset
 accounting convention, not a full model of hardware stop/wakeup.
 
-Only byte MEMSEL writes are allowed MMIO in timed code. Other enabled MMIO,
-including DMA triggers and WRAM-port accesses, stops with a contract diagnostic
-before effects. Ordinary faults and rejected ROM writes charge no partial
+Timed byte MMIO covers the existing MEMSEL, WRAM-port and channel-0 DMA subset
+(see the CPU/DMA contract below). Unsupported MMIO stops before effects.
+Ordinary faults and rejected ROM writes charge no partial
 instruction time, consistent with the existing diagnostic fault policy. Capacity
 exhaustion stops before the instruction, including before a MEMSEL write. Reset
 clears the counter and its internal pending reservation, preserving WRAM.
@@ -380,8 +380,8 @@ clears the counter and its internal pending reservation, preserving WRAM.
 The runtime is single-threaded and no host callback runs inside an instruction.
 
 This is **instruction-boundary CPU accounting**, not an interleaved system master-clock
-scheduler. It does not expose bus events per access or combine CPU time with
-DMA/refresh/PPU/APU. Host IRQ/NMI events in CPU master-clock units are now supported. Optional compiled handler
+scheduler. Synchronous DMA stalls now contribute to the timeline as below;
+refresh/PPU/APU and per-access bus events remain absent. Host IRQ/NMI events in CPU master-clock units are now supported. Optional compiled handler
 timing is described below.
 Existing step/cycle events still stop at instruction boundaries. Hardware delayed
 polling, idleIRQ bus substitutions, STP idle behavior and arbitration are not
@@ -392,8 +392,8 @@ changes, ROM/WRAM, FastROM enable/disable, taken/untaken branches across pages i
 emulation/native mode, loop budgets and faults. They also check overflow before
 CPU/MMIO effects, reset, missing bus, MMIO rejection and existing event timelines.
 The original 37 tests remain; the five instruction tests and eight timed block-move
-tests, three timed leaf-call tests, five timed interrupt tests and the master-event
-sweep bring the total to 59 tests in Windows/Linux CI. References for
+tests, three timed leaf-call tests, five timed interrupt tests the master-event
+sweep and two DMA fixtures bring the total to 61 tests in Windows/Linux CI. References for
 instruction decomposition: upstream bsnes
 [other instructions](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-other.cpp)
 and [branches](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-pc.cpp).
@@ -467,7 +467,7 @@ JSR/RTS and sample NMI at those boundaries using both event timelines.
 Helper tests cover emulation page wrap, native bank wrap, atomic push faults,
 MMIO guards and invalid stack pointers. Generated entry still requires S=$01FF;
 these helper boundary tests do not add TXS or arbitrary initial-S program entry.
-The full regression chain contains 59 tests, retaining these leaf-call tests.
+The full regression chain contains 61 tests, retaining these leaf-call tests.
 
 Calls remain restricted to straight-line, mode-preserving leaves; nested calls,
 leaf branches/mode changes/block moves and JSL/RTL are unsupported. Restricted compiled
@@ -520,7 +520,7 @@ Fixed program totals for one NMI are 160 master clocks / 22 CPU cycles in
 emulation and 226 / 31 in native mode. Additional cases check one clock too few
 and exact capacity at entry and RTI, atomic frame faults, NMI acknowledgement,
 wrong vectors and MMIO. CLI generation exercises both option orders. Total:
-59 tests in Windows/Linux CI, retaining all previous tests.
+61 tests in Windows/Linux CI, retaining all previous tests.
 
 These are aggregate CPU costs at instruction boundaries. Full IRQ polling delay,
 per-access interleaving, DMA arbitration/refresh and PPU/APU synchronization remain
@@ -560,7 +560,7 @@ releasing one source cannot release another. Equal-time events in one timeline
 keep insertion order. There is no ordering of timestamps across different units,
 only the combined signal state at a CPU boundary.
 
-Rejected loads/stores/JSR/RTI/interrupt frames do not advance the timeline or
+Apart from partial DMA progress (described below), rejected loads/stores/JSR/RTI/interrupt frames do not advance the timeline or
 consume future events. RTS retains its separate prior count-before-pop policy.
 Master-counter exhaustion is checked before operation effects; exact capacity
 can latch an event at UINT64_MAX without overflow. STP may latch requests at its
@@ -576,9 +576,44 @@ acknowledgement and deferral. `recompiled_bus_master_events` sweeps 858 fixed
 boundary traces over all timestamps through a program with MEMSEL/FastROM,
 checking both slow and fast ROM paths. It also checks budget zero, failed stores,
 reset, host origins, ahead/rewound clocks and exact/exhausted capacity. Total:
-59 Windows/Linux regression tests, preserving the previous 58.
+61 Windows/Linux regression tests, including the two CPU/DMA fixtures below.
 
 This is a CPU-owned event queue. It does not generate video interrupts, emulate
 NMITIMEN/IRQ timer registers, run devices between bus accesses, arbitrate DMA,
 add refresh stalls or synchronize PPU/APU. A shared system scheduler remains
 future work. It does not complete M3 or run the game. Only synthetic data is used.
+
+
+## Shared CPU/DMA master time
+
+Timed generated byte LDA/STA may access the existing opt-in WRAM port, channel-0
+registers and MEMSEL. Other MMIO and all word MMIO remain rejected. A write to
+$420B reserves the CPU instruction cost plus the maximum supported DMA stall
+before starting DMA: 16 startup clocks plus 8 per byte (zero count means 65536).
+This is the existing bounded DMA cost model, without alignment, refresh or
+arbitration. The upper bound is conservative even when a source fault would
+abort early. Capacity exhaustion leaves DMA registers/data/counters untouched.
+
+The synchronous transfer contributes only its actual elapsed clocks to both
+`State::master_clocks` and `State::master_clock`; successful instruction completion
+then contributes the CPU cost once. DMA does not add CPU steps or nominal cycles.
+Requests during the stall become pending and are handled at the next CPU boundary;
+there is no interrupt service inside DMA. All bytes finish before CPU execution
+continues. Events are delivered in order at aggregate completion, without running
+devices or callbacks per byte. IRQ pulses that end before the next boundary may
+therefore be absent at polling, as in the instruction model.
+
+On a DMA source fault, startup and successful bytes retain their existing effects:
+updated source/count/pointer, written WRAM and DMA counters. The shared timeline
+also retains this actual DMA cost and due events. The failed STA retains the
+previous diagnostic policy: no CPU instruction time, step, cycle or PC advance.
+An invalid mask/mode consumes no DMA time; a zero mask is a successful CPU no-op.
+Untimed generated code still records only the bus-local DMA clocks, preserving
+its previous behavior. Direct host bus writes likewise do not implicitly advance
+a CPU State. Reset clears device and CPU timelines while preserving WRAM.
+
+Two generated tests cover 16 fixed success/fault budget traces, plus 606 NMI
+positions through setup, DMA stall and subsequent CPU boundaries. Direct runtime
+checks cover aliases, full-size and exact/exhausted capacity, partial faults,
+zero/unsupported masks and timed WRAM port side effects. The complete CI chain
+now has 61 tests. This does not finish M3, produce video/audio or run the game.

@@ -117,8 +117,8 @@ int main(int argc, char** argv) {
     check(!run_generated(pending,0) && pending.stop == Stop::limit && !pending.clock.nmi_pending() &&
           pending.master_clocks == 0,"timed zero budget delivered event");
     reset_cpu(pending,*bus);
-    check(!begin_bus_instruction(pending,1,4,0x8000,3,0x420b,1,true) && pending.stop == Stop::contract &&
-          bus->dma_clocks() == 0 && pending.master_clocks == 0,"timed DMA MMIO was admitted");
+    check(!begin_bus_instruction(pending,1,4,0x8000,3,0x420c,1,true) && pending.stop == Stop::contract &&
+          bus->dma_clocks() == 0 && pending.master_clocks == 0,"unsupported timed MMIO was admitted");
     reset_cpu(pending,*bus);
     check(!begin_bus_instruction(pending,1,5,0x8000,3,0x420d,2,true) && pending.stop == Stop::contract &&
           !bus->fast_rom(),"timed word MMIO was admitted");
