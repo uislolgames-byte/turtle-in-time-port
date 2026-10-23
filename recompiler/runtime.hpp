@@ -63,6 +63,14 @@ inline void complete_instruction(State& s, unsigned cycles) {
   s.clock.advance(1);
   s.cycle_clock.advance(cycles);
 }
+inline bool reserve_master_clocks(State& s, unsigned cost) {
+  if (cost > std::numeric_limits<uint64_t>::max() - s.master_clocks) {
+    s.pending_master_clocks = 0;
+    s.stop = Stop::contract; s.diagnostic = "CPU master clock counter exhausted"; return false;
+  }
+  s.pending_master_clocks = cost;
+  return true;
+}
 // Timing-enabled generated code supplies lengths/data accesses, not opcodes.
 inline bool begin_bus_instruction(State& s, unsigned limit, unsigned cycles,
                                   unsigned pc, unsigned length, unsigned address,
@@ -83,11 +91,31 @@ inline bool begin_bus_instruction(State& s, unsigned limit, unsigned cycles,
       }
       cost += s.bus->cpu_access_clocks(at);
     }
-    if (cost > std::numeric_limits<uint64_t>::max() - s.master_clocks) {
-      s.stop = Stop::contract; s.diagnostic = "CPU master clock counter exhausted"; return false;
-    }
-    s.pending_master_clocks = cost;
-    return true;
+    return reserve_master_clocks(s, cost);
+  } catch (const system816::BusError& error) {
+    s.stop = Stop::memory; s.diagnostic = error.what(); return false;
+  }
+}
+// One block-move byte: three code fetches, independent source/destination
+// accesses and two internal cycles. Nothing reads or mutates memory here.
+inline bool begin_move_instruction(State& s, unsigned limit, unsigned pc,
+                                   unsigned destination, unsigned source, bool narrow) {
+  if (!begin_instruction(s, limit, 7)) return false;
+  s.pending_master_clocks = 0;
+  const unsigned mask = narrow ? 255 : 65535;
+  if (!s.bus || destination > 255 || source > 255 || s.a > 65535 || s.x > mask || s.y > mask) {
+    s.stop = Stop::contract; s.diagnostic = "MVN/MVP timing requires a bus and bounded banks/registers"; return false;
+  }
+  try {
+    const unsigned from = (source << 16) | s.x, to = (destination << 16) | s.y;
+    if (s.bus->is_mmio(from) || s.bus->is_mmio(to))
+      throw system816::BusError(system816::Fault::unmapped, s.bus->is_mmio(from) ? from : to,
+                                "MVN/MVP MMIO unsupported");
+    unsigned cost = 12;
+    for (unsigned i = 0; i < 3; ++i) cost += s.bus->cpu_access_clocks(pc+i);
+    cost += s.bus->cpu_access_clocks(from);
+    cost += s.bus->cpu_access_clocks(to);
+    return reserve_master_clocks(s, cost);
   } catch (const system816::BusError& error) {
     s.stop = Stop::memory; s.diagnostic = error.what(); return false;
   }

@@ -328,7 +328,7 @@ written byte values, boundaries, rejected accesses, isolation and reset.
 `recompiled_memsel` checks 28 fixed traces of actual generated LDA/STA/STP code,
 including enable/disable, four data-bank aliases, partial budgets and unchanged
 nominal CPU/DMA accounting. The default strict bus rejects the generated write.
-Both join the existing Windows/Linux regression chain (37 tests total).
+Both join the existing Windows/Linux regression chain (50 tests total).
 
 This is a timing-decoder foundation, not an instruction master-clock counter.
 The optional first CPU timing counter below now applies these speeds to a
@@ -345,8 +345,8 @@ No upstream source code was copied.
 alongside literal CPU operations. It requires a connected bus, including for
 budget zero; it is mutually exclusive with `--interrupts`. The option supports
 the existing NOP, CLC/SEC, XCE, REP/SEP, INX/DEX, immediate LDA/LDX/LDY,
-absolute LDA/STA, BRA/conditional branches and bounded STP entry. Calls/returns
-and MVN/MVP are rejected at generation time. Existing generation without the
+absolute LDA/STA, BRA/conditional branches, MVN/MVP per byte and bounded STP
+entry. Calls/returns are rejected at generation time. Existing generation without the
 option keeps its behavior and does not increment the new counter.
 
 `State::master_clocks` is a uint64 CPU-only counter, separately from nominal
@@ -388,8 +388,45 @@ Five generated timing tests add 187 fixed traces for widths, mode/flag/index
 changes, ROM/WRAM, FastROM enable/disable, taken/untaken branches across pages in
 emulation/native mode, loop budgets and faults. They also check overflow before
 CPU/MMIO effects, reset, missing bus, MMIO rejection and existing event timelines.
-The previous 37 tests remain; total 42 tests in Windows/Linux CI. References for
+The original 37 tests remain; the five instruction tests and eight timed block-move
+tests bring the total to 50 tests in Windows/Linux CI. References for
 instruction decomposition: upstream bsnes
 [other instructions](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-other.cpp)
 and [branches](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-pc.cpp).
+No upstream source code was copied.
+
+### Timed MVN/MVP byte iterations
+
+With `--bus-timing`, every repeated byte reserves the cost of three bank-zero
+code fetches, a source read, a destination write and two six-clock internal
+cycles. The two data addresses use their actual banks and current X/Y, before
+they change. Existing transfer semantics, M/X widths, direction, wrapping, DBR,
+PC and seven nominal CPU cycles per byte are unchanged. Repeated code fetches
+are accounted again on every byte; code identity validation is not charged.
+
+A WRAM-to-WRAM byte costs 52 master clocks in this subset (24 code + 8 read +
+8 write + 12 internal). High-bank FastROM-to-WRAM costs 50; with MEMSEL off it
+costs 52. The complete 65,536-byte WRAM fixture totals 3,408,014 master clocks,
+including its setup and bounded STP, alongside 458,771 nominal CPU cycles.
+Four ROM bytes plus setup/STP total 350 clocks from slow ROM or 342 from fast
+high-bank ROM. This is a CPU instruction transfer, not DMA.
+
+Each byte commits its reserved time only after successful read/write. A fault
+retains completed bytes and their time, but adds nothing for the rejected byte.
+An exhausted counter is diagnosed before either data access or changes to
+registers/DBR/PC. The existing per-step/per-cycle NMI requests can still stop
+between bytes; there are no master-clock events or external restart API.
+MMIO source/destination addresses are rejected before effects, including the
+WRAM data port and MEMSEL. DMA is not triggered by these instructions.
+
+Seven generated transfer tests add 129 independent reference comparisons with
+all WRAM bytes checked. They cover forward/backward copies, 8-bit index wraps,
+mixed M/X modes, slow/fast ROM and a full 64 KiB copy. The separate partial-fault
+fixture checks preserved progress, exact counter capacity, exhaustion before the
+next byte and rejected MMIO. Master-clock capacity and NMI boundary checks are
+also applied to the successful timed transfer fixtures. The 99 original untimed
+transfer comparisons remain, for 228 transfer comparisons plus fault checks.
+Full interleaving, DMA/refresh, PPU/APU synchronization and timed stack/interrupt
+operations remain future work. Reference: upstream bsnes
+[block-move access sequence](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-other.cpp).
 No upstream source code was copied.

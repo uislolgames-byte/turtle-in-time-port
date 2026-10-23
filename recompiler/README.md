@@ -106,7 +106,7 @@ The optional system bus also accepts byte MEMSEL ($420D) writes from generated
 code and exposes address-speed queries (6/8/12 master clocks). These queries do
 not advance `cycle_clock` or supply a CPU master-clock total. See the explicit
 [system timing contract](../system/README.md#address-access-speeds-and-memsel).
-The regression chain now contains 37 tests, including generated MEMSEL traces.
+The regression chain now contains 50 tests, including generated MEMSEL traces.
 
 
 ## First optional CPU master-clock counter
@@ -115,7 +115,11 @@ Use `tmnt_recompile synthetic.bin generated.cpp --bus-timing` for the restricted
 non-stack subset described in the [system timing contract](../system/README.md#optional-generated-cpu-master-clock-accounting).
 It emits fetch/data/internal-cycle costs and increments `State::master_clocks`
 on each successful instruction, using current MEMSEL and address speeds. It
-requires a bus and rejects calls, block moves and compiled interrupt handlers.
+requires a bus and rejects calls and compiled interrupt handlers. MVN/MVP byte
+iterations now support timing with separate source and destination access costs.
 Only MEMSEL writes are accepted as timed MMIO. Ordinary generation is unchanged.
 The separate CPU counter does not yet synchronize DMA, PPU/APU or master-unit
-events. The 42-test regression chain includes 187 new fixed generated traces.
+events. The 50-test regression chain includes 187 fixed generated instruction traces
+and 129 timed block-transfer comparisons, alongside the 99 untimed comparisons
+and a separate partial-fault fixture. Full 64 KiB WRAM transfer costs and
+slow/FastROM differences have fixed expected results.

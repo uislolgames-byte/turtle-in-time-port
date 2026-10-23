@@ -125,15 +125,21 @@ além de uma sequência que preenche e percorre um buffer com loop.
 
 A etapa de temporização do Marco 3 também classifica acessos por endereço em
 6/8/12 master clocks e aceita o controle MEMSEL/FastROM no barramento opcional.
-A bateria tem 37 testes, incluindo varredura de todos os endereços com os dois
+A bateria tem 50 testes, incluindo varredura de todos os endereços com os dois
 valores de MEMSEL e execução de alterações do controle pelo C++ gerado.
 Essa consulta ainda precisa ser ligada à sequência de acessos de cada instrução;
 não representa um relógio mestre completo. Veja [o contrato](system/README.md#address-access-speeds-and-memsel).
 
 
 A ferramenta agora oferece `--bus-timing`: contagem de master clocks da CPU
-para um subconjunto sem chamadas, handlers compilados ou movimentos em bloco.
+para um subconjunto sem chamadas ou handlers compilados, incluindo MVN/MVP.
 Ela soma acessos e ciclos internos por instrucao, respeitando MEMSEL/FastROM.
-A bateria passa a ter 42 testes. Ainda falta sincronizar essa contagem com DMA,
+A bateria passa a ter 50 testes, com copia de 64 KiB e falhas entre bytes. Ainda falta sincronizar essa contagem com DMA,
 video e audio; nao representa um agendador completo do SNES. Detalhes e limites
 no [contrato de temporizacao](system/README.md#optional-generated-cpu-master-clock-accounting).
+
+MVN/MVP agora acumulam master clocks por byte, com custos separados de origem,
+destino e ciclos internos. Os testes comparam 129 execucoes temporizadas contra
+uma referencia independente, incluindo FastROM ligado/desligado e copia completa
+de 65.536 bytes. O custo do byte rejeitado por falha ou limite do contador nao
+e acumulado. A sincronizacao com os dispositivos continua pendente.

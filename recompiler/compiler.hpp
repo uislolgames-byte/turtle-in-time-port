@@ -55,8 +55,8 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
       if (owners.count(pc+i) && owners.at(pc+i) != pc) throw std::runtime_error("overlapping instructions");
       owners[pc+i] = pc;
     }
-    if (bus_timing && (op == 0x20 || op == 0x60 || op == 0x44 || op == 0x54))
-      throw std::runtime_error("--bus-timing does not support calls, returns or block moves yet");
+    if (bus_timing && (op == 0x20 || op == 0x60))
+      throw std::runtime_error("--bus-timing does not support calls or returns yet");
     nodes.emplace(pc, Instruction{pc,op,value,length,mode,leaf});
     const bool control_mode = op == 0x18 || op == 0x38 || op == 0xfb || op == 0xc2 || op == 0xe2;
     if (leaf >= 0 && (control_mode || op == 0x20 || op == 0xdb || op == 0x80 || op == 0x44 || op == 0x54 || branch(op)))
@@ -165,6 +165,9 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
     if (interrupts && n.leaf != -2)
       out << "while(!begin_instruction(s,limit," << cycles << ")){if(s.stop!=Stop::interrupt||!interrupt_mode"
           << mode_id(n.mode) << "(s,limit))return false;}\n";
+    else if (bus_timing && (op == 0x44 || op == 0x54))
+      out << "if(!begin_move_instruction(s,limit," << pc << "," << (v & 255) << "," << (v >> 8)
+          << "," << x << "))return false;\n";
     else if (bus_timing) {
       out << "if(!begin_bus_instruction(s,limit," << cycles << "," << pc << "," << n.length << ",";
       if (op == 0xad || op == 0x8d) out << "(s.db<<16)|" << v;

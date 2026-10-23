@@ -42,7 +42,7 @@ int main() {
   const auto interrupt_output = static816::compile(recompiler_fixture("irq_native"),true);
   if (interrupt_output.find("return_interrupt") == std::string::npos ||
       interrupt_output.find("switch") != std::string::npos || interrupt_output.find("code[") != std::string::npos) return 1;
-  for (const auto& name : {"calls","emulation_calls","move_forward","move_backward"}) {
+  for (const auto& name : {"calls","emulation_calls"}) {
     try { static816::compile(recompiler_fixture(name),false,true); return 1; }
     catch (const std::runtime_error&) {}
   }
@@ -52,5 +52,9 @@ int main() {
   if (timed.find("begin_bus_instruction") == std::string::npos ||
       timed.find("complete_bus_instruction") == std::string::npos ||
       timed.find("switch") != std::string::npos || timed.find("code[") != std::string::npos) return 1;
+  const auto timed_move = static816::compile(recompiler_fixture("move_forward"),false,true);
+  if (timed_move.find("begin_move_instruction") == std::string::npos ||
+      timed_move.find("complete_bus_instruction") == std::string::npos ||
+      timed_move.find("switch") != std::string::npos || timed_move.find("code[") != std::string::npos) return 1;
   std::cout << "Static compiler rejection tests passed\n";
 }
