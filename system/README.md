@@ -1146,3 +1146,7 @@ arbitration and per-byte scheduling; no reverse DMA, HDMA, scanline rendering,
 full PPU/APU synchronization or game execution is added.
 Reference: [ares DMA transfer patterns and index reset](https://github.com/ares-emulator/ares/blob/master/ares/sfc/cpu/dma.cpp).
 All fixture content and reference logic are original.
+
+The full CI build explicitly limits compilation to two jobs at once. This bounds
+compiler concurrency as the generated regression suite grows; it does not change
+which tests run or their timing contracts.

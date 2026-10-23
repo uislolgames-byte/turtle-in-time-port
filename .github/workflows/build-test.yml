@@ -26,7 +26,7 @@ jobs:
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
       - name: Build and run full regression chain
-        run: cmake --build build --config Release --target check --parallel
+        run: cmake --build build --config Release --target check --parallel 2
       - name: Record synthetic preview
         shell: bash
         run: python -c "import base64,pathlib; print('TMNT_PREVIEW_BMP_BASE64='+base64.b64encode(pathlib.Path('build/preview-2bpp.bmp').read_bytes()).decode('ascii'))"

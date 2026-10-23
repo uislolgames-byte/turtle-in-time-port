@@ -13,7 +13,7 @@ Não implementa temporização do hardware. Não há gerador Python neste caminh
 
 ```sh
 cmake -S . -B build -DBUILD_TESTING=ON
-cmake --build build --config Release --target check --parallel
+cmake --build build --config Release --target check --parallel 2
 # Windows: build/Release/tmnt_recompile.exe
 # Linux:
 build/tmnt_recompile synthetic.bin generated.cpp
