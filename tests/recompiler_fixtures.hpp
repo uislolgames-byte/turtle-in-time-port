@@ -84,6 +84,26 @@ inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
     for (unsigned i = 0; i < 4; ++i) code.insert(code.end(),{0xad,0x3b,0x21,0x8d,uint8_t(i),0x10});
     code.push_back(0xdb); return code;
   }
+  if (name == "bus_video_large") return recompiler_fixture("video_large");
+  if (name == "video_large") {
+    auto image = recompiler_fixture("video_maps");
+    // The second DMA reads the 32 original characters used by this program from $9800.
+    image[76] = 0x98; image[86] = 0; image[91] = 2;
+    for (unsigned id = 0; id < 32; ++id) for (unsigned y = 0; y < 8; ++y) {
+      image[0x1800+id*16+2*y] = uint8_t(id*13+y*37);
+      image[0x1801+id*16+2*y] = uint8_t(id*29+y*19+17);
+    }
+    std::vector<uint8_t> code(image.begin(),image.begin()+235);
+    const auto write = [&](unsigned at, unsigned value) {
+      code.insert(code.end(),{0xa9,uint8_t(value),0x8d,uint8_t(at),uint8_t(at >> 8)});
+    };
+    write(0x2105,16); write(0x2107,255);
+    write(0x210d,255); write(0x210d,3); write(0x210e,255); write(0x210e,3);
+    write(0x2105,0); write(0x2105,16); write(0x2107,254); write(0x2105,0);
+    code.push_back(0xdb);
+    for (unsigned i = 0; i < code.size(); ++i) image[i] = code[i];
+    return image;
+  }
   if (name == "bus_video_maps") return recompiler_fixture("video_maps");
   if (name == "video_maps") {
     auto image = recompiler_fixture("tile_preview");

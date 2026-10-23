@@ -39,6 +39,9 @@ jobs:
       - name: Record map captures
         shell: bash
         run: python -c "import base64,pathlib; [print('TMNT_MAPS_'+p.stem+'='+base64.b64encode(p.read_bytes()).decode('ascii')) for p in sorted(pathlib.Path('build').glob('preview-maps-*.bmp'))]"
+      - name: Record large tile captures
+        shell: bash
+        run: python -c "import base64,pathlib; [print('TMNT_LARGE_'+p.stem+'='+base64.b64encode(p.read_bytes()).decode('ascii')) for p in sorted(pathlib.Path('build').glob('preview-large-*.bmp'))]"
       - name: Upload synthetic preview
         uses: actions/upload-artifact@v7
         with:
@@ -48,6 +51,7 @@ jobs:
             build/preview-registers-*.bmp
             build/preview-scroll-*.bmp
             build/preview-maps-*.bmp
+            build/preview-large-*.bmp
           if-no-files-found: error
       - name: Upload test report
         if: always()

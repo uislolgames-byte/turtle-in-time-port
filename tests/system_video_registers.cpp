@@ -65,7 +65,11 @@ int main() {
       check(b->vram_address() == at && b->cgram_address() == cg && b->dma_clocks() == 0,"capture changed bus");
     }
     b->write8(0x2100,15); b->write8(0x212c,1);
-    for (unsigned mode = 1; mode < 256; ++mode) { b->write8(0x2105,uint8_t(mode)); invalid([&]{ capture_bg1_preview(*b,1,1); }); }
+    for (unsigned mode = 1; mode < 256; ++mode) {
+      b->write8(0x2105,uint8_t(mode));
+      if (mode == 16) check(capture_bg1_preview(*b,1,1).pixels.size() == 64,"large tile capture rejected");
+      else invalid([&]{ capture_bg1_preview(*b,1,1); });
+    }
     b->write8(0x2105,0);
     for (unsigned size : {1u,2u,3u}) { b->write8(0x2107,uint8_t(size)); check(capture_bg1_preview(*b,1,1).pixels.size() == 64,"map size capture rejected"); }
     b->write8(0x2107,0);

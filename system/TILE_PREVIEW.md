@@ -51,7 +51,7 @@ opt-in aceita escrita de byte nos aliases $00–$3F/$80–$BF; leituras CPU e pa
 MMIO permanecem rejeitadas. Escritas guardam inclusive configurações ainda não
 suportadas; é a captura que as diagnostica, antes de produzir qualquer imagem.
 
-A captura aceita somente BGMODE=0, BG1 8×8 e os quatro tamanhos de mapa BG1SC,
+A captura aceita BGMODE=$00/$10, BG1 8×8/16×16 e os quatro tamanhos de mapa BG1SC,
 sem outras camadas ativas em TM. BG1SC bits 2–7 selecionam o mapa em passos de
 2048 bytes; BG12NBA bits 0–3 selecionam caracteres em passos de 8192 bytes,
 com wrap físico. O nibble BG2 é armazenado mas não participa desta captura.
@@ -89,7 +89,8 @@ CPU/dispositivos limpa deslocamentos e os dois latches. Não há espelho Mode 7,
 pois esse modo permanece fora do subconjunto.
 
 A captura amostra `(x+HOFS, y+VOFS)` com wrap em cada dimensão do mapa
-(256 ou 512 pixels); no mapa 32×32, offsets separados por 256 são equivalentes. O recorte
+(256/512 com tiles 8×8 ou 512/1024 com tiles 16×16); offsets que diferem
+pela dimensão do mapa são equivalentes. O recorte
 do host continua começando na origem da saída. Espelhamentos/paletas são aplicados
 nos tiles de origem, antes de brilho/blank. O snapshot é calculado da memória
 atual, sem simular a busca antecipada de pixels de uma PPU por scanlines.
@@ -111,7 +112,7 @@ artefatos `synthetic-preview-*` e nos registros para comparação entre platafor
 ## Mapas maiores e blocos de tela
 
 BG1SC bits 0–1 agora selecionam 32×32, 64×32, 32×64 ou 64×64 tiles, ou
-256×256, 512×256, 256×512 e 512×512 pixels. Cada bloco físico contém 32×32
+256×256, 512×256, 256×512 e 512×512 pixels com tiles 8×8. Cada bloco físico contém 32×32
 entradas (2048 bytes). A ordem física é A/B nos mapas largos, A/B nos altos e
 A/B na primeira linha, C/D na segunda, nos mapas 64×64. O mapa alto usa o
 segundo bloco físico na parte inferior, sem pular para o terceiro bloco.
@@ -139,10 +140,42 @@ O CI salva `preview-maps-junction.bmp`, `preview-maps-horizontal.bmp`,
 faz o DMA do mapa de 8192 bytes atravessar o fim físico da VRAM. A seleção de
 geometria altera só a interpretação das mesmas entradas, sem reescrevê-las.
 
+## Tiles BG1 de 16×16
+
+BGMODE bit 4 agora seleciona tiles BG1 16×16; o valor $00 mantém 8×8 e $10
+seleciona 16×16, ambos em Mode 0. Outros bits/modos continuam rejeitados na
+captura. Cada entrada seleciona quatro caracteres 8×8: índices N, N+1, N+16,
+N+17, com resultado módulo 1024 antes da soma da base gráfica. O espelhamento
+inverte o tile inteiro de 16 pixels, trocando também as partes 8×8. Não há
+wrap independente da coluna de caracteres no índice 15; a soma +1 é normal.
+O wrap físico continua em 64 KiB após a soma da base e do deslocamento do caractere.
+Referências: [seleção de caracteres no ares](https://github.com/ares-emulator/ares/blob/master/ares/sfc/ppu/background.cpp)
+e [campo de índice de 10 bits](https://github.com/ares-emulator/ares/blob/master/ares/sfc/ppu/ppu.hpp).
+
+O bloco 32×32 passa a cobrir 512×512 pixels; as quatro geometrias de mapa
+cobrem 512×512, 1024×512, 512×1024 e 1024×1024. A janela de captura permanece
+limitada a 256×256. Os argumentos de recorte da API continuam medidos em blocos
+de oito pixels, independentemente do tamanho do tile BG1. A API original de
+prévia explícita continua sendo 8×8; a mudança está na captura por registradores.
+
+`system_video_large` verifica 67152 capturas e 18235392 pixels independentes:
+os 1024 índices com oito paletas, quatro espelhamentos e ambas as prioridades;
+as quatro partes, carry/módulo de índice e wrap físico; quatro geometrias,
+bordas de tile/bloco, todos os offsets, blank/backdrop e reset. Duas fixtures
+geradas percorrem 118 limites cada, com 241664 comparações de pixels, toda
+VRAM/CGRAM/WRAM e estado CPU/controles/clocks. O programa transfere 32 bytes de paleta,
+512 bytes de caracteres e 8192 de mapa e termina em 115 instruções, 345 ciclos
+nominais, 72578 master clocks (69936 DMA/8736 bytes).
+
+O CI salva cinco capturas `preview-large-*.bmp`: large, wrap, small, restored,
+vertical, nos limites 98, 106, 108, 110 e 112. São dados originais sintéticos,
+com 32 caracteres por fórmulas de planos e quatro blocos de mapa distintos.
+A alternância de tamanho muda só a interpretação dos dados, mantendo memórias.
+
 ## Limite do avanço
 
 Esta é uma ferramenta de diagnóstico chamada pelo host depois da execução.
 A configuração agora pode vir do programa via MMIO, mas ainda faltam scanlines,
-outros modos/tamanhos de tile, composição de camadas/sprites, janelas,
+outros modos de vídeo, composição de camadas/sprites, janelas,
 sincronização completa e apresentação pela interface. Não conclui os Marcos
 3 ou 4 e não significa que o jogo execute.
