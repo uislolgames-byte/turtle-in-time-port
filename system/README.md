@@ -843,3 +843,33 @@ now has 91 tests, preserving all previous 84.
 This provides palette memory and port semantics, without converting palette/tile
 data into pixels. Display access restrictions, rendering, frame scheduling and
 audio remain absent. M3/M4 stay incomplete, and the game does not execute.
+
+
+## NTSC progressive raster clock observer
+
+`RasterClock` observes completed master clocks, with a deterministic origin at
+frame 0 (even), scanline 0, horizontal master phase 0. It uses 262 scanlines:
+1364 master clocks normally, with a 1360-clock line 240 in odd frames. Frame
+lengths therefore alternate 357368 and 357364. The non-overscan vblank flag
+starts at scanline 225. Queries expose position, completed scanlines, vblank
+entries and clocks until the next line, without advancing time or firing events.
+The arithmetic is constant-time even at the uint64 boundary; rewinds and overflow
+are rejected without mutation. Timing reference:
+[ares progressive counter](https://github.com/ares-emulator/ares/blob/master/ares/sfc/ppu/counter/inline.hpp)
+and [non-overscan display range](https://github.com/ares-emulator/ares/blob/master/ares/sfc/ppu/io.cpp).
+
+The generated timed C++ runtime synchronizes this observer to the CPU master
+counter before work, then advances it at completed instruction/interrupt boundaries
+and for actual DMA stalls, including bytes transferred before a source fault.
+A zero instruction budget leaves all clocks untouched; reset clears the observer
+and event queues while preserving bus memories. Untimed generated programs do
+not advance it. Existing host diagnostic captures remain snapshots of memory.
+
+This is a timing observer, not a running PPU or full hardware scheduler. There is
+no automatic NMI/IRQ, $4200/$4210 interface, HBlank/dot model, HDMA, DRAM refresh,
+bus arbitration, PAL/interlace/overscan selection, APU synchronization or rendering
+per scanline. External scheduled interrupts retain the existing boundary policy.
+The direct test compares every master clock across four frames against an
+iterative oracle. Three synthetic generated programs cover DMA, partial failure,
+CPU budgets, long loops, host origins, external events, reset and uint64 capacity.
+Existing timed interrupt and timed/untimed graphics comparisons also check the observer.

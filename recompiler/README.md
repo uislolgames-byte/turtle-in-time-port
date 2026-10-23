@@ -211,3 +211,10 @@ fault with an uncommitted low byte. Six tests add 12672 reference comparisons,
 with 1324 timed event positions. See the
 [CGRAM contract](../system/README.md#cgram-palette-storage-and-ports).
 Palette storage does not yet produce pixels or run the game.
+
+
+Timed generated programs also update `State::video_clock`, the NTSC progressive
+raster observer described in the [system contract](../system/README.md#ntsc-progressive-raster-clock-observer).
+It follows completed CPU and DMA master time, including partial DMA faults;
+untimed programs leave it at reset. It does not generate video interrupts or
+schedule graphics. This foundation does not run the game.

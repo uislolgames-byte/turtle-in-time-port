@@ -4,6 +4,9 @@
 #include <vector>
 #include <cstdint>
 inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
+  if (name == "bus_raster") return recompiler_fixture("video_layers");
+  if (name == "bus_raster_loop") return {0xea,0x80,0xfd};
+  if (name == "bus_raster_fault") return recompiler_fixture("dma_cgram_fault");
   if (name.rfind("bus_dma_",0) == 0) return recompiler_fixture(name.substr(4));
   if (name == "bus_irq_dma_emulation" || name == "bus_irq_dma_native") {
     std::vector<uint8_t> image(32768,0);

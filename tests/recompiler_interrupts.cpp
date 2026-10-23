@@ -203,7 +203,7 @@ static void compare_timed_frame(const recompiled::State& actual, const Reference
         std::tie(expected.a,expected.x,expected.y,expected.pc,expected.s,expected.p,expected.db,expected.e,expected.steps) &&
         actual.interrupt.active == expected.active && actual.clock.now() == expected.steps &&
         actual.cycle_clock.now() == expected.cycles && actual.master_clocks == origin+expected.master &&
-        actual.master_clock.now() == actual.master_clocks &&
+        actual.master_clock.now() == actual.master_clocks && actual.video_clock.now() == actual.master_clocks &&
         actual.pending_master_clocks == 0,"timed frame capacity CPU/clock state");
   for (unsigned i = 0; i < expected.ram.size(); ++i)
     check(actual.bus->read8(0x7e0000+i) == expected.ram[i],"timed frame capacity changed stack/RAM");
@@ -390,7 +390,7 @@ int main(int argc, char** argv) {
           const bool stopped = run_generated(actual,limit);
           if (std::tie(actual.a,actual.x,actual.y,actual.pc,actual.s,actual.p,actual.db,actual.e,actual.steps,actual.stop) !=
               std::tie(expected.a,expected.x,expected.y,expected.pc,expected.s,expected.p,expected.db,expected.e,expected.steps,expected.stop) ||
-              actual.master_clocks != (timed ? expected.master : 0) || actual.master_clock.now() != actual.master_clocks || actual.pending_master_clocks != 0 ||
+              actual.master_clocks != (timed ? expected.master : 0) || actual.master_clock.now() != actual.master_clocks || actual.video_clock.now() != actual.master_clocks || actual.pending_master_clocks != 0 ||
               actual.interrupt.active != expected.active || actual.clock.now() != expected.steps || actual.cycle_clock.now() != expected.cycles ||
               (actual.clock.nmi_pending() || actual.cycle_clock.nmi_pending() || actual.master_clock.nmi_pending()) != expected.nmi ||
               (actual.clock.irq_asserted() || actual.cycle_clock.irq_asserted() || actual.master_clock.irq_asserted()) != expected.irq ||

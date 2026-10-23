@@ -6,6 +6,7 @@
 #include <limits>
 #include "../system/bus.hpp"
 #include "../system/events.hpp"
+#include "../system/raster_clock.hpp"
 
 namespace recompiled {
 enum class Stop { limit, stp, memory, stack, contract, interrupt };
@@ -26,6 +27,7 @@ struct State {
   system816::EventClock cycle_clock;
   uint64_t master_clocks = 0;
   system816::EventClock master_clock;
+  system816::RasterClock video_clock; // Observer of completed CPU/DMA master time only.
   unsigned pending_master_clocks = 0; // Reserved cost for one generated instruction.
   InterruptContext interrupt;
 };
@@ -40,6 +42,11 @@ inline bool synchronize_master_clock(State& s) {
     s.pending_master_clocks = 0;
     s.stop = Stop::contract; s.diagnostic = "Master event clock is ahead of CPU counter"; return false;
   }
+  if (s.video_clock.now() > s.master_clocks) {
+    s.pending_master_clocks = 0;
+    s.stop = Stop::contract; s.diagnostic = "Raster clock is ahead of CPU counter"; return false;
+  }
+  s.video_clock.synchronize(s.master_clocks);
   s.master_clock.advance(s.master_clocks-s.master_clock.now());
   return true;
 }
@@ -207,6 +214,7 @@ inline bool begin_rti_instruction(State& s, unsigned limit, unsigned pc) {
 inline void complete_bus_instruction(State& s, unsigned cycles) {
   complete_instruction(s, cycles);
   s.master_clocks += s.pending_master_clocks;
+  s.video_clock.synchronize(s.master_clocks);
   s.master_clock.advance(s.pending_master_clocks);
   s.pending_master_clocks = 0;
 }
@@ -276,6 +284,7 @@ inline bool store(State& s, unsigned address, unsigned value, bool narrow) {
     if (!timed_dma) return;
     const uint64_t elapsed = s.bus->dma_clocks()-before;
     s.master_clocks += elapsed;
+    s.video_clock.synchronize(s.master_clocks);
     s.master_clock.advance(elapsed);
   };
   try {

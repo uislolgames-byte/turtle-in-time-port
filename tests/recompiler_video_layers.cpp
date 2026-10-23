@@ -37,7 +37,7 @@ int main(int argc, char** argv) {
       check(result == (n == 167) && s.stop == (n == 167 ? recompiled::Stop::stp : recompiled::Stop::limit) &&
             s.steps == n && s.pc == 0x8000+pairs*5+(ops%2)*2+(n == 167 ? 1 : 0) && s.a == a && s.p == p &&
             s.clock.now() == n && s.cycle_clock.now() == pairs*6+(ops%2)*2+(n == 167 ? 3 : 0) &&
-            s.master_clocks == (timed ? master : 0) && s.master_clock.now() == s.master_clocks &&
+            s.master_clocks == (timed ? master : 0) && s.master_clock.now() == s.master_clocks && s.video_clock.now() == s.master_clocks &&
             s.pending_master_clocks == 0,"register fixture CPU/clock reference mismatch");
       const unsigned display = n >= 124 ? 15 : n >= 122 ? 128 : n >= 120 ? 7 : n >= 70 ? 15 : 128;
       const unsigned xs[] = {0,768,255,255,255,255,255,255,768,511,511,511,511,511,511,769,1023,1023,1023,1023,1023,1023,1023};
