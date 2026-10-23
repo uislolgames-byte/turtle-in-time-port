@@ -19,12 +19,12 @@ struct Reference {
   std::vector<uint8_t> ram = std::vector<uint8_t>(0x20000, 0);
 };
 // Independent byte interpreter with direct reference arrays (no runtime helpers).
-static Reference reference(const std::vector<uint8_t>& image, std::vector<Event> events, unsigned p, unsigned limit, bool cycle_events) {
+static Reference reference(const std::vector<uint8_t>& image, std::vector<Event> events, unsigned p, unsigned limit, bool cycle_events, bool master_events = false) {
   Reference r; r.p = p;
   std::stable_sort(events.begin(), events.end(), [](const Event& a, const Event& b) { return a.tick < b.tick; });
   size_t delivered = 0;
   const auto poll = [&]() {
-    while (delivered < events.size() && events[delivered].tick <= (cycle_events ? r.cycles : r.steps)) {
+    while (delivered < events.size() && events[delivered].tick <= (master_events ? r.master : cycle_events ? r.cycles : r.steps)) {
       const auto signal = events[delivered++].signal;
       if (signal == Signal::nmi) r.nmi = true;
       else r.irq = signal == Signal::irq_on;
@@ -172,6 +172,7 @@ static void compare_timed_frame(const recompiled::State& actual, const Reference
         std::tie(expected.a,expected.x,expected.y,expected.pc,expected.s,expected.p,expected.db,expected.e,expected.steps) &&
         actual.interrupt.active == expected.active && actual.clock.now() == expected.steps &&
         actual.cycle_clock.now() == expected.cycles && actual.master_clocks == origin+expected.master &&
+        actual.master_clock.now() == actual.master_clocks &&
         actual.pending_master_clocks == 0,"timed frame capacity CPU/clock state");
   for (unsigned i = 0; i < expected.ram.size(); ++i)
     check(actual.bus->read8(0x7e0000+i) == expected.ram[i],"timed frame capacity changed stack/RAM");
@@ -239,6 +240,28 @@ static void timed_frame_faults(const std::vector<uint8_t>& image) {
         s.stop == Stop::stack && s.pending_master_clocks == 0 && s.master_clocks == 0 &&
         bus->wram_address() == 0,"timed interrupt frame used MMIO");
 }
+static void mixed_master_sources(const std::vector<uint8_t>& image) {
+  using namespace recompiled;
+  auto bus = std::make_unique<system816::Bus>(image);
+  State s; reset_cpu(s,*bus); s.p = 0x30;
+  s.clock.schedule(0,Signal::irq_on); s.clock.schedule(1,Signal::irq_off);
+  s.cycle_clock.schedule(0,Signal::irq_on); s.cycle_clock.schedule(8,Signal::irq_off);
+  s.master_clock.schedule(0,Signal::irq_on); s.master_clock.schedule(200,Signal::irq_off);
+  check(run_generated(s,40) && s.steps == 9 && s.x == 2 && s.pc == 0x8003 && s.s == 0x1ff &&
+        s.master_clocks == 272 && s.master_clock.now() == 272 && s.cycle_clock.now() == 37 &&
+        !pending_irq(s),"master IRQ source released by another timeline");
+  reset_cpu(s,*bus); s.p = 0x30;
+  s.clock.schedule(0,Signal::irq_on); s.clock.schedule(0,Signal::nmi); s.clock.schedule(1,Signal::irq_off);
+  s.cycle_clock.schedule(0,Signal::irq_on); s.cycle_clock.schedule(0,Signal::nmi); s.cycle_clock.schedule(1,Signal::irq_off);
+  s.master_clock.schedule(0,Signal::nmi);
+  check(run_generated(s,40) && s.steps == 6 && s.x == 1 && s.master_clocks == 160 &&
+        s.master_clock.now() == 160 && !pending_nmi(s) && !pending_irq(s) && s.s == 0x1ff,
+        "three-source NMI priority/coalescing/acknowledgement");
+  reset_cpu(s,*bus); s.master_clock.schedule(0,Signal::nmi); s.master_clock.schedule(55,Signal::nmi);
+  check(run_generated(s,40) && s.steps == 9 && s.x == 2 && s.s == 0x1ff && !s.interrupt.active &&
+        s.master_clocks == 272 && s.master_clock.now() == 272 && !pending_nmi(s),
+        "master NMI arriving during handler was not deferred to RTI");
+}
 int main(int argc, char** argv) {
   if (argc != 2) return 2;
   using namespace recompiled;
@@ -255,28 +278,40 @@ int main(int argc, char** argv) {
     };
     auto bus = std::make_unique<system816::Bus>(image);
     unsigned cases = 0;
-    for (bool cycle_events : {false,true}) for (unsigned flags : {0x34u,0x38u}) for (const auto& scenario : scenarios) {
-      for (unsigned choice = 0; choice < 22; ++choice) {
-        const unsigned limit = choice == 21 ? 40 : choice;
-        bus->clear_ram(); State actual; reset_cpu(actual,*bus);
-        actual.a = 0x1200; actual.x = 255; actual.y = 128; actual.p = flags;
-        for (const auto& event : scenario) (cycle_events ? actual.cycle_clock : actual.clock).schedule(event.tick,event.signal);
-        const auto expected = reference(image,scenario,flags,limit,cycle_events);
-        const bool stopped = run_generated(actual,limit);
-        if (std::tie(actual.a,actual.x,actual.y,actual.pc,actual.s,actual.p,actual.db,actual.e,actual.steps,actual.stop) !=
-            std::tie(expected.a,expected.x,expected.y,expected.pc,expected.s,expected.p,expected.db,expected.e,expected.steps,expected.stop) ||
-            actual.master_clocks != (timed ? expected.master : 0) || actual.pending_master_clocks != 0 ||
-            actual.interrupt.active != expected.active || actual.clock.now() != expected.steps || actual.cycle_clock.now() != expected.cycles ||
-            (actual.clock.nmi_pending() || actual.cycle_clock.nmi_pending()) != expected.nmi ||
-            (actual.clock.irq_asserted() || actual.cycle_clock.irq_asserted()) != expected.irq ||
-            stopped != (expected.stop == Stop::stp)) {
-          std::cerr << argv[1] << " flags=" << flags << " scenario=" << (&scenario-&scenarios[0])
-                    << " limit=" << limit << " actualPC=" << actual.pc << " expectedPC=" << expected.pc
-                    << " steps=" << actual.steps << '/' << expected.steps << '\n'; return 1;
+    for (unsigned timeline = 0; timeline < (timed ? 3u : 2u); ++timeline) {
+      const bool cycle_events = timeline == 1, master_events = timeline == 2;
+      auto selected = scenarios;
+      if (master_events) {
+        const std::vector<std::vector<Event>> extra = {
+          {{13,Signal::nmi}}, {{14,Signal::nmi}}, {{15,Signal::nmi}}, {{53,Signal::nmi}},
+          {{54,Signal::nmi}}, {{68,Signal::nmi}}, {{112,Signal::nmi}}, {{126,Signal::nmi}},
+          {{50,Signal::irq_on},{140,Signal::irq_off}}, {{0,Signal::nmi},{60,Signal::nmi},{100,Signal::nmi}}
+        };
+        selected.insert(selected.end(),extra.begin(),extra.end());
+      }
+      for (unsigned flags : {0x34u,0x38u}) for (const auto& scenario : selected) {
+        for (unsigned choice = 0; choice < 22; ++choice) {
+          const unsigned limit = choice == 21 ? 40 : choice;
+          bus->clear_ram(); State actual; reset_cpu(actual,*bus);
+          actual.a = 0x1200; actual.x = 255; actual.y = 128; actual.p = flags;
+          for (const auto& event : scenario) (master_events ? actual.master_clock : cycle_events ? actual.cycle_clock : actual.clock).schedule(event.tick,event.signal);
+          const auto expected = reference(image,scenario,flags,limit,cycle_events,master_events);
+          const bool stopped = run_generated(actual,limit);
+          if (std::tie(actual.a,actual.x,actual.y,actual.pc,actual.s,actual.p,actual.db,actual.e,actual.steps,actual.stop) !=
+              std::tie(expected.a,expected.x,expected.y,expected.pc,expected.s,expected.p,expected.db,expected.e,expected.steps,expected.stop) ||
+              actual.master_clocks != (timed ? expected.master : 0) || actual.master_clock.now() != actual.master_clocks || actual.pending_master_clocks != 0 ||
+              actual.interrupt.active != expected.active || actual.clock.now() != expected.steps || actual.cycle_clock.now() != expected.cycles ||
+              (actual.clock.nmi_pending() || actual.cycle_clock.nmi_pending() || actual.master_clock.nmi_pending()) != expected.nmi ||
+              (actual.clock.irq_asserted() || actual.cycle_clock.irq_asserted() || actual.master_clock.irq_asserted()) != expected.irq ||
+              stopped != (expected.stop == Stop::stp)) {
+            std::cerr << argv[1] << " flags=" << flags << " scenario=" << (&scenario-&selected[0])
+                      << " limit=" << limit << " actualPC=" << actual.pc << " expectedPC=" << expected.pc
+                      << " steps=" << actual.steps << '/' << expected.steps << '\n'; return 1;
+          }
+          for (unsigned i = 0; i < expected.ram.size(); ++i)
+            check(bus->read8(0x7e0000+i) == expected.ram[i],"interrupt reference WRAM mismatch");
+          ++cases;
         }
-        for (unsigned i = 0; i < expected.ram.size(); ++i)
-          check(bus->read8(0x7e0000+i) == expected.ram[i],"interrupt reference WRAM mismatch");
-        ++cases;
       }
     }
     // Independent fixed expected state for one emulation NMI: entry + INX + RTI.
@@ -295,6 +330,7 @@ int main(int argc, char** argv) {
     }
     frame_tests(image);
     if (timed) {
+      if (name == "irq_emulation") mixed_master_sources(image);
       timed_frame_faults(image);
       if (name == "irq_emulation" || name == "irq_native") timed_capacity_tests(image,name == "irq_native");
     }

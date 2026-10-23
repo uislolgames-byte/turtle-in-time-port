@@ -106,7 +106,7 @@ The optional system bus also accepts byte MEMSEL ($420D) writes from generated
 code and exposes address-speed queries (6/8/12 master clocks). These queries do
 not advance `cycle_clock` or supply a CPU master-clock total. See the explicit
 [system timing contract](../system/README.md#address-access-speeds-and-memsel).
-The regression chain now contains 58 tests, including generated MEMSEL traces.
+The regression chain now contains 59 tests, including generated MEMSEL traces.
 
 
 ## First optional CPU master-clock counter
@@ -119,8 +119,8 @@ requires a bus and supports the existing short leaf JSR/RTS. It can be
 combined with `--interrupts` for restricted compiled handlers; nested calls remain rejected. MVN/MVP byte
 iterations now support timing with separate source and destination access costs.
 Only MEMSEL writes are accepted as timed MMIO. Ordinary generation is unchanged.
-The separate CPU counter does not yet synchronize DMA, PPU/APU or master-unit
-events. The 58-test regression chain includes 187 fixed generated instruction traces
+The CPU counter now drives host events in master units, while DMA and PPU/APU
+synchronization remain absent. The 59-test regression chain includes 187 fixed generated instruction traces
 and 129 timed block-transfer comparisons, alongside the 99 untimed comparisons
 and a separate partial-fault fixture. Full 64 KiB WRAM transfer costs and
 slow/FastROM differences have fixed expected results.
@@ -139,5 +139,16 @@ supported bank-zero code/vector and WRAM stack mapping. Capacity is reserved
 before frame effects, and rejected entry/RTI adds no time. Five tests add 4,400
 reference comparisons, preserving the original 4,400 untimed cases. See the
 [timed interrupt contract](../system/README.md#timed-compiled-nmiirq-and-rti).
-Events still use steps or nominal CPU cycles. No master-clock scheduler or
-video/audio synchronization is added.
+Events now also use CPU master clocks through `State::master_clock`. This is
+a CPU event timeline, without a shared device scheduler or video/audio synchronization.
+
+
+Schedule NMI/IRQ requests in CPU master-clock units with
+`state.master_clock.schedule(timestamp, signal)` when using `--bus-timing`.
+The timeline advances with committed costs, latches requests at instruction/byte
+completion and combines them with the original step/cycle sources. Reset clears
+all three queues; zero budget delivers none. Counter/timeline rewind is rejected.
+The regression chain adds 4,400 master-event reference comparisons and 858 fixed
+MEMSEL/FastROM boundary traces (59 tests total). See the
+[master event contract](../system/README.md#cpu-master-clock-event-timeline).
+DMA, refresh and video/audio scheduling remain future work.

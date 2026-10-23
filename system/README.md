@@ -194,7 +194,7 @@ the current costs are:
 `cycle_clock.schedule(cycle, signal)` schedules requests in CPU-cycle units.
 Signals due during an instruction latch at its completion; service occurs at
 the next instruction boundary. No mid-instruction polling or hardware IRQ delay
-is modeled. Logical and cycle NMI requests coalesce and are acknowledged together
+is modeled. Logical, cycle and master-clock NMI requests coalesce and are acknowledged together
 on entry; independent IRQ levels are ORed, so releasing one source does not
 release the other. Both clocks/queues reset with `reset_cpu`.
 
@@ -328,7 +328,7 @@ written byte values, boundaries, rejected accesses, isolation and reset.
 `recompiled_memsel` checks 28 fixed traces of actual generated LDA/STA/STP code,
 including enable/disable, four data-bank aliases, partial budgets and unchanged
 nominal CPU/DMA accounting. The default strict bus rejects the generated write.
-Both join the existing Windows/Linux regression chain (58 tests total).
+Both join the existing Windows/Linux regression chain (59 tests total).
 
 This is a timing-decoder foundation, not an instruction master-clock counter.
 The optional first CPU timing counter below now applies these speeds to a
@@ -379,9 +379,9 @@ clears the counter and its internal pending reservation, preserving WRAM.
 `pending_master_clocks` is internal transient state, not an elapsed-time count.
 The runtime is single-threaded and no host callback runs inside an instruction.
 
-This is **instruction-boundary CPU accounting**, not an interleaved master-clock
-scheduler. It does not expose bus events per cycle, schedule IRQ/NMI in master
-units or combine CPU time with DMA/refresh/PPU/APU. Optional compiled handler
+This is **instruction-boundary CPU accounting**, not an interleaved system master-clock
+scheduler. It does not expose bus events per access or combine CPU time with
+DMA/refresh/PPU/APU. Host IRQ/NMI events in CPU master-clock units are now supported. Optional compiled handler
 timing is described below.
 Existing step/cycle events still stop at instruction boundaries. Hardware delayed
 polling, idleIRQ bus substitutions, STP idle behavior and arbitration are not
@@ -392,7 +392,8 @@ changes, ROM/WRAM, FastROM enable/disable, taken/untaken branches across pages i
 emulation/native mode, loop budgets and faults. They also check overflow before
 CPU/MMIO effects, reset, missing bus, MMIO rejection and existing event timelines.
 The original 37 tests remain; the five instruction tests and eight timed block-move
-tests plus three timed leaf-call tests and five timed interrupt tests bring the total to 58 tests in Windows/Linux CI. References for
+tests, three timed leaf-call tests, five timed interrupt tests and the master-event
+sweep bring the total to 59 tests in Windows/Linux CI. References for
 instruction decomposition: upstream bsnes
 [other instructions](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-other.cpp)
 and [branches](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-pc.cpp).
@@ -418,7 +419,8 @@ Each byte commits its reserved time only after successful read/write. A fault
 retains completed bytes and their time, but adds nothing for the rejected byte.
 An exhausted counter is diagnosed before either data access or changes to
 registers/DBR/PC. The existing per-step/per-cycle NMI requests can still stop
-between bytes; there are no master-clock events or external restart API.
+between bytes. Master-clock events are also supported below; no external restart
+API is provided.
 MMIO source/destination addresses are rejected before effects, including the
 WRAM data port and MEMSEL. DMA is not triggered by these instructions.
 
@@ -465,7 +467,7 @@ JSR/RTS and sample NMI at those boundaries using both event timelines.
 Helper tests cover emulation page wrap, native bank wrap, atomic push faults,
 MMIO guards and invalid stack pointers. Generated entry still requires S=$01FF;
 these helper boundary tests do not add TXS or arbitrary initial-S program entry.
-The full regression chain contains 58 tests, retaining these leaf-call tests.
+The full regression chain contains 59 tests, retaining these leaf-call tests.
 
 Calls remain restricted to straight-line, mode-preserving leaves; nested calls,
 leaf branches/mode changes/block moves and JSL/RTL are unsupported. Restricted compiled
@@ -506,19 +508,19 @@ frame, unlike the explicitly different historical RTS fault policy above.
 Successful entry/RTI commit both nominal and master costs and the existing
 single logical step. I/D/P restoration, NMI coalescing/priority, IRQ masking,
 return-frame validation and non-nesting behavior are unchanged. Requests arriving
-in a handler remain deferred until RTI. Events are still scheduled in logical
-steps or nominal CPU cycles, not master-clock units.
+in a handler remain deferred until RTI. Events can be scheduled in logical
+steps, nominal CPU cycles or the CPU master-clock timeline described below.
 
-Five timed interrupt fixtures add 4,400 independent byte-interpreter comparisons
+Five timed interrupt fixtures now run 8,800 independent byte-interpreter comparisons
 of CPU, all WRAM/stack, active context, signals, steps, CPU cycles and master
-clocks. Together with the 4,400 original untimed cases there are 8,800 interrupt
-comparisons. They include emulation/native, IRQ release/re-entry, NMI deferral,
+clocks. Together with the 4,400 original untimed cases there are 13,200 interrupt
+comparisons. Of the timed cases, 4,400 use master-clock events. They include emulation/native, IRQ release/re-entry, NMI deferral,
 priority, handler effects, JSR and block-move continuity and corrupted frames.
 Fixed program totals for one NMI are 160 master clocks / 22 CPU cycles in
 emulation and 226 / 31 in native mode. Additional cases check one clock too few
 and exact capacity at entry and RTI, atomic frame faults, NMI acknowledgement,
 wrong vectors and MMIO. CLI generation exercises both option orders. Total:
-58 tests in Windows/Linux CI, retaining all 53 previous tests.
+59 tests in Windows/Linux CI, retaining all previous tests.
 
 These are aggregate CPU costs at instruction boundaries. Full IRQ polling delay,
 per-access interleaving, DMA arbitration/refresh and PPU/APU synchronization remain
@@ -526,3 +528,57 @@ absent. This does not establish frame timing, complete M3 or run the game.
 References: upstream bsnes [interrupt entry](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instruction.cpp)
 and [RTI](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/processor/wdc65816/instructions-pc.cpp).
 No upstream source code was copied.
+
+## CPU master-clock event timeline
+
+Schedule host `Signal::nmi`, `irq_on` or `irq_off` requests with
+`state.master_clock.schedule(absolute_master_clock, signal)`. Programs generated
+with `--bus-timing` advance this third `EventClock` with each successfully
+committed CPU instruction/transfer byte/interrupt entry. Its `now()` mirrors the
+compatible `State::master_clocks` counter during timed execution. The two previous
+timelines keep their units and behavior; requests from all three sources are
+combined. Only timed execution automatically advances/delivers the master queue.
+Untimed code does not deliver queued master events or accumulate master time.
+
+At a timed boundary, budget and existing logical/nominal capacity checks come
+first, then the master timeline is synchronized to the CPU counter and due
+requests are delivered. This preserves zero-budget behavior: no synchronization
+or delivery. A nonzero initial counter origin used by host tests is aligned at
+the first eligible boundary; due requests at/before that origin are delivered
+there. Hosts should schedule events, not separately advance the owned timeline.
+A timeline ahead of the CPU counter (including counter rewind) produces a
+contract diagnostic before CPU effects. Reset clears the counter, master queue,
+latched requests and timeline, while preserving WRAM as before. Clock/queue copies
+are independent; copied states still borrow the same bus.
+
+Each completed operation advances the master timeline by exactly its reserved
+cost. Events inside an instruction latch at completion and are serviced at the
+next boundary. MVN/MVP provide a boundary per byte. Accepted compiled entry
+acknowledges all latched NMI sources together; a new NMI during a handler is
+retained until RTI, without nesting. IRQ levels from all three clocks are ORed;
+releasing one source cannot release another. Equal-time events in one timeline
+keep insertion order. There is no ordering of timestamps across different units,
+only the combined signal state at a CPU boundary.
+
+Rejected loads/stores/JSR/RTI/interrupt frames do not advance the timeline or
+consume future events. RTS retains its separate prior count-before-pop policy.
+Master-counter exhaustion is checked before operation effects; exact capacity
+can latch an event at UINT64_MAX without overflow. STP may latch requests at its
+bounded entry completion, but does not continue into a handler or accumulate
+idle time. A complete IRQ on/off pulse inside one instruction may be absent at
+the next boundary: this is aggregate sampling, not hardware polling timing.
+
+The interrupt reference chain adds 4,400 master-event comparisons (13,200 total
+interrupt comparisons), checking full WRAM/stack, CPU, active frame, signals and
+all counters. Master timestamps include exact/adjacent instruction and handler
+boundaries. Mixed-source fixed cases cover IRQ levels, NMI priority/coalescing,
+acknowledgement and deferral. `recompiled_bus_master_events` sweeps 858 fixed
+boundary traces over all timestamps through a program with MEMSEL/FastROM,
+checking both slow and fast ROM paths. It also checks budget zero, failed stores,
+reset, host origins, ahead/rewound clocks and exact/exhausted capacity. Total:
+59 Windows/Linux regression tests, preserving the previous 58.
+
+This is a CPU-owned event queue. It does not generate video interrupts, emulate
+NMITIMEN/IRQ timer registers, run devices between bus accesses, arbitrate DMA,
+add refresh stalls or synchronize PPU/APU. A shared system scheduler remains
+future work. It does not complete M3 or run the game. Only synthetic data is used.

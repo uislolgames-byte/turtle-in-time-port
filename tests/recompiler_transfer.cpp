@@ -188,7 +188,8 @@ int main(int argc, char** argv) {
       const bool result = run_generated(state, budget);
       check(std::tie(state.a,state.x,state.y,state.p,state.pc,state.db,state.e,state.steps) ==
             std::tie(expected.a,expected.x,expected.y,expected.p,expected.pc,expected.db,expected.e,expected.steps) &&
-            state.master_clocks == (timed ? expected.master : 0) && state.pending_master_clocks == 0 &&
+            state.master_clocks == (timed ? expected.master : 0) && state.master_clock.now() == state.master_clocks &&
+            state.pending_master_clocks == 0 &&
             state.s == 0x1ff && state.clock.now() == expected.steps && state.cycle_clock.now() == expected.cycles && state.diagnostic.empty() &&
             result == expected.stopped && state.stop == (result ? Stop::stp : Stop::limit), "compiled/reference transfer state differs");
       for (unsigned i = 0; i < expected.ram.size(); ++i)

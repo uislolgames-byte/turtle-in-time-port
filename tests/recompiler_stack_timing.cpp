@@ -124,7 +124,8 @@ static void compare(const recompiled::State& actual, const recompiled::State& ex
   check(std::tie(actual.a,actual.x,actual.y,actual.pc,actual.s,actual.p,actual.db,actual.e,actual.steps,actual.stop) ==
         std::tie(expected.a,expected.x,expected.y,expected.pc,expected.s,expected.p,expected.db,expected.e,expected.steps,expected.stop),
         "timed call/reference CPU state differs");
-  check(actual.master_clocks == origin + expected.master_clocks && actual.pending_master_clocks == 0 &&
+  check(actual.master_clocks == origin + expected.master_clocks && actual.master_clock.now() == actual.master_clocks &&
+        actual.pending_master_clocks == 0 &&
         actual.cycle_clock.now() == expected.cycle_clock.now() && actual.clock.now() == expected.steps,
         "timed call/reference clocks differ");
   for (unsigned i = 0; i < expected.ram.size(); ++i)

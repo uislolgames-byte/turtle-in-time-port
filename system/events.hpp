@@ -8,7 +8,7 @@
 namespace system816 {
 enum class Signal { nmi, irq_on, irq_off };
 
-// Ordered signal timeline. Its owner defines the units: steps or CPU cycles.
+// Ordered signal timeline. Its owner defines the units: steps, CPU cycles or CPU master clocks.
 class EventClock {
 public:
   uint64_t now() const { return now_; }

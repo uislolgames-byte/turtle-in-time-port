@@ -25,6 +25,7 @@ struct State {
   system816::EventClock clock;
   system816::EventClock cycle_clock;
   uint64_t master_clocks = 0;
+  system816::EventClock master_clock;
   unsigned pending_master_clocks = 0; // Reserved cost for one generated instruction.
   InterruptContext interrupt;
 };
@@ -34,20 +35,32 @@ inline bool reserve_cycles(State& s, unsigned cycles) {
   }
   return true;
 }
-inline bool pending_nmi(const State& s) {
-  return s.clock.nmi_pending() || s.cycle_clock.nmi_pending();
+inline bool synchronize_master_clock(State& s) {
+  if (s.master_clock.now() > s.master_clocks) {
+    s.pending_master_clocks = 0;
+    s.stop = Stop::contract; s.diagnostic = "Master event clock is ahead of CPU counter"; return false;
+  }
+  s.master_clock.advance(s.master_clocks-s.master_clock.now());
+  return true;
 }
-inline bool begin_instruction(State& s, unsigned limit, unsigned cycles) {
+inline bool pending_irq(const State& s) {
+  return s.clock.irq_asserted() || s.cycle_clock.irq_asserted() || s.master_clock.irq_asserted();
+}
+inline bool pending_nmi(const State& s) {
+  return s.clock.nmi_pending() || s.cycle_clock.nmi_pending() || s.master_clock.nmi_pending();
+}
+inline bool begin_instruction(State& s, unsigned limit, unsigned cycles, bool master_timed = false) {
   // Budget zero must leave scheduled events untouched.
   if (s.steps >= limit) { s.stop = Stop::limit; return false; }
   if (!s.clock.can_tick()) {
     s.stop = Stop::contract; s.diagnostic = "Logical event clock exhausted"; return false;
   }
   if (!reserve_cycles(s, cycles)) return false;
+  if (master_timed && !synchronize_master_clock(s)) return false;
   s.clock.advance(0);
   s.cycle_clock.advance(0);
   const bool nmi = pending_nmi(s);
-  if (!s.interrupt.active && (nmi || ((s.clock.irq_asserted() || s.cycle_clock.irq_asserted()) && !(s.p & 4)))) {
+  if (!s.interrupt.active && (nmi || (pending_irq(s) && !(s.p & 4)))) {
     s.stop = Stop::interrupt;
     std::ostringstream out;
     out << (nmi ? "NMI" : "IRQ") << " handler execution unsupported at PC $"
@@ -75,7 +88,7 @@ inline bool reserve_master_clocks(State& s, unsigned cost) {
 inline bool begin_bus_instruction(State& s, unsigned limit, unsigned cycles,
                                   unsigned pc, unsigned length, unsigned address,
                                   unsigned bytes, bool writing) {
-  if (!begin_instruction(s, limit, cycles)) return false;
+  if (!begin_instruction(s, limit, cycles, true)) return false;
   s.pending_master_clocks = 0;
   if (!s.bus || length < 1 || length > 3 || bytes > 2 || cycles > 7 || cycles < length + bytes) {
     s.stop = Stop::contract; s.diagnostic = "Invalid CPU bus timing plan or missing bus"; return false;
@@ -100,7 +113,7 @@ inline bool begin_bus_instruction(State& s, unsigned limit, unsigned cycles,
 // accesses and two internal cycles. Nothing reads or mutates memory here.
 inline bool begin_move_instruction(State& s, unsigned limit, unsigned pc,
                                    unsigned destination, unsigned source, bool narrow) {
-  if (!begin_instruction(s, limit, 7)) return false;
+  if (!begin_instruction(s, limit, 7, true)) return false;
   s.pending_master_clocks = 0;
   const unsigned mask = narrow ? 255 : 65535;
   if (!s.bus || destination > 255 || source > 255 || s.a > 65535 || s.x > mask || s.y > mask) {
@@ -123,7 +136,7 @@ inline bool begin_move_instruction(State& s, unsigned limit, unsigned pc,
 // JSR/RTS use bank-zero stack accesses independently of DBR. The plan only
 // classifies addresses; push/pop perform the checked memory accesses later.
 inline bool begin_stack_instruction(State& s, unsigned limit, unsigned pc, bool pulling) {
-  if (!begin_instruction(s, limit, 6)) return false;
+  if (!begin_instruction(s, limit, 6, true)) return false;
   s.pending_master_clocks = 0;
   if (!s.bus || s.s > 65535 || (s.e && (s.s < 0x100 || s.s > 0x1ff))) {
     s.stop = Stop::contract; s.diagnostic = "JSR/RTS timing requires a bus and bounded stack pointer"; return false;
@@ -150,7 +163,7 @@ inline bool prepare_interrupt_timing(State& s, bool nmi) {
   if (!s.clock.can_tick()) {
     s.stop = Stop::contract; s.diagnostic = "Logical event clock exhausted"; return false;
   }
-  if (!reserve_cycles(s,s.e ? 7 : 8)) return false;
+  if (!reserve_cycles(s,s.e ? 7 : 8) || !synchronize_master_clock(s)) return false;
   if (!s.bus || s.interrupt.active || s.pc > 65535 || s.s > 65535 ||
       (s.e && (s.s < 0x100 || s.s > 0x1ff))) {
     s.stop = Stop::contract; s.diagnostic = "Invalid timed interrupt entry context"; return false;
@@ -170,7 +183,7 @@ inline bool prepare_interrupt_timing(State& s, bool nmi) {
   }
 }
 inline bool begin_rti_instruction(State& s, unsigned limit, unsigned pc) {
-  if (!begin_instruction(s,limit,s.e ? 6 : 7)) return false;
+  if (!begin_instruction(s,limit,s.e ? 6 : 7,true)) return false;
   s.pending_master_clocks = 0;
   if (!s.bus || s.s > 65535 || (s.e && (s.s < 0x100 || s.s > 0x1ff))) {
     s.stop = Stop::contract; s.diagnostic = "Invalid timed RTI stack context"; return false;
@@ -190,6 +203,7 @@ inline bool begin_rti_instruction(State& s, unsigned limit, unsigned pc) {
 inline void complete_bus_instruction(State& s, unsigned cycles) {
   complete_instruction(s, cycles);
   s.master_clocks += s.pending_master_clocks;
+  s.master_clock.advance(s.pending_master_clocks);
   s.pending_master_clocks = 0;
 }
 // Deterministic host reset policy. Preserves the bus's RAM and immutable ROM.
@@ -351,7 +365,7 @@ inline bool enter_interrupt(State& s, unsigned target, bool nmi) {
     for (unsigned i = 0; i < count; ++i) write_byte(s, addresses[i], static_cast<uint8_t>(values[i]));
     s.interrupt = {true, s.e, s.pc, s.p, s.s, next};
     s.s = next; s.pc = target; s.p = (s.p | 4) & ~8u;
-    if (nmi) { s.clock.acknowledge_nmi(); s.cycle_clock.acknowledge_nmi(); }
+    if (nmi) { s.clock.acknowledge_nmi(); s.cycle_clock.acknowledge_nmi(); s.master_clock.acknowledge_nmi(); }
     s.stop = Stop::limit; s.diagnostic.clear();
     return true;
   } catch (const system816::BusError& e) {

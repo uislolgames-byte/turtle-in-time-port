@@ -125,7 +125,7 @@ além de uma sequência que preenche e percorre um buffer com loop.
 
 A etapa de temporização do Marco 3 também classifica acessos por endereço em
 6/8/12 master clocks e aceita o controle MEMSEL/FastROM no barramento opcional.
-A bateria tem 58 testes, incluindo varredura de todos os endereços com os dois
+A bateria tem 59 testes, incluindo varredura de todos os endereços com os dois
 valores de MEMSEL e execução de alterações do controle pelo C++ gerado.
 Essa consulta ainda precisa ser ligada à sequência de acessos de cada instrução;
 não representa um relógio mestre completo. Veja [o contrato](system/README.md#address-access-speeds-and-memsel).
@@ -135,7 +135,7 @@ A ferramenta agora oferece `--bus-timing`: contagem de master clocks da CPU
 para um subconjunto com chamadas folha JSR/RTS, MVN/MVP e handlers compilados
 quando combinado com `--interrupts`.
 Ela soma acessos e ciclos internos por instrucao, respeitando MEMSEL/FastROM.
-A bateria passa a ter 58 testes, com copia de 64 KiB e falhas entre bytes. Ainda falta sincronizar essa contagem com DMA,
+A bateria passa a ter 59 testes, com copia de 64 KiB e falhas entre bytes. Ainda falta sincronizar essa contagem com DMA,
 video e audio; nao representa um agendador completo do SNES. Detalhes e limites
 no [contrato de temporizacao](system/README.md#optional-generated-cpu-master-clock-accounting).
 
@@ -155,4 +155,10 @@ As opcoes `--interrupts --bus-timing` agora funcionam juntas: entrada NMI/IRQ,
 instrucoes do handler e RTI acumulam master clocks, com reserva de capacidade
 antes de alterar a pilha. Cinco testes acrescentam 4.400 comparacoes contra
 referencia, preservando as 4.400 anteriores sem temporizacao master. A bateria
-completa tem 58 testes. Ainda falta intercalar CPU/DMA e sincronizar video/audio.
+completa tem 59 testes. Ainda falta intercalar CPU/DMA e sincronizar video/audio.
+
+Agora tambem e possivel agendar NMI/IRQ em master clocks da CPU, alem de passos
+ou ciclos nominais, com `State::master_clock`. Os eventos sao observados nas
+fronteiras das instrucoes/bytes, respeitando FastROM e a temporizacao dos handlers.
+A validacao acrescenta 4.400 comparacoes e 858 rastros de fronteiras. Ainda falta
+um agendador compartilhado com DMA, refresh, video e audio.
