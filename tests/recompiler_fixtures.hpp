@@ -4,6 +4,7 @@
 #include <vector>
 #include <cstdint>
 inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
+  if (name == "memsel") return {0xa9,0xff,0x8d,0x0d,0x42,0xa9,0xfe,0x8d,0x0d,0x42,0xdb};
   if (name == "timing_emulation" || name == "timing_native") {
     std::vector<uint8_t> code(0x103,0xea);
     if (name == "timing_emulation") {

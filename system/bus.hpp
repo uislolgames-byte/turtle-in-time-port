@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 #include <limits>
+#include "timing.hpp"
 
 namespace system816 {
 enum class Fault { address, unmapped, rom_bounds, read_only };
@@ -25,23 +26,23 @@ private:
   }
 };
 
-// Strict LoROM subset. Optional channel-0 DMA/WRAM-port MMIO; no open bus/SRAM.
+// Strict LoROM subset. Optional DMA/WRAM-port/MEMSEL MMIO; no open bus/SRAM.
 class Bus {
 public:
-  explicit Bus(std::vector<uint8_t> rom, bool dma_io = false) : rom_(std::move(rom)), dma_io_(dma_io) {
+  explicit Bus(std::vector<uint8_t> rom, bool devices_io = false) : rom_(std::move(rom)), devices_io_(devices_io) {
     if (rom_.empty() || rom_.size() > 0x400000 || rom_.size() % 0x8000)
       throw std::invalid_argument("Bus requires headerless LoROM: 32 KiB blocks, at most 4 MiB");
   }
   uint8_t read8(uint32_t address) const {
     const auto io = io_address(address);
-    if (dma_io_ && io >= 0x4300 && io <= 0x4306) return channel_[io-0x4300];
-    if (dma_io_ && io == 0x2180)
+    if (devices_io_ && io >= 0x4300 && io <= 0x4306) return channel_[io-0x4300];
+    if (devices_io_ && io == 0x2180)
       throw BusError(Fault::unmapped, address, "WRAM data-port read requires a mutable bus");
     const auto location = resolve(address);
     return location.ram ? ram_[location.offset] : rom_[location.offset];
   }
   uint8_t read8(uint32_t address) {
-    if (dma_io_ && io_address(address) == 0x2180) {
+    if (devices_io_ && io_address(address) == 0x2180) {
       const auto value = ram_[wram_address_];
       wram_address_ = (wram_address_ + 1) & 0x1ffff;
       return value;
@@ -51,28 +52,34 @@ public:
   void write8(uint32_t address, uint8_t value) {
     validate_write8(address);
     const auto io = io_address(address);
-    if (dma_io_ && writable_io(io)) { write_io(io, value, address); return; }
+    if (devices_io_ && writable_io(io)) { write_io(io, value, address); return; }
     ram_[resolve(address).offset] = value;
   }
   // Address-only preflight. Runtime word accesses involving MMIO are rejected.
   void validate_write8(uint32_t address) const {
-    if (dma_io_ && writable_io(io_address(address))) return;
+    if (devices_io_ && writable_io(io_address(address))) return;
     const auto location = resolve(address);
     if (!location.ram) throw BusError(Fault::read_only, address, "ROM write rejected");
   }
   bool is_mmio(uint32_t address) const {
     const auto io = io_address(address);
-    return dma_io_ && ((io >= 0x2100 && io <= 0x21ff) || (io >= 0x4200 && io <= 0x437f));
+    return devices_io_ && ((io >= 0x2100 && io <= 0x21ff) || (io >= 0x4200 && io <= 0x437f));
   }
   void validate_word(uint32_t address) const {
     if (is_mmio(address) || (address < 0xffffff && is_mmio(address+1)))
       throw BusError(Fault::unmapped, address, "16-bit MMIO transfers unsupported");
   }
+  bool fast_rom() const { return fast_rom_; }
+  unsigned cpu_access_clocks(uint32_t address) const {
+    if (address > 0xffffff)
+      throw BusError(Fault::address, address, "Timing address exceeds 24 bits");
+    return system816::cpu_access_clocks(address, fast_rom_);
+  }
   uint32_t wram_address() const { return wram_address_; }
   uint64_t dma_clocks() const { return dma_clocks_; }
   uint64_t dma_bytes() const { return dma_bytes_; }
   void reset_devices() {
-    channel_.fill(0); wram_address_ = 0; dma_clocks_ = 0; dma_bytes_ = 0;
+    fast_rom_ = false; channel_.fill(0); wram_address_ = 0; dma_clocks_ = 0; dma_bytes_ = 0;
   }
   uint16_t reset_vector() const {
     return static_cast<uint16_t>(read8(0x00fffc) | (unsigned(read8(0x00fffd)) << 8));
@@ -86,7 +93,7 @@ private:
     return address & 0xffff;
   }
   static bool writable_io(uint32_t io) {
-    return (io >= 0x2180 && io <= 0x2183) || (io >= 0x4300 && io <= 0x4306) || io == 0x420b;
+    return (io >= 0x2180 && io <= 0x2183) || (io >= 0x4300 && io <= 0x4306) || io == 0x420b || io == 0x420d;
   }
   void write_io(uint32_t io, uint8_t value, uint32_t address) {
     if (io >= 0x4300 && io <= 0x4306) { channel_[io-0x4300] = value; return; }
@@ -94,6 +101,7 @@ private:
     if (io == 0x2181) wram_address_ = (wram_address_ & 0x1ff00) | value;
     if (io == 0x2182) wram_address_ = (wram_address_ & 0x100ff) | (unsigned(value) << 8);
     if (io == 0x2183) wram_address_ = (wram_address_ & 0xffff) | ((unsigned(value) & 1) << 16);
+    if (io == 0x420d) fast_rom_ = (value & 1) != 0;
     if (io == 0x420b) run_dma(value, address);
   }
   void run_dma(uint8_t mask, uint32_t trigger) {
@@ -138,7 +146,7 @@ private:
   }
   std::vector<uint8_t> rom_;
   std::array<uint8_t, 0x20000> ram_{};
-  bool dma_io_ = false;
+  bool devices_io_ = false, fast_rom_ = false;
   std::array<uint8_t,7> channel_{};
   uint32_t wram_address_ = 0;
   uint64_t dma_clocks_ = 0, dma_bytes_ = 0;

@@ -1,4 +1,4 @@
-# System memory — first part of milestone 3
+# System memory â€” first part of milestone 3
 
 `bus.hpp` is a C++17 memory component optionally connected to the static
 recompiler runtime. The existing CPU probe and Windows application are unchanged.
@@ -13,16 +13,17 @@ normalized `data`; no file loader or commercial data is added here.
 
 | CPU address | Supported mapping |
 | --- | --- |
-| `$7E:0000–$7F:FFFF` | 128 KiB WRAM, read/write |
-| `$00–$3F/$80–$BF:0000–1FFF` | Mirror of first 8 KiB WRAM |
-| Other banks, `$8000–FFFF` | LoROM offset `(bank & 127) * 32768 + (address & 32767)` |
+| `$7E:0000â€“$7F:FFFF` | 128 KiB WRAM, read/write |
+| `$00â€“$3F/$80â€“$BF:0000â€“1FFF` | Mirror of first 8 KiB WRAM |
+| Other banks, `$8000â€“FFFF` | LoROM offset `(bank & 127) * 32768 + (address & 32767)` |
 | All remaining regions | Explicit unsupported-region fault |
 
-WRAM banks take precedence over ROM mapping. Banks `$80–FF` mirror the
+WRAM banks take precedence over ROM mapping. Banks `$80â€“FF` mirror the
 corresponding lower ROM banks. The mapped offset must exist in the supplied
 cartridge; smaller ROMs do not wrap to fill unpopulated banks. Additional LoROM
 aliases in the lower half of banks are deliberately unsupported. No SRAM,
-PPU/APU registers, open-bus behavior, cartridge chips or CPU cycle timing.
+PPU/APU registers, open-bus behavior or cartridge chips. CPU instruction cycles
+are nominal; address timing is a separate query described below.
 MMIO is disabled by default; an explicit optional DMA/WRAM-port subset is below.
 The model is intentionally stricter and smaller than real SNES hardware.
 
@@ -36,7 +37,7 @@ integration; callers must not infer them from this byte API.
 RAM starts at zero as a deterministic host testing policy, not a hardware
 power-on guarantee. RAM persists for the life of an instance until explicitly
 changed or `clear_ram()` is called. `reset_vector()` reads little-endian
-`$00:FFFC–FFFD` without resetting CPU or clearing RAM. ROM remains immutable.
+`$00:FFFCâ€“FFFD` without resetting CPU or clearing RAM. ROM remains immutable.
 There is no save-state format.
 
 ## Static runtime connection and reset
@@ -46,7 +47,7 @@ host CPU state: A/X/Y/DBR and steps zero, PC from RESET, S=$01FF, P=$34, E=1,
 no diagnostic, stop=limit. This is a deterministic subset policy, not a full
 hardware reset (no reset cycles or emulation of undefined register values).
 WRAM persists; `bus.clear_ram()` is the separate explicit operation to clear it.
-Reset also clears optional DMA registers/counters and the WRAM-port address.
+Reset also clears optional DMA registers/counters, MEMSEL and the WRAM-port address.
 The function returns false with a contract diagnostic for RESET other than
 $8000. Generated code remains fixed to bank-zero entry $8000; no resuming.
 
@@ -102,13 +103,13 @@ Total: 35 tests.
 ## Optional channel-0 DMA to the WRAM data port
 
 Construct `Bus(image, true)` to enable this device subset. It is off by default.
-Supported CPU-bank aliases: $00–3F/$80–BF. Byte writes to $2181–2183 set a 17-bit
+Supported CPU-bank aliases: $00â€“3F/$80â€“BF. Byte writes to $2181â€“2183 set a 17-bit
 WRAM address; $2180 reads/writes its byte and increments that address modulo
 128 KiB. Only bit 0 of $2183 is used. Address registers are write-only; reading
 $2180 requires a non-const bus because it advances state. The default bus still
 rejects these addresses.
 
-Channel-0 registers $4300–4306 are readable/writable: control, B-bus target,
+Channel-0 registers $4300â€“4306 are readable/writable: control, B-bus target,
 A-bus address low/high/bank and size low/high. A byte write of 1 to $420B starts
 the supported transfer synchronously. A zero mask does nothing; other channel
 masks are rejected. Only mode 0, A-to-B, target $80 (WRAM port) is implemented.
@@ -126,7 +127,7 @@ reconfiguration. Startup overhead remains counted on a data-source failure.
 each successfully transferred byte; `dma_bytes()` counts successful bytes. A
 four-byte transfer therefore records 48 clocks. These are a **partial DMA
 timing model**, separate from `State::clock` (logical instruction ticks). CPU bus
-cycles, start alignment, refresh/arbitration, PPU/APU synchronization and hardware
+cycle scheduling, start alignment, refresh/arbitration, PPU/APU synchronization and hardware
 NMI/IRQ timing during DMA remain absent. DMA runs inside the trigger write;
 logical events are checked at the next CPU instruction boundary, not per DMA
 byte. This cannot establish frame timing or complete milestone 3.
@@ -161,8 +162,8 @@ This conservative failure policy is a diagnostic contract, not hardware fault
 emulation. Transfers in leaf subroutines remain unsupported. There is no
 mid-program restart API after stopping partway through a block.
 
-These are CPU instructions, **not SNES DMA/HDMA**. DMA registers, bus arbitration,
-PPU ports, channel modes and transfer cycles are still absent. Tests cover
+These are CPU instructions, **not SNES DMA/HDMA**. The optional DMA subset above is separate; general DMA/HDMA, bus arbitration
+and PPU ports remain absent. Tests cover
 increment/decrement, ROM-to-WRAM, wrapping, separate M/X widths, a complete 64 KiB
 bank, partial budgets, NMI, immutable ROM and errors partway through a block.
 Reference for instruction behavior: upstream bsnes
@@ -205,7 +206,7 @@ diagnostic stops, not hardware fault timing. STP counts its entry but there is
 no accumulation of idle time after it stops.
 
 These are **nominal CPU cycles**, not SNES master clocks or seconds. DMA counters
-remain separate: variable memory-access speeds, CPU/DMA arbitration, refresh,
+remain separate: applying address access speeds to generated CPU operations, CPU/DMA arbitration, refresh,
 PPU/APU synchronization and a shared master-clock scheduler are still absent.
 Generated C++ must be regenerated with this version of the tool/runtime, since
 the begin/complete helper calls now include cycle costs.
@@ -261,7 +262,8 @@ bank-zero PBR first. The bank-zero stack wraps within page $01 in emulation
 or 16 bits in native mode, subject to supported WRAM addresses. Entry sets I,
 clears D and acknowledges NMI; IRQ remains a level. A new NMI arriving after
 acknowledgement remains pending. Each entry consumes one synthetic step/tick;
-handler instructions and RTI also count. These are not hardware cycle costs.
+handler instructions and RTI also count. Separately, nominal CPU cycles use
+the costs listed above; the logical step itself is not a hardware cycle.
 
 RTI reads the real stack bytes and validates the original PC, P, bank and stack
 position before restoring them. E cannot change. The host continuation metadata
@@ -291,3 +293,48 @@ Those hardware delays are not modeled by this host timeline.
 WRAM mapping reference for comparison: the upstream bsnes implementation's
 [CPU power/mapping code](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/sfc/cpu/cpu.cpp).
 No upstream source code is copied into this component.
+
+## Address access speeds and MEMSEL
+
+`timing.hpp` provides `system816::cpu_access_clocks(address, fast_rom)` for
+one CPU byte access, returning master-clock units. `bus.cpu_access_clocks(address)`
+uses that bus instance's current MEMSEL bit. Neither query reads/writes memory,
+advances any clock, grants access to an unsupported region or changes DMA costs.
+The standalone function rejects addresses above 24 bits with `std::out_of_range`;
+the bus wrapper reports `BusError(Fault::address)` instead.
+
+| Address decoder range | Master clocks per byte access |
+| --- | --- |
+| $00–3F/$80–BF:0000–1FFF and 6000–7FFF | 8 |
+| $00–3F/$80–BF:2000–3FFF and 4200–5FFF | 6 |
+| $00–3F/$80–BF:4000–41FF | 12 |
+| $00–3F:8000–FFFF, $40–7F:0000–FFFF | 8 |
+| $80–BF:8000–FFFF, $C0–FF:0000–FFFF | 8, or 6 with MEMSEL bit 0 set |
+
+WRAM banks $7E/$7F remain 8 clocks. This decoder table includes unimplemented
+regions: for example a timing query at $004000 returns 12, but an actual read
+still fails. This does not add cartridge aliases or controller registers.
+
+With the existing explicit `Bus(image, true)` device opt-in, byte writes to
+$420D in banks $00–3F/$80–BF set MEMSEL from bit 0; other bits are ignored.
+Reads remain unsupported (no open bus). Default/reset MEMSEL is zero under the
+host reset policy. Reset preserves WRAM; clearing RAM preserves MEMSEL. The
+setting belongs to each bus instance. Sixteen-bit runtime MMIO accesses remain
+rejected before effects. The previous constructor call syntax is unchanged.
+
+`system_timing` checks all 16,777,216 addresses with both MEMSEL values against
+a range table (33,554,432 comparisons), all 128 register aliases and all 256
+written byte values, boundaries, rejected accesses, isolation and reset.
+`recompiled_memsel` checks 28 fixed traces of actual generated LDA/STA/STP code,
+including enable/disable, four data-bank aliases, partial budgets and unchanged
+nominal CPU/DMA accounting. The default strict bus rejects the generated write.
+Both join the existing Windows/Linux regression chain (37 tests total).
+
+This is a timing-decoder foundation, not an instruction master-clock counter.
+The static compiler still needs per-instruction bus-access/internal-cycle
+sequences before these speeds can safely drive CPU time. Multiplying nominal
+cycles by one fixed value would be incorrect. Refresh, DMA arbitration and
+PPU/APU scheduling also remain future work. References for comparison: upstream
+bsnes [CPU access timing](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/sfc/cpu/memory.cpp)
+and [MEMSEL register](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/sfc/cpu/io.cpp).
+No upstream source code was copied.
