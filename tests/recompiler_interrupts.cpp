@@ -247,7 +247,8 @@ static void mixed_master_sources(const std::vector<uint8_t>& image) {
   s.clock.schedule(0,Signal::irq_on); s.clock.schedule(1,Signal::irq_off);
   s.cycle_clock.schedule(0,Signal::irq_on); s.cycle_clock.schedule(8,Signal::irq_off);
   s.master_clock.schedule(0,Signal::irq_on); s.master_clock.schedule(200,Signal::irq_off);
-  check(run_generated(s,40) && s.steps == 9 && s.x == 2 && s.pc == 0x8003 && s.s == 0x1ff &&
+  // IRQ handler is DEX: two entries wrap X from zero to $FE.
+  check(run_generated(s,40) && s.steps == 9 && s.x == 254 && s.pc == 0x8003 && s.s == 0x1ff &&
         s.master_clocks == 272 && s.master_clock.now() == 272 && s.cycle_clock.now() == 37 &&
         !pending_irq(s),"master IRQ source released by another timeline");
   reset_cpu(s,*bus); s.p = 0x30;
