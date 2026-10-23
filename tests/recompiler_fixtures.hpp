@@ -64,6 +64,32 @@ inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
   if (name == "bus_raster_loop") return {0xea,0x80,0xfd};
   if (name == "bus_raster_fault") return recompiler_fixture("dma_cgram_fault");
   if (name.rfind("bus_dma_",0) == 0) return recompiler_fixture(name.substr(4));
+  if (name == "dma_pattern_matrix" || name == "dma_pattern_fault") {
+    std::vector<uint8_t> image(32768,0), code;
+    const auto write = [&](unsigned at, unsigned value) {
+      code.insert(code.end(),{0xa9,static_cast<uint8_t>(value),0x8d,static_cast<uint8_t>(at),static_cast<uint8_t>(at >> 8)});
+    };
+    if (name == "dma_pattern_fault") {
+      write(0x1ffd,0xe3); write(0x1ffe,0x34); write(0x1fff,0xa5);
+      for (const auto& pair : std::vector<std::pair<unsigned,unsigned>>{{0x4300,4},{0x4301,0x0d},{0x4302,0xfd},{0x4303,0x1f},{0x4304,0},{0x4305,7},{0x4306,0}}) write(pair.first,pair.second);
+      write(0x420b,1);
+    } else {
+      write(0x2181,0xfd); write(0x2182,0xff); write(0x2183,1);
+      write(0x2115,0x80); write(0x2116,0); write(0x2117,0); write(0x2121,255);
+      for (unsigned ch = 0; ch < 8; ++ch) {
+        const unsigned count = ch == 0 || ch == 2 || ch == 6 ? 5 : 7;
+        const unsigned control = ch | (ch%3 == 1 ? 8 : ch%3 == 2 ? 16 : 0);
+        const unsigned target = ch == 0 ? 0x80 : ch == 4 ? 0x0d : ch == 2 || ch == 6 ? 0x22 : 0x18;
+        const unsigned source = 0x9100+ch*16+(ch%3 == 2 ? 6 : 0), base = 0x4300+ch*16;
+        const unsigned regs[] = {control,target,source%256,source/256,0,count,0};
+        for (unsigned r = 0; r < 7; ++r) write(base+r,regs[r]);
+        for (unsigned j = 0; j < 16; ++j) image[0x1100+ch*16+j] = static_cast<uint8_t>(ch*31+j*17+3);
+      }
+      write(0x420b,255);
+    }
+    code.push_back(0xdb); for (unsigned i = 0; i < code.size(); ++i) image[i] = code[i];
+    image[0x7ffd] = 0x80; return image;
+  }
   if (name == "bus_irq_dma_emulation" || name == "bus_irq_dma_native") {
     std::vector<uint8_t> image(32768,0);
     auto main = recompiler_fixture("dma_wram");

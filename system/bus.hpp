@@ -134,12 +134,14 @@ public:
       if (!(mask & (1u << ch))) continue;
       const auto* channel = channel_.data()+16*ch;
       const unsigned mode = channel[0] & 7, target = channel[1];
-      const bool supported = mode == 0 ? (target == 0x80 || target == 0x18 || target == 0x19 || target == 0x22)
-                                       : mode == 1 && target == 0x18;
-      if ((channel[0] & ~0x19u) || !supported)
-        throw BusError(Fault::unmapped, trigger, "Unsupported DMA direction, mode or memory-port target");
+      if (channel[0] & ~0x1fu)
+        throw BusError(Fault::unmapped, trigger, "Unsupported DMA direction or flags");
       unsigned remaining = unsigned(channel[5]) | (unsigned(channel[6]) << 8);
       if (remaining == 0) remaining = 65536;
+      // Only destinations actually reached by this count are required; patterns repeat within four bytes.
+      for (unsigned i = 0; i < remaining && i < 4; ++i)
+        if (!dma_destination((target+dma_offset(mode,i)) & 255))
+          throw BusError(Fault::unmapped, trigger, "Unsupported DMA memory/scroll destination");
       cost += 8 + uint64_t(remaining)*8;
     }
     if (dma_clocks_ > std::numeric_limits<uint64_t>::max() - cost)
@@ -165,6 +167,17 @@ private:
   static uint32_t io_address(uint32_t address) {
     if (address > 0xffffff || ((address >> 16) & 0x7f) >= 0x40) return 0;
     return address & 0xffff;
+  }
+  static unsigned dma_offset(unsigned mode, unsigned index) {
+    switch (mode) {
+      case 1: case 5: return index & 1;
+      case 3: case 7: return (index >> 1) & 1;
+      case 4: return index & 3;
+      default: return 0; // Modes 0, 2 and 6 repeat the same destination.
+    }
+  }
+  static bool dma_destination(unsigned target) {
+    return (target >= 0x0d && target <= 0x10) || target == 0x18 || target == 0x19 || target == 0x22 || target == 0x80;
   }
   static bool dma_register(uint32_t io) {
     return io >= 0x4300 && io <= 0x4376 && (io & 15) <= 6;
@@ -251,12 +264,12 @@ private:
       while (remaining) {
         const unsigned low = unsigned(channel[2]) | (unsigned(channel[3]) << 8);
         const unsigned bank = channel[4], source = (bank << 16) | low;
-        if (channel[1] == 0x80 && (bank == 0x7e || bank == 0x7f || ((bank & 0x7f) < 0x40 && low < 0x2000)))
+        const unsigned target = 0x2100+((unsigned(channel[1])+dma_offset(channel[0] & 7,transferred)) & 255);
+        if (target == 0x2180 && (bank == 0x7e || bank == 0x7f || ((bank & 0x7f) < 0x40 && low < 0x2000)))
           throw BusError(Fault::unmapped, source, "WRAM-to-WRAM-port DMA unsupported");
         if (io_address(source) >= 0x2100 && io_address(source) < 0x4380)
           throw BusError(Fault::unmapped, source, "DMA source in CPU/PPU I/O unsupported");
         const auto value = static_cast<const Bus&>(*this).read8(source);
-        const unsigned target = 0x2100+channel[1]+((channel[0] & 1) ? (transferred & 1) : 0);
         write_io(target,value,target);
         ++transferred;
         if (!(channel[0] & 8)) {

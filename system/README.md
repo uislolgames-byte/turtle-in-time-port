@@ -113,7 +113,8 @@ Registers $43n0–43n6 are readable/writable for all eight channels: control, B-
 target, A-bus address low/high/bank and size low/high. Each bit of a byte write
 to $420B selects a channel; they run synchronously in ascending order. A zero
 mask does nothing. Target $80 (WRAM port) supports mode 0, A-to-B only.
-Additional VRAM destinations and mode 1 are described in the VRAM section below.
+Additional destinations and all eight forward patterns are described in the VRAM
+and DMA-pattern sections below.
 Control $00 increments the source, $10 decrements it, $08/$18 fixes it. The
 16-bit source wraps without changing its bank. Count zero means 65,536 bytes.
 After each successful byte, source/size registers and the WRAM pointer advance.
@@ -817,7 +818,8 @@ and all eight channels. The shared CGRAM byte phase persists between channels:
 an odd first channel can supply the low byte completed by the next channel.
 A source fault after one byte leaves an uncommitted low latch, advanced source/
 count, actual DMA cost and due events. Existing whole-mask preflight, addressing
-modes and timing policy remain unchanged. Other patterns/directions are rejected.
+modes and timing policy remain unchanged. The eight-pattern extension below
+now supports additional patterns; reverse direction remains rejected.
 Const palette reads, writes to the read port, reads of write-only ports and word/
 stack/block-move MMIO remain unsupported before effects. Timed byte accesses
 reserve capacity before changing phase, data or CPU state.
@@ -1079,3 +1081,68 @@ CPU/flags, all WRAM/stack, interrupt return state, all clocks and both sources a
 13 host origins, four initial P values and 61 budgets, with long loops, entry
 capacity and external IRQ checks. Prior V-only tests remain unchanged except
 that control validation recognizes the added H-mode values.
+
+
+## Eight forward DMA patterns on memory and scroll ports
+
+All eight DMAP patterns are now supported for A-to-B DMA, with offsets relative
+to BBAD repeating as follows. The index resets for every channel and every
+trigger, even when the preceding transfer ended partway through a pattern.
+
+| Mode | Repeating B-bus offsets |
+| --- | --- |
+| 0 | 0 |
+| 1 | 0, 1 |
+| 2 | 0, 0 |
+| 3 | 0, 0, 1, 1 |
+| 4 | 0, 1, 2, 3 |
+| 5 | 0, 1, 0, 1 |
+| 6 | 0, 0 |
+| 7 | 0, 0, 1, 1 |
+
+Destinations remain deliberately bounded: $210D..$2110 (the four shared-latch
+BG1/BG2 scroll ports), $2118/$2119 (VRAM data), $2122 (CGRAM data) and $2180
+(WRAM data). Other implemented CPU-write registers are not automatically DMA
+targets. BBAD arithmetic wraps within the B-bus byte address. Preflight checks
+every destination actually reached by DAS (zero means 65536), not hypothetical
+later pattern positions. Thus mode 4/BBAD $0E/count 3 can write $0E/$0F/$10;
+count 4 rejects $11 before starting any selected channel. Mode 4/BBAD $0D can
+write all four scroll ports, with the same shared H/V latch behavior as CPU writes.
+Mode 1/$19/count 1 is valid, but count 2 rejects the unimplemented $1A destination.
+
+Bits 0-2 select the pattern, bit 3 fixes the source and bit 4 decrements it when
+not fixed; fixed wins if both are set. Source low addresses wrap within the same
+bank. Bits 5-7 (including reverse direction/HDMA-related flags) remain rejected.
+ROM/mapped WRAM sources, CPU/PPU I/O source rejection and WRAM-to-WRAM-data-port
+rejection are preserved, checking the actual per-byte destination. No general
+open bus or unimplemented port is silently accepted.
+
+All selected descriptors are validated before shared startup or memory effects.
+The maximum reservation stays 8 common + 8/selected channel + 8/byte. Actual
+accounting charges startup plus only completed bytes, retaining earlier channel
+progress if a source fails; later channels do not execute. A failed source byte
+keeps its source/count unchanged. Register latches and completed writes remain
+visible. Pattern phase resets on the next trigger; VRAM/CGRAM/scroll latches
+remain device state shared across channels and triggers. Existing CPU failure,
+capacity, master-clock and interrupt-boundary policies are unchanged. In
+particular, the CPU STA that fails is not charged and a capacity failure uses
+the full mask upper bound before effects, even if a source would later fail.
+
+The synthetic matrix program configures one channel for each mode and triggers
+all eight together: WRAM wraps, VRAM low/high duplicates, CGRAM phases and four
+scroll ports are checked against an independent port-state machine. Final trace:
+129 instructions, 387 nominal cycles, 3436 master clocks (472 DMA/50 bytes).
+A separate original fixture fails after three WRAM source bytes in mode 4,
+retaining partial scroll/latch/source/count/time: 21 completed instructions,
+62 nominal cycles, 522 master clocks (40 DMA/3 bytes), PC $8034.
+
+The direct test checks 12288 count-aware descriptor cases, 560 complete memory/
+register comparisons, all 256 channel masks, fixed/increment/decrement source
+modes, odd counts, bank/pointer wrapping, per-channel/trigger phase reset and
+65536-byte transfers in every pattern. Generated timed/untimed fixtures compare
+CPU/flags, all WRAM/VRAM/CGRAM, scroll, all channels and all clocks over budgets,
+host origins and scheduled events. Timing still omits alignment, refresh,
+arbitration and per-byte scheduling; no reverse DMA, HDMA, scanline rendering,
+full PPU/APU synchronization or game execution is added.
+Reference: [ares DMA transfer patterns and index reset](https://github.com/ares-emulator/ares/blob/master/ares/sfc/cpu/dma.cpp).
+All fixture content and reference logic are original.

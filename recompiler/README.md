@@ -246,3 +246,13 @@ line; combined H+V compares only on VTIME. The encoded phase (HTIME+1)*4 deliber
 omits hardware polling delays and is not a PPU dot counter. Timed CPU/DMA intervals
 retain crossed requests, accounting for absent short-line phases; untimed code does
 not advance the raster. TIMEUP and IRQ entry semantics are unchanged.
+
+
+The [eight-pattern forward DMA subset](../system/README.md#eight-forward-dma-patterns-on-memory-and-scroll-ports)
+now supports DMAP modes 0-7 on the implemented memory data ports and four BG scroll
+ports. Whole-mask preflight validates only pattern positions reached by the count.
+Mode 4 can configure the four shared-latch scroll registers. Source faults retain
+completed bytes/latches/time and skip later channels; the failed CPU STA is not
+charged. Timed/untimed synthetic matrix and partial-fault fixtures compare actual
+generated C++ against an independent reference. Reverse DMA, HDMA, alignment and
+per-byte scheduling remain outside this subset.
