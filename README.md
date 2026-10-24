@@ -270,3 +270,12 @@ A validação inclui bancos de memória, limites, portas já suportadas,
 tempo e interrupções. Outros endereçamentos STZ e retomada geral continuam fora
 do subconjunto. As demonstrações gráficas existentes são preservadas; isso ainda
 não executa o jogo. [Contrato e testes](recompiler/README.md#absolute-stz-9c).
+
+
+### Gravar índices pelo C++ recompilado
+
+STX/STY absolutos ($8E/$8C) gravam X/Y na memória ou nas portas byte já suportadas,
+sem alterar acumulador ou flags. A largura depende de X, independentemente de M;
+os testes cobrem modos mistos, bancos/limites, subrotina, MMIO e interrupções.
+Validação ativa somente Windows; a branch Linux arquivada permanece intacta.
+O jogo ainda não roda. [Contrato e testes](recompiler/README.md#absolute-stxsty-8e8c).

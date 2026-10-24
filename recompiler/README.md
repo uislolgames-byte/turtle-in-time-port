@@ -37,7 +37,7 @@ O barramento opcional e `reset_cpu` estão descritos em [system/](../system/READ
   cargas de 8 bits), X/Y inicialmente de 8 bits, P de 8 bits. Demais flags e RAM
   inicial podem ser fornecidas pelo chamador. Não é um reset fiel de hardware.
 - CLC/SEC, CLI/SEI, XCE com carry estaticamente conhecido, REP/SEP, NOP, STP,
-  LDA/LDX/LDY imediato, INX/DEX, LDA/STA/STZ absoluto, BRA e os oito desvios condicionais.
+  LDA/LDX/LDY imediato, INX/DEX, LDA/STA/STZ/STX/STY absoluto, BRA e os oito desvios condicionais.
 - MVN/MVP no fluxo principal, com barramento conectado: um byte por repetição,
   A de 16 bits como contador, larguras de índice independentes de M e DBR atualizado.
   Há limites e verificação NMI/IRQ entre os bytes. Veja o contrato em
@@ -366,3 +366,33 @@ scene/input programs and images are unchanged.
 Semantic reference: [WDC W65C816S datasheet](https://www.westerndesigncenter.com/wdc/documentation/w65c816s.pdf),
 opcode matrix and instruction timing tables (absolute STZ). The implementation
 and test programs are original C++.
+
+
+## Absolute STX/STY ($8E/$8C)
+
+The static C++ translator now emits checked stores of X or Y to DBR:absolute.
+These forms use the index-width flag X independently of accumulator-width M:
+one byte/four nominal cycles for X8, two bytes/five cycles for X16. A, X/Y and
+all status flags are preserved by the store. Optional bus timing counts code
+fetches and actual data writes with the existing address speeds. Main code,
+straight-line leaf routines and restricted linear NMI/IRQ handlers are supported.
+Direct-page/indexed STX/STY and the opt-in linear-resume profile remain unchanged
+and reject these new forms when outside their contracts.
+
+The existing validated store path is reused: byte MMIO requires opt-in, word MMIO
+and words crossing a bank boundary remain unsupported, and invalid words fail
+before either byte is written. Counters and events precede effects. This change
+does not add ports, a general interpreter, general CPU resumption or game support.
+
+Fifteen new generated fixtures check all four M/X combinations, index loads and
+truncation, independent literal state/time boundaries, all 64 accepted initial
+flag combinations, complete RAM, four mapped banks/mirrors, a leaf call, STX/STY
+access faults, byte serial/video/MEMSEL writes in M8 and M16, rejected X16 MMIO,
+capacity guards and emulation/native interrupt handlers with/without timing.
+Validation is now Windows-only under [the platform policy](../PLATFORMS.md).
+The preserved Linux snapshot does not include these additions. Existing synthetic
+scene/input programs and their images are unchanged.
+
+Semantic reference: [WDC W65C816S datasheet](https://www.westerndesigncenter.com/wdc/documentation/w65c816s.pdf),
+opcode/operation tables and absolute addressing timing. The implementation and
+test programs are original C++.
