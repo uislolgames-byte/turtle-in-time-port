@@ -1,4 +1,4 @@
-name: Build and test (Windows and Linux)
+name: Build and test (Windows)
 on:
   push:
   pull_request:
@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-2022]
+        os: [windows-2022]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
@@ -26,7 +26,58 @@ jobs:
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
       - name: Build and run full regression chain
-        run: cmake --build build --config Release --target check --parallel
+        run: cmake --build build --config Release --target check --parallel 2
+      - name: Build native demo without tests or Python discovery
+        if: runner.os == 'Windows'
+        run: |
+          cmake -S . -B build-demo -DBUILD_TESTING=OFF
+          cmake --build build-demo --config Release --target tmnt_native --parallel 2
+      - name: Record synthetic preview
+        shell: bash
+        run: python -c "import base64,pathlib; print('TMNT_PREVIEW_BMP_BASE64='+base64.b64encode(pathlib.Path('build/preview-2bpp.bmp').read_bytes()).decode('ascii'))"
+      - name: Record register captures
+        shell: bash
+        run: python -c "import base64,pathlib; [print('TMNT_REG_'+p.stem+'='+base64.b64encode(p.read_bytes()).decode('ascii')) for p in sorted(pathlib.Path('build').glob('preview-registers-*.bmp'))]"
+      - name: Record scroll captures
+        shell: bash
+        run: python -c "import base64,pathlib; [print('TMNT_SCROLL_'+p.stem+'='+base64.b64encode(p.read_bytes()).decode('ascii')) for p in sorted(pathlib.Path('build').glob('preview-scroll-*.bmp'))]"
+      - name: Record map captures
+        shell: bash
+        run: python -c "import base64,pathlib; [print('TMNT_MAPS_'+p.stem+'='+base64.b64encode(p.read_bytes()).decode('ascii')) for p in sorted(pathlib.Path('build').glob('preview-maps-*.bmp'))]"
+      - name: Record large tile captures
+        shell: bash
+        run: python -c "import base64,pathlib; [print('TMNT_LARGE_'+p.stem+'='+base64.b64encode(p.read_bytes()).decode('ascii')) for p in sorted(pathlib.Path('build').glob('preview-large-*.bmp'))]"
+      - name: Record 4bpp captures
+        shell: bash
+        run: python -c "import base64,pathlib; [print('TMNT_4BPP_'+p.stem+'='+base64.b64encode(p.read_bytes()).decode('ascii')) for p in sorted(pathlib.Path('build').glob('preview-4bpp-*.bmp'))]"
+      - name: Record layer captures
+        shell: bash
+        run: python -c "import base64,pathlib; [print('TMNT_LAYERS_'+p.stem+'='+base64.b64encode(p.read_bytes()).decode('ascii')) for p in sorted(pathlib.Path('build').glob('preview-layers-*.bmp'))]"
+      - name: Record object captures
+        shell: bash
+        run: python -c "import base64,pathlib; [print('TMNT_OBJ_'+p.stem+'='+base64.b64encode(p.read_bytes()).decode('ascii')) for p in sorted(pathlib.Path('build').glob('preview-obj-*.bmp'))]"
+      - name: Record scene captures
+        shell: bash
+        run: python -c "import base64,pathlib; [print('TMNT_SCENE_'+p.stem+'='+base64.b64encode(p.read_bytes()).decode('ascii')) for p in sorted(pathlib.Path('build').glob('preview-scene-*.bmp'))]"
+      - name: Record input-controlled captures
+        shell: bash
+        run: python -c "import base64,pathlib; [print('TMNT_INPUT_'+p.stem+'='+base64.b64encode(p.read_bytes()).decode('ascii')) for p in sorted(pathlib.Path('build').glob('preview-input-*.bmp'))]"
+      - name: Upload synthetic preview
+        uses: actions/upload-artifact@v7
+        with:
+          name: synthetic-preview-${{ matrix.os }}
+          path: |
+            build/preview-2bpp.bmp
+            build/preview-registers-*.bmp
+            build/preview-scroll-*.bmp
+            build/preview-maps-*.bmp
+            build/preview-large-*.bmp
+            build/preview-4bpp-*.bmp
+            build/preview-layers-*.bmp
+            build/preview-obj-*.bmp
+            build/preview-scene-*.bmp
+            build/preview-input-*.bmp
+          if-no-files-found: error
       - name: Upload test report
         if: always()
         uses: actions/upload-artifact@v7
@@ -51,5 +102,10 @@ jobs:
             build/tmnt_callgraph
             build/tmnt_cfg
             build/tmnt_recompile
+            build/tmnt_input_demo_tests
+            build/tmnt_system_bus_tests
+            build/tmnt_system_events_tests
+            build/tmnt_system_timing_tests
+            build/tmnt_system_dma_tests
             build/tmnt_recompiled_*
           if-no-files-found: error

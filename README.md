@@ -1,10 +1,41 @@
 # TMNT Native — CI prototype
 
-Experimento de engenharia reversa do **Teenage Mutant Ninja Turtles IV: Turtles in Time** (SNES) para Windows e Linux.
+Experimento de engenharia reversa do **Teenage Mutant Ninja Turtles IV: Turtles in Time** (SNES) com desenvolvimento ativo para Windows. O trabalho Linux está preservado e temporariamente pausado.
 
 **Importante:** este repositório contém ferramentas **preliminares** de inspeção e uma primeira recompilação estática de programas sintéticos 65C816. Ainda não é o jogo jogável nem uma recompilação do jogo.
 
+## Plataformas e retomada do Linux
+
+Desde 24/10/2026, novas alterações são validadas somente no Windows. O estado
+Linux já validado está salvo na branch [archive/linux-2026-10-24](https://github.com/uislolgames-byte/turtle-in-time-port/tree/archive/linux-2026-10-24),
+no commit `41b384dbc223067aff39d7297633dc39453a4b01`, com código, testes, configuração
+do CI e todo o histórico anterior. Os testes portáteis e o CMake continuam no
+projeto; Linux não é mais requisito para validar os próximos commits.
+
+Quando houver a primeira execução verificável de um trecho identificável do jogo
+no Windows, avisar o usuário neste chat para decidirmos juntos se retomamos Linux.
+Carregador, diagnóstico e cenas sintéticas não representam esse evento. Consulte
+[PLATFORMS.md](PLATFORMS.md) para a evidência preservada e o plano de retomada.
+
 ## Ferramentas
+- Prévia gráfica de diagnóstico em C++: [tiles 2bpp](system/TILE_PREVIEW.md),
+  com composição BG1/BG2, quatro tamanhos de mapa, tiles 8×8/16×16 em
+  2bpp/4bpp e scroll horizontal/vertical,
+  habilitação, blank e brilho
+  controláveis por registradores,
+  e imagem BMP de 32×32 pixels produzida a partir de VRAM e CGRAM preenchidas
+  por um programa sintético recompilado. O CI compara os pixels com uma referência
+  independente e publica a imagem no Windows. A validação Linux anterior está arquivada. Ainda não é uma PPU completa
+  nem imagem do jogo; o Marco 3 permanece em andamento.
+- Base do Marco 3: [barramento de memória em C++](system/README.md), com ROM
+  LoROM parcial, RAM, bancos e integração ao runtime recompilado com reinicialização.
+  Inclui relógio lógico e diagnóstico de pedidos NMI/IRQ. Temporização do hardware,
+  handlers gerais/aninhados e DMA completo continuam pendentes. Há DMA restrito
+  do canal 0 para a porta WRAM, com contagem parcial de clocks. A opção `--interrupts`
+  recompila handlers lineares com RTI validado. MVN/MVP já
+  transferem blocos entre bancos no código recompilado, com testes sintéticos.
+- O runtime também conta ciclos nominais da CPU e aceita eventos NMI/IRQ por
+  ciclo. A sincronização em master clocks com os dispositivos SNES ainda falta.
 - `tmnt_recompile`: primeira tradução estática **escrita em C++** de programas
   sintéticos para C++ compilável, com modos, fluxo e chamadas folha JSR/RTS.
   Veja [recompiler/](recompiler/README.md) para o subconjunto e os testes.
@@ -49,7 +80,7 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-O GitHub Actions executa em `windows-2022` e `ubuntu-24.04`. Veja os resultados na aba Actions; configuração do workflow não significa que os testes já passaram.
+O GitHub Actions ativo executa somente em `windows-2022`. O CI Windows/Linux anterior permanece na branch de arquivo. Veja os resultados na aba Actions; configuração do workflow não significa que os testes já passaram.
 
 O teste de integração cria uma ROM sintética, sem arquivos comerciais. **Não publique a ROM original.**
 
@@ -64,7 +95,7 @@ o diagnóstico não modifica os bytes da ROM carregada. A interface gráfica ain
 exige verificação manual; esses testes não comprovam execução completa do jogo.
 
 ## Próximos passos
-Expandir a decodificação com propagação explícita de estado do 65C816, acompanhar desvios com segurança e validar Windows/Linux em cada alteração.
+Expandir a decodificação com propagação explícita de estado do 65C816, acompanhar desvios com segurança e validar Windows em cada alteração, mantendo os testes portáteis para a futura retomada de Linux.
 
 ## Protótipo de janela nativa Windows
 O Windows também compila tmnt_native.exe. O aplicativo abre uma janela Win32 e permite escolher localmente uma ROM .sfc/.smc, exibindo tamanho, vetor RESET e consistência do checksum. Nenhuma ROM é incluída ou enviada à rede. Ainda não executa o jogo nem renderiza gráficos ou áudio.
@@ -113,3 +144,157 @@ ultrapassem a região permitida param antes de acessar os dados. M define a larg
 da transferência, X define a largura dos índices. Os testes cruzam as quatro
 combinações M/X e verificam os endereços com acessos absolutos independentes,
 além de uma sequência que preenche e percorre um buffer com loop.
+
+A etapa de temporização do Marco 3 também classifica acessos por endereço em
+6/8/12 master clocks e aceita o controle MEMSEL/FastROM no barramento opcional.
+A bateria tem 59 testes, incluindo varredura de todos os endereços com os dois
+valores de MEMSEL e execução de alterações do controle pelo C++ gerado.
+Essa consulta ainda precisa ser ligada à sequência de acessos de cada instrução;
+não representa um relógio mestre completo. Veja [o contrato](system/README.md#address-access-speeds-and-memsel).
+
+
+A ferramenta agora oferece `--bus-timing`: contagem de master clocks da CPU
+para um subconjunto com chamadas folha JSR/RTS, MVN/MVP e handlers compilados
+quando combinado com `--interrupts`.
+Ela soma acessos e ciclos internos por instrucao, respeitando MEMSEL/FastROM.
+A bateria passa a ter 59 testes, com copia de 64 KiB e falhas entre bytes. Ainda falta sincronizar essa contagem com DMA,
+video e audio; nao representa um agendador completo do SNES. Detalhes e limites
+no [contrato de temporizacao](system/README.md#optional-generated-cpu-master-clock-accounting).
+
+MVN/MVP agora acumulam master clocks por byte, com custos separados de origem,
+destino e ciclos internos. Os testes comparam 129 execucoes temporizadas contra
+uma referencia independente, incluindo FastROM ligado/desligado e copia completa
+de 65.536 bytes. O custo do byte rejeitado por falha ou limite do contador nao
+e acumulado. A sincronizacao com os dispositivos continua pendente.
+
+A contagem de master clocks tambem cobre JSR/RTS para rotinas folha, com os
+acessos a pilha no banco zero e reserva antes dos efeitos. Tres novos testes
+acrescentam 7.680 comparacoes contra referencia, incluindo retorno corrompido,
+limites exatos do contador e interrupcoes nas fronteiras das chamadas.
+Chamadas aninhadas e handlers gerais continuam pendentes.
+
+As opcoes `--interrupts --bus-timing` agora funcionam juntas: entrada NMI/IRQ,
+instrucoes do handler e RTI acumulam master clocks, com reserva de capacidade
+antes de alterar a pilha. Cinco testes acrescentam 4.400 comparacoes contra
+referencia, preservando as 4.400 anteriores sem temporizacao master. A bateria
+completa tem 59 testes. Ainda falta intercalar CPU/DMA e sincronizar video/audio.
+
+Agora tambem e possivel agendar NMI/IRQ em master clocks da CPU, alem de passos
+ou ciclos nominais, com `State::master_clock`. Os eventos sao observados nas
+fronteiras das instrucoes/bytes, respeitando FastROM e a temporizacao dos handlers.
+A validacao acrescenta 4.400 comparacoes e 858 rastros de fronteiras. Ainda falta
+um agendador compartilhado com DMA, refresh, video e audio.
+
+
+### Cena sintética na janela Windows
+
+O botão **Synthetic scene** de `tmnt_native.exe` abre uma janela independente
+com uma captura diagnóstica original de 128×64 pixels (BG1/BG2/sprites).
+O programa sintético é gerado e recompilado estaticamente em C++ durante o build;
+ao abrir a janela ele executa 158 instruções no runtime e produz os pixels pela
+memória de vídeo. Não usa ROM externa nem imagem pronta. Reabrir começa do RESET.
+A janela usa escala inteira e mantém a proporção; áreas menores que 128×64 ficam
+sem imagem. Open ROM/Probe CPU continuam disponíveis separadamente.
+
+Isso apresenta uma captura estática, sem animação, áudio ou execução do jogo.
+O CI compara pixels com referência independente, testa conversão/orientação e
+escala e, no Windows, abre/fecha/reabre a janela e verifica os pixels via GDI.
+`tmnt_native.exe --self-test-window` executa essa verificação automatizada.
+Para compilar sem os testes e sem Python: `cmake -S . -B build-demo -DBUILD_TESTING=OFF`
+e `cmake --build build-demo --config Release --target tmnt_native` (Windows).
+
+
+A janela da cena também oferece **Previous**, **Next** e **Reset** para percorrer
+os onze pontos de captura (prioridade, camadas, modos, tamanho, brilho e blank).
+Avançar retoma a CPU recompilada e o barramento no ponto pausado, pelo perfil
+linear limitado descrito abaixo. Voltar refaz a execução pelo RESET, sem tentar
+desfazer escritas DMA. Reset retorna à cena inicial de
+prioridade alta (3/11), inclusive depois do blank. Os botões de limite ficam
+desativados. Fechar e reabrir cria outra sessão independente. Não há execução
+contínua, controles de personagem ou áudio; estes são controles do diagnóstico.
+O CI verifica todos os estados com referência independente e, no Windows,
+aciona os botões, confere os pixels GDI, limites, reset e reabertura.
+
+
+A retomada usa a opção explícita `--bus-timing --linear-resume` do gerador.
+Esse perfil aceita somente uma ROM sintética de 32 KiB com RESET $8000 e fluxo
+linear em emulação, com LDA imediato de 8 bits, STA absoluto e STP. A retomada
+verifica a identidade do código/RESET, o PC em fronteira conhecida, passos e
+ciclos nominais correspondentes, modo, registradores e parada por limite.
+O orçamento continua absoluto; um limite igual não executa instrução nem consome
+eventos. STP, erros e interrupções não podem ser retomados. Outros programas,
+chamadas, desvios e handlers continuam fora deste perfil. A entrada tradicional
+`run_generated` mantém o contrato anterior de começar no RESET.
+
+
+### Entrada serial de controle (diagnóstico)
+
+O barramento opt-in oferece dois controles padrão em $4016/$4017. O host fornece
+12 bits por porta na ordem B, Y, Select, Start, Up, Down, Left, Right, A, X, L, R.
+A transição 1→0 do bit 0 de $4016 captura os dois controles. Leituras deslocam
+cada porta separadamente; quatro bits de assinatura zero seguem os botões e,
+após 16 bits, a leitura permanece em 1. Strobe alto lê B ao vivo sem deslocar.
+Escritas repetidas no mesmo nível não recapturam; escrever $4017 é ignorado.
+
+As duas fixtures originais leem os controles pelo código recompilado, guardam os
+bits na WRAM e verificam estado, flags e tempo contra referência independente.
+As leituras/escritas dessas portas custam 12 master clocks de acesso a dados.
+Não há autojoypad, periféricos especiais, segundo fio serial, open bus completo
+ou ligação com gamepad físico. A demonstração de teclado é descrita abaixo.
+Botões opostos são bits brutos
+de diagnóstico, sem modelo de trava mecânica. O jogo continua sem execução.
+
+
+### Demonstração de entrada visível no Windows
+
+O botão **Input demo** abre uma segunda demonstração original. Segure **Z (B)**
+para apagar a imagem e **X (Y)** para reduzir o brilho; B tem prioridade sobre Y.
+Soltar restaura a combinação restante. Os botões da janela alternam esses mesmos
+estados e **Reset** solta tudo. Perder o foco libera as teclas mantidas; as opções
+alternadas pelos botões permanecem até desmarcá-las ou reiniciar. Z/X funcionam
+também com foco nos botões filhos. Repetição automática de tecla não reexecuta a CPU.
+
+O teclado fornece bits ao controle serial. O programa original recompilado captura
+$4016, lê B/Y, grava-os na WRAM e escolhe INIDISP por desvios compilados. O host
+não escolhe o brilho diretamente. Cada mudança efetiva refaz essa demonstração
+pelo RESET; não é uma simulação contínua por quadros. A janela de onze estados,
+o carregador e Probe CPU continuam separados. Não há controle físico conectado,
+áudio, personagem ou execução do jogo. Veja o [contrato](demo/INPUT_SCENE.md).
+
+
+### Zerar dados pelo C++ recompilado
+
+O recompilador aceita STZ absoluto ($9C): zera um ou dois bytes conforme M,
+preservando acumulador e flags, inclusive em rotinas folha e handlers restritos.
+A validação inclui bancos de memória, limites, portas já suportadas,
+tempo e interrupções. Outros endereçamentos STZ e retomada geral continuam fora
+do subconjunto. As demonstrações gráficas existentes são preservadas; isso ainda
+não executa o jogo. [Contrato e testes](recompiler/README.md#absolute-stz-9c).
+
+
+### Gravar índices pelo C++ recompilado
+
+STX/STY absolutos ($8E/$8C) gravam X/Y na memória ou nas portas byte já suportadas,
+sem alterar acumulador ou flags. A largura depende de X, independentemente de M;
+os testes cobrem modos mistos, bancos/limites, subrotina, MMIO e interrupções.
+Validação ativa somente Windows; a branch Linux arquivada permanece intacta.
+O jogo ainda não roda. [Contrato e testes](recompiler/README.md#absolute-stxsty-8e8c).
+
+
+### Ler memória diretamente para os índices
+
+LDX/LDY absolutos ($AE/$AC) agora carregam X/Y diretamente de RAM, ROM ou portas
+byte já suportadas. Usam a largura dos índices, atualizam zero/negativo e preservam
+o acumulador. A validação Windows cobre modos mistos, bancos, FastROM, falhas,
+leitura serial e handlers de interrupção. A branch Linux arquivada é preservada;
+o jogo ainda não roda. [Contrato e testes](recompiler/README.md#absolute-ldxldy-aeac).
+
+
+### Mover dados entre registradores e controlar laços com Y
+
+O C++ recompilado aceita TAX/TAY/TXA/TYA/TXY/TYX e INY/DEY. As transferências
+respeitam a largura do destino e o byte alto do acumulador; o contador Y funciona
+em 8/16 bits com wrap e flags de zero/negativo. Os testes Windows incluem modos
+mistos, rotina, laço, limites de tempo e interrupções. As cenas anteriores e a
+branch Linux arquivada são preservadas; o jogo ainda não roda.
+[Contrato e testes](recompiler/README.md#register-transfers-and-y-counters).

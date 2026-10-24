@@ -7,6 +7,7 @@
 #include <tuple>
 #include <vector>
 #include <cstdint>
+#include <array>
 
 namespace static816 {
 struct Mode {
@@ -17,8 +18,18 @@ struct Mode {
 struct Instruction { unsigned pc, op, value, length; Mode mode; int leaf; };
 
 // Closed, flat synthetic code at $8000. Analyze only proven entry points.
-inline std::string compile(const std::vector<uint8_t>& code) {
+inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = false, bool bus_timing = false, bool linear_resume = false, const std::string& entry = "run_generated") {
+  // Restrict exported entry names to a non-reserved ASCII run_* identifier.
+  if (entry.size() < 5 || entry.size() > 64 || entry.compare(0,4,"run_") != 0 || entry.find("__") != std::string::npos)
+    throw std::runtime_error("entry must be a non-reserved ASCII run_* identifier of 5..64 characters");
+  for (char c : entry) if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'))
+    throw std::runtime_error("invalid generated entry identifier");
+  if (linear_resume && entry != "run_generated") throw std::runtime_error("custom entry does not support --linear-resume");
   if (code.empty() || code.size() > 32768) throw std::runtime_error("code size must be 1..32768");
+  if (interrupts && (code.size() != 32768 || code[0x7ffc] != 0 || code[0x7ffd] != 0x80))
+    throw std::runtime_error("--interrupts requires a 32 KiB synthetic image with RESET $8000");
+  if (linear_resume && (interrupts || !bus_timing || code.size() != 32768 || code[0x7ffc] != 0 || code[0x7ffd] != 0x80))
+    throw std::runtime_error("--linear-resume requires --bus-timing, no handlers, and a 32 KiB image with RESET $8000");
   std::map<unsigned, Instruction> nodes;
   std::map<unsigned, unsigned> owners;
   std::map<unsigned, Mode> leaves;
@@ -36,11 +47,11 @@ inline std::string compile(const std::vector<uint8_t>& code) {
     const unsigned pos = pc - 0x8000, op = code[pos];
     unsigned length = 1;
     switch (op) {
-      case 0xea: case 0x18: case 0x38: case 0xfb: case 0xdb: case 0x60: case 0xe8: case 0xca: break;
+      case 0x0a: case 0x4a: case 0x2a: case 0x6a: case 0xea: case 0x58: case 0x78: case 0x18: case 0x38: case 0xfb: case 0xdb: case 0x60: case 0xe8: case 0xca: case 0xc8: case 0x88: case 0xaa: case 0xa8: case 0x8a: case 0x98: case 0x9b: case 0xbb: break;
       case 0xc2: case 0xe2: case 0x80: length = 2; break;
-      case 0xa9: length = mode.m ? 2 : 3; break;
-      case 0xa2: case 0xa0: length = mode.x ? 2 : 3; break;
-      case 0xad: case 0x8d: case 0x20: length = 3; break;
+      case 0xc9: case 0xa9: case 0x29: case 0x09: case 0x49: length = mode.m ? 2 : 3; break;
+      case 0xe0: case 0xc0: case 0xa2: case 0xa0: length = mode.x ? 2 : 3; break;
+      case 0xad: case 0x8d: case 0x9c: case 0x8e: case 0x8c: case 0xae: case 0xac: case 0x20: case 0x44: case 0x54: length = 3; break;
       case 0x10: case 0x30: case 0x50: case 0x70: case 0x90: case 0xb0: case 0xd0: case 0xf0: length = 2; break;
       default: throw std::runtime_error("unsupported opcode at " + std::to_string(pc));
     }
@@ -52,8 +63,10 @@ inline std::string compile(const std::vector<uint8_t>& code) {
       owners[pc+i] = pc;
     }
     nodes.emplace(pc, Instruction{pc,op,value,length,mode,leaf});
+    const bool shift = op == 0x0a || op == 0x4a || op == 0x2a || op == 0x6a;
+    const bool comparison = op == 0xc9 || op == 0xe0 || op == 0xc0;
     const bool control_mode = op == 0x18 || op == 0x38 || op == 0xfb || op == 0xc2 || op == 0xe2;
-    if (leaf >= 0 && (control_mode || op == 0x20 || op == 0xdb || op == 0x80 || branch(op)))
+    if (leaf >= 0 && (control_mode || comparison || shift || op == 0x20 || op == 0xdb || op == 0x80 || op == 0x44 || op == 0x54 || branch(op)))
       throw std::runtime_error("leaf subroutine must be straight-line and preserve mode/carry");
     if (op == 0x60) {
       if (leaf < 0) throw std::runtime_error("RTS outside leaf subroutine");
@@ -62,6 +75,7 @@ inline std::string compile(const std::vector<uint8_t>& code) {
     if (op == 0xdb) continue;
     if (op == 0x18) mode.c = 0;
     if (op == 0x38) mode.c = 1;
+    if (comparison || shift) mode.c = -1; // Data-dependent carry must not reuse an earlier proof.
     if (op == 0xfb) {
       if (mode.c < 0) throw std::runtime_error("unknown carry for XCE");
       const bool old_e = mode.e; mode.e = mode.c != 0; mode.c = old_e;
@@ -85,52 +99,217 @@ inline std::string compile(const std::vector<uint8_t>& code) {
     }
     work.emplace_back(pc+length,mode,leaf);
   }
+  if (linear_resume) {
+    unsigned next = 0x8000;
+    for (const auto& entry : nodes) {
+      const auto& n = entry.second;
+      if (n.pc != next || n.leaf != -1 || !n.mode.e || !n.mode.m || !n.mode.x || (n.op != 0xa9 && n.op != 0x8d && n.op != 0xdb))
+        throw std::runtime_error("--linear-resume supports only linear emulation-mode LDA immediate, STA absolute and STP");
+      next += n.length;
+    }
+  }
+  const auto mode_id = [](const Mode& m) { return (m.e ? 4u : 0u) | (m.m ? 2u : 0u) | (m.x ? 1u : 0u); };
+  std::map<unsigned, Mode> handler_modes;
+  std::map<unsigned, std::array<unsigned,2>> targets;
+  std::map<std::pair<unsigned,unsigned>, std::vector<Instruction>> handlers;
+  std::map<unsigned, unsigned> vector_bytes;
+  if (linear_resume) { vector_bytes[0xfffc] = 0; vector_bytes[0xfffd] = 0x80; }
+  if (interrupts) {
+    const auto main_owners = owners;
+    for (const auto& node : nodes) handler_modes[mode_id(node.second.mode)] = node.second.mode;
+    vector_bytes[0xfffc] = 0; vector_bytes[0xfffd] = 0x80;
+    for (const auto& variant : handler_modes) {
+      const auto mode = variant.second;
+      const unsigned vector = mode.e ? 0xfffa : 0xffea;
+      for (unsigned kind = 0; kind < 2; ++kind) {
+        const unsigned address = kind ? (mode.e ? 0xfffe : 0xffee) : vector;
+        const unsigned target = unsigned(code[address-0x8000]) | (unsigned(code[address-0x8000+1]) << 8);
+        targets[variant.first][kind] = target;
+        vector_bytes[address] = code[address-0x8000]; vector_bytes[address+1] = code[address-0x8000+1];
+        const auto key = std::make_pair(variant.first, target);
+        if (handlers.count(key)) continue;
+        for (unsigned pc = target;;) {
+          if (pc < 0x8000 || pc > 0xffff) throw std::runtime_error("interrupt handler outside code bank");
+          const unsigned pos = pc - 0x8000, op = code[pos];
+          unsigned length = 1;
+          switch (op) {
+            case 0x0a: case 0x4a: case 0x2a: case 0x6a: case 0xea: case 0x58: case 0x78: case 0xe8: case 0xca: case 0xc8: case 0x88: case 0xaa: case 0xa8: case 0x8a: case 0x98: case 0x9b: case 0xbb: case 0x40: break;
+            case 0xc9: case 0xa9: case 0x29: case 0x09: case 0x49: length = mode.m ? 2 : 3; break;
+            case 0xe0: case 0xc0: case 0xa2: case 0xa0: length = mode.x ? 2 : 3; break;
+            case 0xad: case 0x8d: case 0x9c: case 0x8e: case 0x8c: case 0xae: case 0xac: length = 3; break;
+            default: throw std::runtime_error("handler must be straight-line, preserve mode and end in RTI");
+          }
+          if (pos + length > code.size()) throw std::runtime_error("truncated handler instruction");
+          unsigned value = 0;
+          for (unsigned i = 1; i < length; ++i) value |= unsigned(code[pos+i]) << (8*(i-1));
+          for (unsigned i = 0; i < length; ++i) {
+            if (main_owners.count(pc+i) || (owners.count(pc+i) && owners.at(pc+i) != pc))
+              throw std::runtime_error("interrupt handler overlaps main, leaf or another instruction");
+            owners[pc+i] = pc;
+          }
+          handlers[key].push_back({pc,op,value,length,mode,-2});
+          if (op == 0x40) break;
+          pc += length;
+        }
+      }
+    }
+  }
   // Emit literal operations and direct jumps. No instruction bytes or opcode dispatcher.
   std::ostringstream out;
   out << "#include \"runtime.hpp\"\nnamespace recompiled {\n";
   auto emit = [&](const Instruction& n) {
     const auto pc = n.pc, op = n.op, v = n.value, next = pc+n.length;
     const bool m = n.mode.m, x = n.mode.x;
-    out << "L" << pc << ":\n if(s.steps>=limit){s.stop=Stop::limit;return false;}\n";
+    const bool index_store = op == 0x8e || op == 0x8c;
+    const bool index_load = op == 0xae || op == 0xac;
+    const bool memory = op == 0xad || op == 0x8d || op == 0x9c || index_store || index_load;
+    const bool data_narrow = (index_store || index_load) ? x : m;
+    unsigned base_cycles = 2;
+    if (op == 0xc2 || op == 0xe2 || op == 0xdb) base_cycles = 3;
+    if (op == 0xc9 || op == 0xa9 || op == 0x29 || op == 0x09 || op == 0x49) base_cycles = m ? 2 : 3;
+    if (op == 0xe0 || op == 0xc0 || op == 0xa2 || op == 0xa0) base_cycles = x ? 2 : 3;
+    if (memory) base_cycles = data_narrow ? 4 : 5;
+    if (op == 0x20 || op == 0x60) base_cycles = 6;
+    if (op == 0x44 || op == 0x54) base_cycles = 7;
+    if (op == 0x40) base_cycles = n.mode.e ? 6 : 7;
+    std::string condition;
+    unsigned target = 0;
+    std::string cycles = std::to_string(base_cycles);
+    if (op == 0x80 || branch(op)) {
+      target = pc+n.length+(v < 128 ? int(v) : int(v)-256);
+      const unsigned mask = (op & 0xc0)==0 ? 128 : (op & 0xc0)==0x40 ? 64 : (op & 0xc0)==0x80 ? 1 : 2;
+      condition = op == 0x80 ? "true" : "(s.p&"+std::to_string(mask)+")"+((op&32)?"!=":"==")+"0";
+      const unsigned penalty = 1 + unsigned(n.mode.e && ((next & 0xff00) != (target & 0xff00)));
+      cycles = op == 0x80 ? std::to_string(2+penalty) : "(2+("+condition+"?"+std::to_string(penalty)+":0))";
+    }
+    const std::string completion = bus_timing ? "complete_bus_instruction" : "complete_instruction";
+    std::ostringstream begin;
+    if (bus_timing && op == 0x40)
+      begin << "begin_rti_instruction(s,limit," << pc << ")";
+    else if (bus_timing && (op == 0x20 || op == 0x60))
+      begin << "begin_stack_instruction(s,limit," << pc << "," << (op == 0x60) << ")";
+    else if (bus_timing && (op == 0x44 || op == 0x54))
+      begin << "begin_move_instruction(s,limit," << pc << "," << (v & 255) << "," << (v >> 8) << "," << x << ")";
+    else if (bus_timing) {
+      begin << "begin_bus_instruction(s,limit," << cycles << "," << pc << "," << n.length << ",";
+      if (memory) begin << "(s.db<<16)|" << v;
+      else begin << "0";
+      begin << "," << (memory ? (data_narrow ? 1 : 2) : 0) << "," << (op == 0x8d || op == 0x9c || index_store) << ")";
+    } else begin << "begin_instruction(s,limit," << cycles << ")";
+    out << "L" << pc << ":\n";
+    if (interrupts && n.leaf != -2)
+      out << "while(!" << begin.str() << "){if(s.stop!=Stop::interrupt||!interrupt_mode"
+          << mode_id(n.mode) << "(s,limit))return false;}\n";
+    else out << "if(!" << begin.str() << ")return false;\n";
+    if (op == 0x40) { out << "if(!return_interrupt(s))return false;" << completion << "(s," << cycles << ");return true;\n"; return; }
+    if (op == 0xc9 || op == 0xe0 || op == 0xc0) {
+      const bool narrow = op == 0xc9 ? m : x;
+      out << "{unsigned value=s." << (op == 0xc9 ? 'a' : op == 0xe0 ? 'x' : 'y') << "&" << (narrow ? 255 : 65535)
+          << ";s.p=(s.p&254)|unsigned(value>=" << v << ");nz(s,(value+65536-" << v << ")&"
+          << (narrow ? 255 : 65535) << "," << narrow << ");}\n";
+    }
+    if (op == 0x0a || op == 0x4a || op == 0x2a || op == 0x6a) {
+      const bool left = op == 0x0a || op == 0x2a, rotate = op == 0x2a || op == 0x6a;
+      out << "{unsigned value=s.a&" << (m ? 255 : 65535) << ";unsigned result=(value" << (left ? "<<1" : ">>1") << ")";
+      if (rotate) out << "|((s.p&1)" << (left ? "" : (m ? "<<7" : "<<15")) << ")";
+      out << ";s.p=(s.p&254)|((value>>" << (left ? (m ? 7 : 15) : 0) << ")&1);s.a="
+          << (m ? "(s.a&65280)|" : "") << "(result&" << (m ? 255 : 65535) << ");nz(s,s.a," << m << ");}\n";
+    }
     if (op == 0xa9) out << "s.a=" << (m ? "(s.a&65280)|" : "") << v << ";nz(s,s.a," << m << ");\n";
+    if (op == 0x29 || op == 0x09 || op == 0x49)
+      out << "s.a=" << (m ? "(s.a&65280)|" : "") << "((s.a" << (op == 0x29 ? '&' : op == 0x09 ? '|' : '^')
+          << v << ")&" << (m ? 255 : 65535) << ");nz(s,s.a," << m << ");\n";
     if (op == 0xa2 || op == 0xa0) out << "s." << (op==0xa2?'x':'y') << "=" << v << ";nz(s," << v << "," << x << ");\n";
     if (op == 0xe8 || op == 0xca) out << "s.x=(s.x+" << (op==0xe8?1:65535) << ")&" << (x?255:65535) << ";nz(s,s.x," << x << ");\n";
+    if (op == 0xc8 || op == 0x88) out << "s.y=(s.y+" << (op==0xc8?1:65535) << ")&" << (x?255:65535) << ";nz(s,s.y," << x << ");\n";
+    if (op == 0xaa || op == 0xa8) out << "s." << (op==0xaa?'x':'y') << "=s.a&" << (x?255:65535) << ";nz(s,s." << (op==0xaa?'x':'y') << "," << x << ");\n";
+    if (op == 0x8a || op == 0x98) out << "s.a=" << (m?"(s.a&65280)|":"") << "(s." << (op==0x8a?'x':'y') << "&" << (m?255:65535) << ");nz(s,s.a," << m << ");\n";
+    if (op == 0x9b || op == 0xbb) out << "s." << (op==0x9b?'y':'x') << "=s." << (op==0x9b?'x':'y') << "&" << (x?255:65535) << ";nz(s,s." << (op==0x9b?'y':'x') << "," << x << ");\n";
     if (op == 0x18) out << "s.p&=254;\n";
     if (op == 0x38) out << "s.p|=1;\n";
+    if (op == 0x58) out << "s.p&=~4u;\n";
+    if (op == 0x78) out << "s.p|=4u;\n";
     if (op == 0xc2) out << "s.p&=~" << v << "u;if(s.e)s.p|=48;\n";
     if (op == 0xe2) out << "s.p|=" << v << ";if(s.p&16){s.x&=255;s.y&=255;}\n";
     if (op == 0xfb) out << "{bool old=s.e;s.e=(s.p&1)!=0;s.p=(s.p&254)|unsigned(old);if(s.e){s.p|=48;s.x&=255;s.y&=255;s.s=256|(s.s&255);}}\n";
-    if (op == 0x8d) out << "if(!store(s," << v << ",s.a," << m << "))return false;\n";
-    if (op == 0xad) out << "if(!load(s," << v << "," << m << "))return false;\n";
+    if (op == 0x8d) out << "if(!store(s,(s.db<<16)|" << v << ",s.a," << m << "))return false;\n";
+    if (index_load) out << "if(!load_index(s,(s.db<<16)|" << v << "," << x << "," << (op == 0xac) << "))return false;\n";
+    if (index_store) out << "if(!store(s,(s.db<<16)|" << v << ",s." << (op == 0x8e ? 'x' : 'y') << "," << x << "))return false;\n";
+    if (op == 0x9c) out << "if(!store(s,(s.db<<16)|" << v << ",0," << m << "))return false;\n";
+    if (op == 0xad) out << "if(!load(s,(s.db<<16)|" << v << "," << m << "))return false;\n";
+    if (op == 0x44 || op == 0x54) {
+      out << "if(!move_byte(s," << (v & 255) << "," << (v >> 8) << "," << x << "," << (op == 0x44) << "))return false;\n"
+          << "s.pc=s.a==65535?" << next << ":" << pc << ";" << completion << "(s," << cycles << ");\n"
+          << "if(s.a!=65535)goto L" << pc << ";goto L" << next << ";\n";
+      return;
+    }
     if (op == 0x20) {
-      out << "if(!push_return(s," << next-1 << "))return false;s.pc=" << v << ";++s.steps;\n"
+      out << "if(!push_return(s," << next-1 << "))return false;s.pc=" << v << ";" << completion << "(s," << cycles << ");\n"
           << "if(!leaf" << v << "(s,limit," << next << "))return false;goto L" << next << ";\n";
       return;
     }
-    if (op == 0x60) { out << "++s.steps;return pop_return(s,expected);\n"; return; }
-    out << "s.pc=" << (next & 65535) << ";++s.steps;\n";
+    if (op == 0x60) { out << completion << "(s," << cycles << ");return pop_return(s,expected);\n"; return; }
+    out << "s.pc=" << (next & 65535) << ";" << completion << "(s," << cycles << ");\n";
     if (op == 0xdb) { out << "s.stop=Stop::stp;return true;\n"; return; }
     if (op == 0x80 || branch(op)) {
-      const unsigned target = pc+n.length+(v < 128 ? int(v) : int(v)-256);
-      unsigned mask = (op & 0xc0)==0 ? 128 : (op & 0xc0)==0x40 ? 64 : (op & 0xc0)==0x80 ? 1 : 2;
-      out << "if(";
-      if (op == 0x80) out << "true";
-      else out << "(s.p&" << mask << ")" << ((op&32)?"!=":"==") << "0";
-      out << "){s.pc=" << target << ";goto L" << target << ";}\n";
+      out << "if(" << condition << "){s.pc=" << target << ";goto L" << target << ";}\n";
       if (op == 0x80) return;
     }
     out << "goto L" << next << ";\n";
   };
+  for (const auto& handler : handlers) {
+    out << "static bool handler" << handler.first.first << "_" << handler.first.second
+        << "(State& s,unsigned limit){goto L" << handler.first.second << ";\n";
+    for (const auto& instruction : handler.second) emit(instruction);
+    out << "}\n";
+  }
+  for (const auto& variant : targets) {
+    const auto nmi = variant.second[0], irq = variant.second[1];
+    const unsigned entry_cycles = handler_modes.at(variant.first).e ? 7 : 8;
+    out << "static bool interrupt_mode" << variant.first << "(State& s,unsigned limit){\n"
+        << "bool nmi=pending_nmi(s);";
+    if (bus_timing) out << "if(!prepare_interrupt_timing(s,nmi))return false;";
+    else out << "if(!reserve_cycles(s," << entry_cycles << "))return false;";
+    out << "if(!enter_interrupt(s,nmi?" << nmi << ":" << irq << ",nmi))return false;\n"
+        << (bus_timing ? "complete_bus_instruction" : "complete_instruction") << "(s," << entry_cycles << ");return nmi?handler"
+        << variant.first << "_" << nmi << "(s,limit):handler" << variant.first << "_" << irq << "(s,limit); }\n";
+  }
   for (const auto& leaf : leaves) {
     out << "static bool leaf" << leaf.first << "(State& s,unsigned limit,unsigned expected){goto L" << leaf.first << ";\n";
     for (const auto& entry : nodes) if (entry.second.leaf == int(leaf.first)) emit(entry.second);
     out << "}\n";
   }
-  out << "bool run_generated(State& s,unsigned limit){\n"
-      << "if(s.pc!=32768||!s.e||(s.p&48)!=48||s.p>255||s.s!=511||s.a>65535||s.x>255||s.y>255){s.stop=Stop::contract;return false;}\n"
-      << "goto L32768;\n";
+  if (linear_resume) out << "static bool execute_generated(State& s,unsigned limit,bool resume){\n";
+  else out << "bool " << entry << "(State& s,unsigned limit){\n";
+  out << "if(" << (linear_resume ? "(!resume&&s.pc!=32768)" : "s.pc!=32768")
+      << "||!s.e||(s.p&48)!=48||s.p>255||s.s!=511||s.a>65535||s.x>255||s.y>255||s.db>255||(!s.bus&&s.db)||s.interrupt.active){s.stop=Stop::contract;return false;}\n";
+  if (linear_resume)
+    out << "if(resume&&(s.stop!=Stop::limit||limit<s.steps||s.db!=0||s.pending_master_clocks||!s.diagnostic.empty())){s.stop=Stop::contract;s.diagnostic=\"Resume requires a paused linear boundary\";return false;}\n";
+  if (bus_timing) out << "if(!s.bus){s.stop=Stop::contract;s.diagnostic=\"CPU bus timing requires a memory bus\";return false;}\n";
+  if (interrupts) out << "if(!s.bus){s.stop=Stop::contract;s.diagnostic=\"Compiled interrupts require a memory bus\";return false;}\n";
+  out << "if(s.bus){\n";
+  for (const auto& byte : owners)
+    out << "if(!code_byte(s," << byte.first << "," << unsigned(code[byte.first-0x8000]) << "))return false;\n";
+  for (const auto& byte : vector_bytes)
+    out << "if(!code_byte(s," << byte.first << "," << byte.second << "))return false;\n";
+  out << "}\n";
+  if (linear_resume) {
+    out << "if(resume){\n";
+    unsigned steps = 0, cycles = 0;
+    for (const auto& entry : nodes) {
+      out << "if(s.pc==" << entry.first << "&&s.steps==" << steps << "&&s.clock.now()==" << steps
+          << "&&s.cycle_clock.now()==" << cycles << ")goto L" << entry.first << ";\n";
+      ++steps; cycles += entry.second.op == 0xa9 ? 2 : entry.second.op == 0x8d ? 4 : 3;
+    }
+    out << "s.stop=Stop::contract;s.diagnostic=\"Invalid linear resume PC/step/cycle boundary\";return false;}\n";
+  }
+  out << "goto L32768;\n";
   for (const auto& entry : nodes) if (entry.second.leaf < 0) emit(entry.second);
-  out << "}\n}\n";
+  out << "}\n";
+  if (linear_resume)
+    out << "bool run_generated(State& s,unsigned limit){return execute_generated(s,limit,false); }\n"
+        << "bool resume_generated(State& s,unsigned limit){return execute_generated(s,limit,true); }\n";
+  out << "}\n";
   return out.str();
 }
 }
