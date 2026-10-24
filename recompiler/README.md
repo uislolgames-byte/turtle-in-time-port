@@ -37,7 +37,7 @@ O barramento opcional e `reset_cpu` estão descritos em [system/](../system/READ
   cargas de 8 bits), X/Y inicialmente de 8 bits, P de 8 bits. Demais flags e RAM
   inicial podem ser fornecidas pelo chamador. Não é um reset fiel de hardware.
 - CLC/SEC, CLI/SEI, XCE com carry estaticamente conhecido, REP/SEP, NOP, STP,
-  LDA/LDX/LDY imediato, INX/DEX, LDA/STA/STZ/STX/STY absoluto, BRA e os oito desvios condicionais.
+  LDA/LDX/LDY imediato, INX/DEX, LDA/LDX/LDY/STA/STZ/STX/STY absoluto, BRA e os oito desvios condicionais.
 - MVN/MVP no fluxo principal, com barramento conectado: um byte por repetição,
   A de 16 bits como contador, larguras de índice independentes de M e DBR atualizado.
   Há limites e verificação NMI/IRQ entre os bytes. Veja o contrato em
@@ -395,4 +395,35 @@ scene/input programs and their images are unchanged.
 
 Semantic reference: [WDC W65C816S datasheet](https://www.westerndesigncenter.com/wdc/documentation/w65c816s.pdf),
 opcode/operation tables and absolute addressing timing. The implementation and
+test programs are original C++.
+
+
+## Absolute LDX/LDY ($AE/$AC)
+
+Absolute index loads now read DBR:absolute directly into X or Y. The index-width
+flag X selects one byte/four nominal cycles or two bytes/five cycles independently
+of accumulator-width M. The selected index is replaced (zero-extended for X8), N/Z
+reflect its width/value, and A, the other index and other flags are preserved.
+Main code, existing leaf routines and restricted linear NMI/IRQ handlers can use
+the new forms. Generated C++ calls a checked load helper, without runtime opcode
+dispatch. Existing immediate LDX/LDY and accumulator LDA are unchanged.
+
+A complete validated read precedes publication of the selected index and flags.
+Word MMIO and words crossing a bank boundary remain unsupported. Byte MMIO needs
+the existing opt-in; serial reads consume one bit each, including $4017's fixed
+signature bits. Timing/capacity/event checks precede the read. Direct-page/indexed
+LDX/LDY remain outside this addition; the separate linear-resume profile continues
+to accept only its previously documented operations.
+
+Eighteen generated Windows fixtures cover all four M/X combinations, zero/sign
+flags and preservation, complete RAM at each instruction budget, four mapped
+banks/mirrors, a leaf call, source faults and bank boundaries, atomic word-MMIO
+rejection with/without timing, both serial ports in M8/M16, ROM versus WRAM and
+MEMSEL/FastROM data speeds, capacity boundaries and emulation/native NMI/IRQ/RTI
+against an independent interpreter. Existing scenes and input programs are
+preserved. [Linux remains paused](../PLATFORMS.md); this feature is not validated
+on Linux and does not execute the game.
+
+Semantic reference: [WDC W65C816S datasheet](https://www.westerndesigncenter.com/wdc/documentation/w65c816s.pdf),
+LDX/LDY operation/opcode and absolute-address timing tables. Implementation and
 test programs are original C++.

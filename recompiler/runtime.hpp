@@ -330,6 +330,21 @@ inline bool load(State& s, unsigned address, bool narrow) {
     s.pending_master_clocks = 0; s.stop = Stop::memory; s.diagnostic = e.what(); return false;
   }
 }
+// Absolute LDX/LDY uses X width and replaces the entire selected index.
+// Publish register/flags only after the complete checked read succeeds.
+inline bool load_index(State& s, unsigned address, bool narrow, bool y) {
+  try {
+    if (s.bus && !narrow) s.bus->validate_word(address);
+    if (s.bus && !narrow && (address & 65535) == 65535)
+      throw system816::BusError(system816::Fault::unmapped, address, "Word across bank boundary unsupported");
+    const unsigned lo = read_byte(s, address);
+    const unsigned value = lo | (narrow ? 0 : unsigned(read_byte(s, address+1)) << 8);
+    (y ? s.y : s.x) = value;
+    nz(s,value,narrow); return true;
+  } catch (const system816::BusError& e) {
+    s.pending_master_clocks = 0; s.stop = Stop::memory; s.diagnostic = e.what(); return false;
+  }
+}
 // One MVN/MVP byte iteration. A is always a 16-bit counter; index width follows X.
 // Faults are atomic per byte, not per entire block. This requires the real bus.
 inline bool move_byte(State& s, unsigned destination, unsigned source, bool narrow, bool decrement) {

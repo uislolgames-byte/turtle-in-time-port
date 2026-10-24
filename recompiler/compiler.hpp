@@ -51,7 +51,7 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
       case 0xc2: case 0xe2: case 0x80: length = 2; break;
       case 0xa9: length = mode.m ? 2 : 3; break;
       case 0xa2: case 0xa0: length = mode.x ? 2 : 3; break;
-      case 0xad: case 0x8d: case 0x9c: case 0x8e: case 0x8c: case 0x20: case 0x44: case 0x54: length = 3; break;
+      case 0xad: case 0x8d: case 0x9c: case 0x8e: case 0x8c: case 0xae: case 0xac: case 0x20: case 0x44: case 0x54: length = 3; break;
       case 0x10: case 0x30: case 0x50: case 0x70: case 0x90: case 0xb0: case 0xd0: case 0xf0: length = 2; break;
       default: throw std::runtime_error("unsupported opcode at " + std::to_string(pc));
     }
@@ -133,7 +133,7 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
             case 0xea: case 0x58: case 0x78: case 0xe8: case 0xca: case 0x40: break;
             case 0xa9: length = mode.m ? 2 : 3; break;
             case 0xa2: case 0xa0: length = mode.x ? 2 : 3; break;
-            case 0xad: case 0x8d: case 0x9c: case 0x8e: case 0x8c: length = 3; break;
+            case 0xad: case 0x8d: case 0x9c: case 0x8e: case 0x8c: case 0xae: case 0xac: length = 3; break;
             default: throw std::runtime_error("handler must be straight-line, preserve mode and end in RTI");
           }
           if (pos + length > code.size()) throw std::runtime_error("truncated handler instruction");
@@ -158,8 +158,9 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
     const auto pc = n.pc, op = n.op, v = n.value, next = pc+n.length;
     const bool m = n.mode.m, x = n.mode.x;
     const bool index_store = op == 0x8e || op == 0x8c;
-    const bool memory = op == 0xad || op == 0x8d || op == 0x9c || index_store;
-    const bool data_narrow = index_store ? x : m;
+    const bool index_load = op == 0xae || op == 0xac;
+    const bool memory = op == 0xad || op == 0x8d || op == 0x9c || index_store || index_load;
+    const bool data_narrow = (index_store || index_load) ? x : m;
     unsigned base_cycles = 2;
     if (op == 0xc2 || op == 0xe2 || op == 0xdb) base_cycles = 3;
     if (op == 0xa9) base_cycles = m ? 2 : 3;
@@ -209,6 +210,7 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
     if (op == 0xe2) out << "s.p|=" << v << ";if(s.p&16){s.x&=255;s.y&=255;}\n";
     if (op == 0xfb) out << "{bool old=s.e;s.e=(s.p&1)!=0;s.p=(s.p&254)|unsigned(old);if(s.e){s.p|=48;s.x&=255;s.y&=255;s.s=256|(s.s&255);}}\n";
     if (op == 0x8d) out << "if(!store(s,(s.db<<16)|" << v << ",s.a," << m << "))return false;\n";
+    if (index_load) out << "if(!load_index(s,(s.db<<16)|" << v << "," << x << "," << (op == 0xac) << "))return false;\n";
     if (index_store) out << "if(!store(s,(s.db<<16)|" << v << ",s." << (op == 0x8e ? 'x' : 'y') << "," << x << "))return false;\n";
     if (op == 0x9c) out << "if(!store(s,(s.db<<16)|" << v << ",0," << m << "))return false;\n";
     if (op == 0xad) out << "if(!load(s,(s.db<<16)|" << v << "," << m << "))return false;\n";

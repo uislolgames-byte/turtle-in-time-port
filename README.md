@@ -279,3 +279,12 @@ sem alterar acumulador ou flags. A largura depende de X, independentemente de M;
 os testes cobrem modos mistos, bancos/limites, subrotina, MMIO e interrupções.
 Validação ativa somente Windows; a branch Linux arquivada permanece intacta.
 O jogo ainda não roda. [Contrato e testes](recompiler/README.md#absolute-stxsty-8e8c).
+
+
+### Ler memória diretamente para os índices
+
+LDX/LDY absolutos ($AE/$AC) agora carregam X/Y diretamente de RAM, ROM ou portas
+byte já suportadas. Usam a largura dos índices, atualizam zero/negativo e preservam
+o acumulador. A validação Windows cobre modos mistos, bancos, FastROM, falhas,
+leitura serial e handlers de interrupção. A branch Linux arquivada é preservada;
+o jogo ainda não roda. [Contrato e testes](recompiler/README.md#absolute-ldxldy-aeac).
