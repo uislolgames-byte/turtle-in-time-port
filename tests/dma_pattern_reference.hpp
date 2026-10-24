@@ -13,6 +13,7 @@ struct DmaPatternReference {
   std::array<unsigned,128> regs{};
   std::array<unsigned,4> scroll{};
   unsigned object_select = 0, display = 128, main_screen = 0;
+  unsigned mode = 0, bg1_map = 0, bg2_map = 0, bg12_tiles = 0;
   unsigned buffer = 0, read_mdr = 0;
   unsigned wm = 0, vm = 0, control = 0, cg = 0, low = 0, shared = 0, horizontal = 0;
   bool high = false;
@@ -86,6 +87,10 @@ struct DmaPatternReference {
   bool write(unsigned address, unsigned value) {
     value %= 256;
     if (address == 0x2100) { display = value & 143; return true; }
+    if (address == 0x2105) { mode = value; return true; }
+    if (address == 0x2107) { bg1_map = value; return true; }
+    if (address == 0x2108) { bg2_map = value; return true; }
+    if (address == 0x210b) { bg12_tiles = value; return true; }
     if (address == 0x2101) { object_select = value; return true; }
     if (address == 0x212c) { main_screen = value & 31; return true; }
     if (address == 0x2102) { oam.low(value); return true; }
@@ -124,6 +129,7 @@ struct DmaPatternReference {
         b.vram_control() != control || b.cgram_address() != cg || b.cgram_high_byte() != high)
       throw std::runtime_error("DMA pattern register/progress reference mismatch");
     const auto& v = b.video_registers();
+    if (v.mode != mode || v.bg1_map != bg1_map || v.bg2_map != bg2_map || v.bg12_tiles != bg12_tiles) throw std::runtime_error("BG control reference mismatch");
     if (v.bg1_x != scroll[0] || v.bg1_y != scroll[1] || v.bg2_x != scroll[2] || v.bg2_y != scroll[3])
       throw std::runtime_error("DMA shared scroll latch reference mismatch");
     for (unsigned i = 0; i < ram.size(); ++i) if (b.read8(0x7e0000+i) != ram[i]) throw std::runtime_error("DMA complete WRAM mismatch");

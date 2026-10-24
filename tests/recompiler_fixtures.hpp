@@ -5,6 +5,28 @@
 #include <cstdint>
 #include <utility>
 inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
+  if (name == "bus_scene_preview") return recompiler_fixture("scene_preview");
+  if (name == "scene_preview") {
+    auto image = recompiler_fixture("object_preview"); std::vector<uint8_t> code(image.begin(),image.begin()+210);
+    const auto write = [&](unsigned at, unsigned value) { code.insert(code.end(),{0xa9,static_cast<uint8_t>(value),0x8d,static_cast<uint8_t>(at),static_cast<uint8_t>(at >> 8)}); };
+    for (unsigned bg = 0; bg < 2; ++bg) {
+      for (unsigned n = 0; n < 1024; ++n) {
+        const unsigned x = n%32, y = n/32, entry = (x*3+y*17)%256+((x+y+bg)%8)*1024+((x/4+y/4+bg)%2)*8192+(x%3 == 0 ? 16384 : 0)+(y%5 == 0 ? 32768 : 0);
+        image[0x6000+bg*2048+n*2] = static_cast<uint8_t>(entry); image[0x6001+bg*2048+n*2] = static_cast<uint8_t>(entry >> 8);
+      }
+      write(0x2116,0); write(0x2117,0x70+bg*4);
+      const unsigned regs[] = {1,0x18,0,0xe0+bg*8,0,0,8};
+      for (unsigned n = 0; n < 7; ++n) write(0x4300+n,regs[n]);
+      write(0x420b,1);
+    }
+    write(0x2105,1); write(0x2107,112); write(0x2108,116); write(0x210b,1); write(0x212c,19);
+    for (unsigned flags : {0u,0x30u}) {
+      write(0x2102,0); write(0x2103,0); for (unsigned value : {8u,8u,0u,flags}) write(0x2104,value);
+    }
+    write(0x212c,3); write(0x212c,16); write(0x212c,19); write(0x2105,0); write(0x2105,49);
+    write(0x2100,7); write(0x2100,128); write(0x2100,15);
+    code.push_back(0xdb); for (unsigned i = 0; i < code.size(); ++i) image[i] = code[i]; return image;
+  }
   if (name == "bus_object_preview") return recompiler_fixture("object_preview");
   if (name == "object_preview") {
     std::vector<uint8_t> image(32768,0), code;

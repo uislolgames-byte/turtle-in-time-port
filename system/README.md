@@ -1316,12 +1316,30 @@ using 4bpp VRAM and CGRAM. OBSEL ($2101) byte writes are supported in the bus an
 timed CPU runtime, with reset to zero; DMA cannot configure it. All eight
 progressive size pairs, both name tables, palette/flip bits, signed X, wrapped Y,
 transparent zero, OAM ordering/rotation, brightness, blank and backdrop are covered.
-BG1/BG2 captures preserve their prior contract; mixing OBJ with BG is rejected.
+BG1/BG2 captures preserve their prior contract; mixed OBJ/BG snapshots use the
+separate scene API described below.
 See the [OBJ capture contract and tests](TILE_PREVIEW.md#captura-dedicada-de-sprites-obj).
 
 Direct independent pixel checks and two generated synthetic fixtures exercise
 CPU-driven controls and DMA uploads to VRAM/CGRAM/OAM. Generated execution remains
 static C++ operations, not an opcode interpreter; the interpreter exists only in
 the test oracle. The CI also validates and saves nine original 128x64 OBJ BMPs.
-This is not a scanline PPU: sprite evaluation/overflow limits, BG/OBJ composition,
-interlace, effects and native-window presentation remain absent. M3/M4 stay open.
+This is not a scanline PPU: sprite evaluation/overflow limits, interlace, effects and native-window
+presentation remain absent. M3/M4 stay open.
+
+
+## BG1/BG2/OBJ scene snapshots
+
+`capture_scene_preview` composes the bounded Mode 0/1 main screen with any mask
+of BG1/BG2/OBJ. It selects the front opaque object in OAM order first, then mixes
+that sample against high/low background pixels. It does not allow a higher-priority
+object behind it to leak through a foreground object hidden by a background.
+BG-only and OBJ-only capture APIs, masks and images are preserved.
+
+The independent scene oracle uses private OAM/VRAM/CGRAM arrays, separate BG
+addressing and a front-to-back priority decision tree. A direct priority/opacity
+matrix and geometry checks plus two generated synthetic CPU/DMA fixtures verify
+pixels, full memory, controls and timing/NMI. The CI also saves eleven validated
+128x64 scene captures. See the [scene contract](TILE_PREVIEW.md#composição-bg1bg2obj).
+This remains a diagnostic snapshot, without per-scanline evaluation, presentation
+in the native window, complete PPU/APU synchronization or game execution.

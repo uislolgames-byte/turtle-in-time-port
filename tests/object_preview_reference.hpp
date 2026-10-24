@@ -8,9 +8,9 @@ inline system816::PreviewRGB object_reference_rgb(unsigned color, unsigned brigh
   const auto channel = [&](unsigned value) { return levels[unsigned(std::floor(value*double(brightness)/15.0+0.5))]; };
   return {channel(color%32),channel(color/32%32),channel(color/1024)};
 }
-inline system816::PreviewRGB object_reference_pixel(const DmaPatternReference& r, unsigned x, unsigned y) {
-  if ((r.display & 128) || !(r.display & 15)) return {0,0,0};
-  unsigned color = 0;
+struct ReferenceObjectPixel { unsigned color = 0, priority = 0; };
+inline ReferenceObjectPixel reference_object_sample(const DmaPatternReference& r, unsigned x, unsigned y) {
+  ReferenceObjectPixel result;
   if (r.main_screen & 16) {
     const unsigned first = r.oam.rotation ? (r.oam.word/2)%128 : 0;
     static const unsigned small_w[] = {8,8,8,16,16,32,16,16}, large_w[] = {16,32,64,32,64,64,32,32};
@@ -27,10 +27,14 @@ inline system816::PreviewRGB object_reference_pixel(const DmaPatternReference& r
       const unsigned at = (base+(row*16+column)*32+(py%8)*2)%65536, weight = 1u << (7-px%8);
       const unsigned index = ((r.vram[at] & weight) ? 1 : 0)+((r.vram[(at+1)%65536] & weight) ? 2 : 0)+
                              ((r.vram[(at+16)%65536] & weight) ? 4 : 0)+((r.vram[(at+17)%65536] & weight) ? 8 : 0);
-      if (index) { color = 128+((flags/2)%8)*16+index; break; }
+      if (index) { result = {128+((flags/2)%8)*16+index,(flags/16)%4}; break; }
     }
   }
-  return object_reference_rgb(r.palette[color],r.display%16);
+  return result;
+}
+inline system816::PreviewRGB object_reference_pixel(const DmaPatternReference& r, unsigned x, unsigned y) {
+  if ((r.display & 128) || !(r.display & 15)) return {0,0,0};
+  return object_reference_rgb(r.palette[reference_object_sample(r,x,y).color],r.display%16);
 }
 inline void compare_object_frame(const DmaPatternReference& r, const system816::PreviewFrame& f) {
   for (unsigned y = 0; y < f.height; ++y) for (unsigned x = 0; x < f.width; ++x)

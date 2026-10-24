@@ -282,3 +282,11 @@ programs that upload original palette/tile/OAM data by DMA, then change sizes,
 rotation, brightness and enables. CPU, full memory, time and independent pixels
 are checked over budgets/origins and scheduled NMI boundaries; nine validated
 captures are saved by CI. BG1/BG2 captures remain separate. See the [OBJ contract](../system/TILE_PREVIEW.md#captura-dedicada-de-sprites-obj).
+
+
+Two additional scene fixtures load BG maps by DMA, then drive BG1/BG2/OBJ masks,
+priorities, mode/tile sizes, rotation and brightness through existing CPU ports.
+They verify full CPU/memory/device/time state and independently composed pixels
+across budgets/origins/NMI boundaries. Eleven validated scene captures are stored
+by CI. Legacy BG/OBJ fixtures and their capture contracts remain intact. See the
+[scene contract](../system/TILE_PREVIEW.md#composição-bg1bg2obj).

@@ -253,8 +253,7 @@ o conteúdo gráfico. Todos os dados e imagens são originais sintéticos.
 `capture_obj_preview` em `object_preview.hpp` desenha uma captura somente OBJ e
 backdrop, com recorte de 8..256 pixels por eixo. Aceita os Modes 0/1 (bits de
 tamanho BG são ignorados por OBJ) e TM=0 ou $10. As APIs BG1/BG2 anteriores
-conservam seus contratos e continuam rejeitando OBJ ativo; ainda não há mistura
-de sprites e cenários no mesmo compositor.
+conservam seus contratos e continuam rejeitando OBJ ativo; a mistura fica na API separada `capture_scene_preview`, descrita abaixo.
 
 OBSEL ($2101) passa a ser uma escrita CPU de byte opt-in, inclusive temporizada.
 Bits 0..2 selecionam a base VRAM em passos de 16384 bytes (espelhados em 64 KiB);
@@ -306,10 +305,62 @@ scanline, interlace, redirecionamento durante display, subscreen, janelas ou col
 math. É uma captura de diagnóstico pelo host, sem apresentação na janela nem
 execução do jogo. Não conclui M3/M4.
 
+## Composição BG1/BG2/OBJ
+
+`capture_scene_preview` combina BG1, BG2 e o pixel OBJ selecionado nos Modes 0/1.
+A API aceita TM com qualquer combinação dos bits 0/1/4 ($00/$01/$02/$03/$10/$11/
+$12/$13), recortes de 8..256 pixels por eixo e os bits de tamanho 16×16 de cada
+BG. Demais modos, BG3/BG4 e tamanhos de recorte inválidos são rejeitados. As APIs
+BG e OBJ anteriores conservam seus contratos de máscaras, inclusive as rejeições.
+Sem OBJ habilitado, a imagem é idêntica à captura BG anterior; sem BG habilitado,
+é idêntica à captura OBJ anterior.
+
+A ordem do subconjunto suportado, da frente para trás, é: OBJ prioridade 3,
+BG1 alta, BG2 alta, OBJ prioridade 2, BG1 baixa, BG2 baixa, OBJ prioridade 1,
+OBJ prioridade 0 e backdrop. Essa ordem relativa é igual nos Modes 0/1 quando
+BG3/BG4 e o bit BG3-high não participam. Transparência usa o índice de pixel,
+independentemente de a cor CGRAM resultar em preto.
+
+O pixel OBJ é escolhido primeiro pela ordem OAM/rotação, sem comparar as prioridades
+dos outros sprites. Só então a prioridade desse pixel é comparada com BG. Portanto,
+um OBJ opaco de índice menor, escondido atrás de BG, também impede que um OBJ de
+índice maior e prioridade maior apareça através dele. Rotação pode mudar o vencedor.
+O teste tem verificações explícitas desse caso. O buffer de amostras OBJ é partilhado
+com a captura OBJ-only, que mantém a imagem anterior. Brilho/blank é aplicado ao
+resultado final; nenhuma porta, latch, memória ou clock é consumido pela captura.
+
+O teste direto compara 4358 frames com uma referência independente baseada em
+uma árvore de decisões da frente para trás, sem reutilizar os ranks do compositor.
+A matriz combina ambos os modos, as quatro prioridades OBJ, os quatro pares de
+prioridade BG, todos os 16 estados de opacidade de BG1/BG2 e dois OBJ, e as oito
+máscaras TM. Também compara as APIs antigas nos casos BG-only/OBJ-only. Outros
+casos cobrem geometrias, scroll/latches, flips, tamanhos independentes BG, OBSEL,
+rotação, brilho/blank, frame completo e rejeições. Três checagens adicionais de
+cor fixa impedem vazamento do sprite de trás, verificam a rotação e mantêm um
+pixel preto opaco na frente de outro sprite.
+
+Duas novas fixtures geradas preservam as anteriores e acrescentam dois mapas
+sintéticos de 2 KiB via DMA ao programa OBJ. Modificam modo, máscaras, atributos
+OAM, tamanhos e brilho via CPU. São 1432 comparações completas em 179 orçamentos,
+duas flags e três origens temporizadas, mais 527 fronteiras agendadas de NMI.
+Rastro final: 175 instruções, 525 ciclos nominais, 176390 master clocks quando
+temporizado (172368 DMA/21536 bytes), PC $81B4. CPU, todas as memórias e controles,
+portas, clocks/raster e pixels são comparados à referência.
+
+O CI verifica e salva onze BMPs originais de 128×64 antes do upload: combined,
+low, high, bg, obj, combined-restored, mode0, large, dim, blank e restored. Os
+limites são 134/146/158/160/162/164/166/168/170/172/174 instruções. São capturas
+host de estados do programa, sem depender de desenho fixo na janela.
+
+Referência primária das prioridades, com implementação própria: [ares updateVideoMode](https://github.com/ares-emulator/ares/blob/master/ares/sfc/ppu/io.cpp).
+A composição mantém os limites dos snapshots: sem BG3/BG4, avaliação/overflow de
+sprites por scanline, interlace, subscreen, janelas, color math ou apresentação
+na interface. Não conclui M3/M4 nem significa que o jogo já execute.
+
 ## Limite do avanço
 
 Esta é uma ferramenta de diagnóstico chamada pelo host depois da execução.
 A configuração agora pode vir do programa via MMIO, mas ainda faltam scanlines,
-demais modos de vídeo, BG3/BG4, mistura de sprites com BG, efeitos de cor e janelas,
+demais modos de vídeo, BG3/BG4, avaliação de sprites por scanline, efeitos de cor e janelas,
 sincronização completa e apresentação pela interface. Não conclui os Marcos
 3 ou 4 e não significa que o jogo execute.
