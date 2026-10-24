@@ -15,13 +15,13 @@ static recompiled::State reference(const std::vector<uint8_t>& code, recompiled:
     const unsigned before = s.pc;
     unsigned cycles = 2;
     if (op == 0xc2 || op == 0xe2 || op == 0xdb) cycles = 3;
-    if (op == 0xa9) cycles = m ? 2 : 3;
+    if (op == 0xa9 || op == 0x29 || op == 0x09 || op == 0x49) cycles = m ? 2 : 3;
     if (op == 0xa2 || op == 0xa0) cycles = x ? 2 : 3;
     if (op == 0xad || op == 0x8d) cycles = m ? 4 : 5;
     if (op == 0x20 || op == 0x60) cycles = 6;
     bool branch_taken = false;
     unsigned length = 1;
-    if (op == 0xa9) length = m ? 2 : 3;
+    if (op == 0xa9 || op == 0x29 || op == 0x09 || op == 0x49) length = m ? 2 : 3;
     else if (op == 0xa2 || op == 0xa0) length = x ? 2 : 3;
     else if (op == 0xad || op == 0x8d || op == 0x20) length = 3;
     else if (op == 0xc2 || op == 0xe2 || op == 0x80 || (op & 31) == 16) length = 2;
@@ -41,6 +41,16 @@ static recompiled::State reference(const std::vector<uint8_t>& code, recompiled:
       case 0xc2: s.p &= ~operand; if (s.e) s.p |= 48; break;
       case 0xe2: s.p |= operand; if (s.p & 16) { s.x %= 256; s.y %= 256; } break;
       case 0xa9: s.a = m ? (s.a/256)*256 + operand : operand; value = operand; bits = m ? 8 : 16; update_nz = true; break;
+      case 0x29: case 0x09: case 0x49: {
+        unsigned result = 0;
+        for (unsigned bit = 0; bit < (m ? 8u : 16u); ++bit) {
+          const bool left = (s.a/(1u << bit))%2 != 0, right = (operand/(1u << bit))%2 != 0;
+          const bool set = op == 0x29 ? left && right : op == 0x09 ? left || right : left != right;
+          if (set) result += 1u << bit;
+        }
+        s.a = m ? (s.a/256)*256+result : result;
+        value = result; bits = m ? 8 : 16; update_nz = true; break;
+      }
       case 0xa2: s.x = operand; value = operand; bits = x ? 8 : 16; update_nz = true; break;
       case 0xa0: s.y = operand; value = operand; bits = x ? 8 : 16; update_nz = true; break;
       case 0xe8: case 0xca: {
@@ -114,7 +124,7 @@ static recompiled::State reference(const std::vector<uint8_t>& code, recompiled:
         case 0xe8: case 0xca: case 0xc8: case 0x88: case 0xaa: case 0xa8:
         case 0x8a: case 0x98: case 0x9b: case 0xbb: master = 14; break;
         case 0xc2: case 0xe2: master = 22; break;
-        case 0xa9: case 0xa2: case 0xa0: master = length == 2 ? 16 : 24; break;
+        case 0x29: case 0x09: case 0x49: case 0xa9: case 0xa2: case 0xa0: master = length == 2 ? 16 : 24; break;
         case 0x20: master = 46; break;
         case 0x60: master = 42; break;
         case 0xdb: master = 20; break;

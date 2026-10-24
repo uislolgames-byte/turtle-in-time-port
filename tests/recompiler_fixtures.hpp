@@ -8,6 +8,35 @@
 #include <initializer_list>
 #include "../demo/synthetic_rom.hpp"
 inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
+  if (name == "logic_ops" || name == "bus_logic_ops") {
+    std::vector<uint8_t> code;
+    const auto emit = [&](std::initializer_list<uint8_t> bytes) { code.insert(code.end(),bytes); };
+    const auto logic = [&](bool narrow) {
+      const auto imm = [&](uint8_t op, unsigned value) {
+        code.push_back(op); code.push_back(uint8_t(value)); if (!narrow) code.push_back(uint8_t(value >> 8));
+      };
+      imm(0x09,0); imm(0x29,narrow ? 0xff : 0xffff); imm(0x49,narrow ? 0x80 : 0x8000);
+      imm(0x09,1); imm(0x29,narrow ? 0x7f : 0x7fff); imm(0x49,narrow ? 0xff : 0xffff);
+      imm(0x29,0); emit({0xf0,1,0xe8}); // Z must skip INX.
+      imm(0x09,narrow ? 0x80 : 0x8000); emit({0x30,1,0xe8}); // N must skip INX.
+    };
+    logic(true); emit({0x18,0xfb,0xc2,0x30,0xa9,0x55,0xaa}); logic(false);
+    emit({0xe2,0x20}); logic(true); emit({0xe2,0x10}); logic(true);
+    emit({0xc2,0x20}); logic(false); emit({0x38,0xfb}); logic(true);
+    const unsigned leaf = 0x8000+unsigned(code.size())+4;
+    emit({0x20,uint8_t(leaf),uint8_t(leaf >> 8),0xdb,0x29,0x7f,0x09,1,0x49,0xff,0x60}); return code;
+  }
+  if (name == "irq_logic_emulation" || name == "irq_logic_native" || name == "bus_irq_logic_emulation" || name == "bus_irq_logic_native") {
+    auto image = recompiler_fixture(name.find("native") != std::string::npos ? "irq_native" : "irq_emulation");
+    // Keep M8 at every interrupt boundary: immediate handlers require unambiguous widths.
+    if (name.find("native") != std::string::npos) {
+      const std::vector<uint8_t> main{0x18,0xfb,0xea,0xea,0xdb};
+      std::copy(main.begin(),main.end(),image.begin());
+    }
+    const std::vector<uint8_t> handler{0x29,0x7f,0x09,0x80,0x49,0xff,0x40};
+    for (unsigned at : {0x100u,0x120u}) std::copy(handler.begin(),handler.end(),image.begin()+at);
+    return image;
+  }
   if (name == "register_ops" || name == "bus_register_ops") {
     std::vector<uint8_t> code; const std::vector<uint8_t> block{0xc8,0x88,0x88,0xc8,0xaa,0xa8,0xc8,0x9b,0x88,0xbb,0xc8,0x8a,0x98};
     const auto emit = [&](std::initializer_list<uint8_t> bytes) { code.insert(code.end(),bytes); };

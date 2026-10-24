@@ -49,7 +49,7 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
     switch (op) {
       case 0xea: case 0x58: case 0x78: case 0x18: case 0x38: case 0xfb: case 0xdb: case 0x60: case 0xe8: case 0xca: case 0xc8: case 0x88: case 0xaa: case 0xa8: case 0x8a: case 0x98: case 0x9b: case 0xbb: break;
       case 0xc2: case 0xe2: case 0x80: length = 2; break;
-      case 0xa9: length = mode.m ? 2 : 3; break;
+      case 0xa9: case 0x29: case 0x09: case 0x49: length = mode.m ? 2 : 3; break;
       case 0xa2: case 0xa0: length = mode.x ? 2 : 3; break;
       case 0xad: case 0x8d: case 0x9c: case 0x8e: case 0x8c: case 0xae: case 0xac: case 0x20: case 0x44: case 0x54: length = 3; break;
       case 0x10: case 0x30: case 0x50: case 0x70: case 0x90: case 0xb0: case 0xd0: case 0xf0: length = 2; break;
@@ -131,7 +131,7 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
           unsigned length = 1;
           switch (op) {
             case 0xea: case 0x58: case 0x78: case 0xe8: case 0xca: case 0xc8: case 0x88: case 0xaa: case 0xa8: case 0x8a: case 0x98: case 0x9b: case 0xbb: case 0x40: break;
-            case 0xa9: length = mode.m ? 2 : 3; break;
+            case 0xa9: case 0x29: case 0x09: case 0x49: length = mode.m ? 2 : 3; break;
             case 0xa2: case 0xa0: length = mode.x ? 2 : 3; break;
             case 0xad: case 0x8d: case 0x9c: case 0x8e: case 0x8c: case 0xae: case 0xac: length = 3; break;
             default: throw std::runtime_error("handler must be straight-line, preserve mode and end in RTI");
@@ -163,7 +163,7 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
     const bool data_narrow = (index_store || index_load) ? x : m;
     unsigned base_cycles = 2;
     if (op == 0xc2 || op == 0xe2 || op == 0xdb) base_cycles = 3;
-    if (op == 0xa9) base_cycles = m ? 2 : 3;
+    if (op == 0xa9 || op == 0x29 || op == 0x09 || op == 0x49) base_cycles = m ? 2 : 3;
     if (op == 0xa2 || op == 0xa0) base_cycles = x ? 2 : 3;
     if (memory) base_cycles = data_narrow ? 4 : 5;
     if (op == 0x20 || op == 0x60) base_cycles = 6;
@@ -200,6 +200,9 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
     else out << "if(!" << begin.str() << ")return false;\n";
     if (op == 0x40) { out << "if(!return_interrupt(s))return false;" << completion << "(s," << cycles << ");return true;\n"; return; }
     if (op == 0xa9) out << "s.a=" << (m ? "(s.a&65280)|" : "") << v << ";nz(s,s.a," << m << ");\n";
+    if (op == 0x29 || op == 0x09 || op == 0x49)
+      out << "s.a=" << (m ? "(s.a&65280)|" : "") << "((s.a" << (op == 0x29 ? '&' : op == 0x09 ? '|' : '^')
+          << v << ")&" << (m ? 255 : 65535) << ");nz(s,s.a," << m << ");\n";
     if (op == 0xa2 || op == 0xa0) out << "s." << (op==0xa2?'x':'y') << "=" << v << ";nz(s," << v << "," << x << ");\n";
     if (op == 0xe8 || op == 0xca) out << "s.x=(s.x+" << (op==0xe8?1:65535) << ")&" << (x?255:65535) << ";nz(s,s.x," << x << ");\n";
     if (op == 0xc8 || op == 0x88) out << "s.y=(s.y+" << (op==0xc8?1:65535) << ")&" << (x?255:65535) << ";nz(s,s.y," << x << ");\n";

@@ -457,3 +457,28 @@ at its preserved snapshot, and the game still does not run.
 Semantic references: [WDC W65C816S datasheet](https://www.westerndesigncenter.com/wdc/documentation/w65c816s.pdf),
 implied instructions and transfer/status tables; [ares CPU transfer semantics](https://github.com/ares-emulator/ares/blob/master/ares/component/processor/wdc65816/instructions-other.cpp).
 The implementation and test programs are original C++.
+
+
+## Immediate bitwise operations
+
+AND # ($29), ORA # ($09), and EOR # ($49) emit literal C++ expressions in main,
+straight-line leaves, and compatible linear interrupt handlers. M selects the
+8/16-bit operand/result width independently of X. M8 preserves accumulator B;
+only N/Z change, with carry, overflow, decimal and modes preserved. Immediate
+instructions use 2/3 bytes and 2/3 nominal cycles; bank-zero code fetches cost
+16/24 master clocks with optional bus timing. Decimal mode does not change these
+bitwise results. The linear-resume profile remains unchanged and rejects them.
+
+Six Windows fixtures compare CPU, flags, stack, memory, cycles and master time
+at budgets against independent bit-by-bit boolean truth tables. Programs cover
+emulation, four native M/X combinations, zero/sign branches, a leaf, every
+low-byte input with B set, capacity limits, and NMI boundaries. Interrupt fixtures
+cover emulation/native M8 handlers and RTI. Immediate handlers still require a
+consistent operand layout across all possible entry widths; conflicting M8/M16
+layouts, truncated operands and branches into operands are rejected. This does
+not add a general interrupt dispatcher, new address modes or game execution.
+Existing scenes/input remain unchanged; Linux stays archived separately.
+
+Reference: [WDC W65C816S datasheet](https://www.westerndesigncenter.com/wdc/documentation/w65c816s.pdf),
+AND/ORA/EOR operation/status and immediate-address timing tables. Code and test
+programs are original C++.
