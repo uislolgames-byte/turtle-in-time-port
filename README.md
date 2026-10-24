@@ -1,8 +1,21 @@
 # TMNT Native — CI prototype
 
-Experimento de engenharia reversa do **Teenage Mutant Ninja Turtles IV: Turtles in Time** (SNES) para Windows e Linux.
+Experimento de engenharia reversa do **Teenage Mutant Ninja Turtles IV: Turtles in Time** (SNES) com desenvolvimento ativo para Windows. O trabalho Linux está preservado e temporariamente pausado.
 
 **Importante:** este repositório contém ferramentas **preliminares** de inspeção e uma primeira recompilação estática de programas sintéticos 65C816. Ainda não é o jogo jogável nem uma recompilação do jogo.
+
+## Plataformas e retomada do Linux
+
+Desde 24/10/2026, novas alterações são validadas somente no Windows. O estado
+Linux já validado está salvo na branch [archive/linux-2026-10-24](https://github.com/uislolgames-byte/turtle-in-time-port/tree/archive/linux-2026-10-24),
+no commit `41b384dbc223067aff39d7297633dc39453a4b01`, com código, testes, configuração
+do CI e todo o histórico anterior. Os testes portáteis e o CMake continuam no
+projeto; Linux não é mais requisito para validar os próximos commits.
+
+Quando houver a primeira execução verificável de um trecho identificável do jogo
+no Windows, avisar o usuário neste chat para decidirmos juntos se retomamos Linux.
+Carregador, diagnóstico e cenas sintéticas não representam esse evento. Consulte
+[PLATFORMS.md](PLATFORMS.md) para a evidência preservada e o plano de retomada.
 
 ## Ferramentas
 - Prévia gráfica de diagnóstico em C++: [tiles 2bpp](system/TILE_PREVIEW.md),
@@ -12,7 +25,7 @@ Experimento de engenharia reversa do **Teenage Mutant Ninja Turtles IV: Turtles 
   controláveis por registradores,
   e imagem BMP de 32×32 pixels produzida a partir de VRAM e CGRAM preenchidas
   por um programa sintético recompilado. O CI compara os pixels com uma referência
-  independente e publica a imagem no Windows e Linux. Ainda não é uma PPU completa
+  independente e publica a imagem no Windows. A validação Linux anterior está arquivada. Ainda não é uma PPU completa
   nem imagem do jogo; o Marco 3 permanece em andamento.
 - Base do Marco 3: [barramento de memória em C++](system/README.md), com ROM
   LoROM parcial, RAM, bancos e integração ao runtime recompilado com reinicialização.
@@ -67,7 +80,7 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-O GitHub Actions executa em `windows-2022` e `ubuntu-24.04`. Veja os resultados na aba Actions; configuração do workflow não significa que os testes já passaram.
+O GitHub Actions ativo executa somente em `windows-2022`. O CI Windows/Linux anterior permanece na branch de arquivo. Veja os resultados na aba Actions; configuração do workflow não significa que os testes já passaram.
 
 O teste de integração cria uma ROM sintética, sem arquivos comerciais. **Não publique a ROM original.**
 
@@ -82,7 +95,7 @@ o diagnóstico não modifica os bytes da ROM carregada. A interface gráfica ain
 exige verificação manual; esses testes não comprovam execução completa do jogo.
 
 ## Próximos passos
-Expandir a decodificação com propagação explícita de estado do 65C816, acompanhar desvios com segurança e validar Windows/Linux em cada alteração.
+Expandir a decodificação com propagação explícita de estado do 65C816, acompanhar desvios com segurança e validar Windows em cada alteração, mantendo os testes portáteis para a futura retomada de Linux.
 
 ## Protótipo de janela nativa Windows
 O Windows também compila tmnt_native.exe. O aplicativo abre uma janela Win32 e permite escolher localmente uma ROM .sfc/.smc, exibindo tamanho, vetor RESET e consistência do checksum. Nenhuma ROM é incluída ou enviada à rede. Ainda não executa o jogo nem renderiza gráficos ou áudio.
@@ -253,7 +266,7 @@ o carregador e Probe CPU continuam separados. Não há controle físico conectad
 
 O recompilador aceita STZ absoluto ($9C): zera um ou dois bytes conforme M,
 preservando acumulador e flags, inclusive em rotinas folha e handlers restritos.
-A validação Windows/Linux inclui bancos de memória, limites, portas já suportadas,
+A validação inclui bancos de memória, limites, portas já suportadas,
 tempo e interrupções. Outros endereçamentos STZ e retomada geral continuam fora
 do subconjunto. As demonstrações gráficas existentes são preservadas; isso ainda
 não executa o jogo. [Contrato e testes](recompiler/README.md#absolute-stz-9c).

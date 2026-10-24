@@ -1,4 +1,4 @@
-name: Build and test (Windows and Linux)
+name: Build and test (Windows)
 on:
   push:
   pull_request:
@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-2022]
+        os: [windows-2022]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
