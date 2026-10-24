@@ -1,4 +1,5 @@
 #include "runtime.hpp"
+#include "recompiler_compare_reference.hpp"
 #include "recompiler_fixtures.hpp"
 #include <algorithm>
 #include <iostream>
@@ -98,8 +99,8 @@ static Reference reference(const std::vector<uint8_t>& image, std::vector<Event>
     const bool m = (r.p & 32) != 0, x = (r.p & 16) != 0;
     unsigned cycles = 2;
     if (op == 0xc2 || op == 0xdb) cycles = 3;
-    if (op == 0xa9 || op == 0x29 || op == 0x09 || op == 0x49) cycles = m ? 2 : 3;
-    if (op == 0xa2 || op == 0xa0) cycles = x ? 2 : 3;
+    if (op == 0xc9 || op == 0xa9 || op == 0x29 || op == 0x09 || op == 0x49) cycles = m ? 2 : 3;
+    if (op == 0xe0 || op == 0xc0 || op == 0xa2 || op == 0xa0) cycles = x ? 2 : 3;
     if (op == 0xad || op == 0x8d || op == 0x9c) cycles = m ? 4 : 5;
     if (op == 0x8e || op == 0x8c || op == 0xae || op == 0xac) cycles = x ? 4 : 5;
     if (op == 0x20 || op == 0x60) cycles = 6;
@@ -107,8 +108,8 @@ static Reference reference(const std::vector<uint8_t>& image, std::vector<Event>
     if (op == 0x40) cycles = r.e ? 6 : 7;
     unsigned length = 1;
     if (op == 0xc2) length = 2;
-    if (op == 0xa9 || op == 0x29 || op == 0x09 || op == 0x49) length = m ? 2 : 3;
-    if (op == 0xa2 || op == 0xa0) length = x ? 2 : 3;
+    if (op == 0xc9 || op == 0xa9 || op == 0x29 || op == 0x09 || op == 0x49) length = m ? 2 : 3;
+    if (op == 0xe0 || op == 0xc0 || op == 0xa2 || op == 0xa0) length = x ? 2 : 3;
     if (op == 0xad || op == 0x8d || op == 0x9c || op == 0x8e || op == 0x8c || op == 0xae || op == 0xac || op == 0x20 || op == 0x54) length = 3;
     unsigned value = length > 1 ? image.at(r.pc-0x8000+1) : 0;
     if (length == 3) value += 256u * image.at(r.pc-0x8000+2);
@@ -118,7 +119,7 @@ static Reference reference(const std::vector<uint8_t>& image, std::vector<Event>
     unsigned master = 14;
     if (op == 0xc2) master = 22;
     if (op == 0xdb) master = 20;
-    if (op == 0x29 || op == 0x09 || op == 0x49 || op == 0xa9 || op == 0xa2 || op == 0xa0) master = length == 2 ? 16 : 24;
+    if (op == 0xc9 || op == 0xe0 || op == 0xc0 || op == 0x29 || op == 0x09 || op == 0x49 || op == 0xa9 || op == 0xa2 || op == 0xa0) master = length == 2 ? 16 : 24;
     if (op == 0xad || op == 0x8d || op == 0x9c) master = m ? 32 : 40;
     if (op == 0x8e || op == 0x8c || op == 0xae || op == 0xac) master = x ? 32 : 40;
     if (op == 0x20) master = 46;
@@ -145,6 +146,9 @@ static Reference reference(const std::vector<uint8_t>& image, std::vector<Event>
         r.a = m ? (r.a/256)*256+result : result;
         nz(result,m); break;
       }
+      case 0xc9: case 0xe0: case 0xc0:
+        r.p = reference_compare_flags(r.p,op == 0xc9 ? r.a : op == 0xe0 ? r.x : r.y,
+          value,op == 0xc9 ? m : x); break;
       case 0xa2: r.x = value; nz(value,x); break;
       case 0xa0: r.y = value; nz(value,x); break;
       case 0xe8: case 0xca: { const unsigned modulus = x ? 256 : 65536;

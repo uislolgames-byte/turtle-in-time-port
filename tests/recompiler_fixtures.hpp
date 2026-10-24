@@ -8,6 +8,41 @@
 #include <initializer_list>
 #include "../demo/synthetic_rom.hpp"
 inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
+  if (name == "compare_widths" || name == "bus_compare_widths") {
+    std::vector<uint8_t> code;
+    const auto emit = [&](std::initializer_list<uint8_t> bytes) { code.insert(code.end(),bytes); };
+    const auto block = [&](bool m, bool x) {
+      for (unsigned op : {0xc9u,0xe0u,0xc0u}) for (unsigned variant = 0; variant < 2; ++variant) {
+        const bool narrow = op == 0xc9 ? m : x;
+        const unsigned value = variant ? (narrow ? 255 : 65535) : (narrow ? 128 : 32768);
+        code.push_back(uint8_t(op)); code.push_back(uint8_t(value)); if (!narrow) code.push_back(uint8_t(value >> 8));
+        emit({0x90,1,0xea,0xf0,1,0xea,0x30,1,0xea}); // Observe C/Z/N without changing them.
+      }
+    };
+    block(true,true); emit({0x18,0xfb,0xc2,0x30,0xa9,0,0x80,0xa2,0xff,0x7f,0xa0,0xff,0xff}); block(false,false);
+    emit({0xe2,0x20}); block(true,false); emit({0xe2,0x10}); block(true,true);
+    emit({0xc2,0x20}); block(false,true); emit({0x38,0xfb}); block(true,true); emit({0xdb}); return code;
+  }
+  if (name == "compare_vectors" || name == "bus_compare_vectors") {
+    std::vector<uint8_t> code;
+    for (bool narrow : {true,false}) {
+      if (!narrow) code.insert(code.end(),{0x18,0xfb,0xc2,0x30});
+      const std::vector<unsigned> values{0,1,narrow ? 0x7fu : 0x7fffu,narrow ? 0x80u : 0x8000u,narrow ? 0xffu : 0xffffu};
+      for (unsigned op : {0xc9u,0xe0u,0xc0u}) for (unsigned left : values) for (unsigned right : values) {
+        code.push_back(uint8_t(op == 0xc9 ? 0xa9 : op == 0xe0 ? 0xa2 : 0xa0)); code.push_back(uint8_t(left));
+        if (!narrow) code.push_back(uint8_t(left >> 8));
+        code.push_back(uint8_t(op)); code.push_back(uint8_t(right)); if (!narrow) code.push_back(uint8_t(right >> 8));
+      }
+    }
+    code.push_back(0xdb); return code;
+  }
+  if (name == "compare_loop" || name == "bus_compare_loop") return {0xa2,0,0xe0,0,0xe8,0xe0,3,0x90,0xfb,0xa0,3,0x88,0xc0,0,0xd0,0xfb,0xdb};
+  if (name == "irq_compare_emulation" || name == "irq_compare_native" || name == "bus_irq_compare_emulation" || name == "bus_irq_compare_native") {
+    auto image = recompiler_fixture(name.find("native") != std::string::npos ? "irq_logic_native" : "irq_logic_emulation");
+    const std::vector<uint8_t> handler{0xc9,0x80,0xe0,0xff,0xc0,0,0x40};
+    for (unsigned at : {0x100u,0x120u}) std::copy(handler.begin(),handler.end(),image.begin()+at);
+    return image;
+  }
   if (name == "logic_ops" || name == "bus_logic_ops") {
     std::vector<uint8_t> code;
     const auto emit = [&](std::initializer_list<uint8_t> bytes) { code.insert(code.end(),bytes); };

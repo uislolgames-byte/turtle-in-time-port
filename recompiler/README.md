@@ -482,3 +482,34 @@ Existing scenes/input remain unchanged; Linux stays archived separately.
 Reference: [WDC W65C816S datasheet](https://www.westerndesigncenter.com/wdc/documentation/w65c816s.pdf),
 AND/ORA/EOR operation/status and immediate-address timing tables. Code and test
 programs are original C++.
+
+
+## Immediate comparisons
+
+CMP # ($C9), CPX # ($E0), and CPY # ($C0) emit literal C++ arithmetic in main
+and compatible straight-line interrupt handlers. CMP uses M width; CPX/CPY use X
+width. They update C/N/Z from the binary difference without changing A/B/X/Y;
+overflow, decimal and modes are preserved. Decimal mode does not alter the result.
+Operand length and nominal timing are 2/3 bytes and 2/3 cycles respectively;
+optional bank-zero fetch timing is 16/24 master clocks.
+
+Comparisons make the static carry proof unknown. XCE therefore requires a new
+explicit CLC/SEC (or the existing REP/SEP carry proof). Current leaf routines must
+preserve carry, so comparisons in them are rejected. Immediate handler layouts
+must still agree at all possible entry widths; the new interrupt fixtures use
+M8/X8 in emulation and native mode. This does not add a general interrupt system,
+carry-based branch refinement, new addressing modes or broader linear resume.
+
+Ten Windows fixtures cover four native M/X combinations and emulation, preservation
+of non-C/N/Z flags and registers at budgets, C/Z/N-dependent branches, two counted
+loops, and a 150-pair edge grid (zero, one, maximum positive, sign bit, maximum;
+all three registers in 8/16 bits). A separate bit-serial borrow-chain oracle
+checks results independently of generated arithmetic. Handwritten final-state,
+PC/step/cycle/master results validate the grid and loops. Capacity, NMI boundaries,
+NMI/IRQ/RTI, truncated/overlapping operands, unknown carry before XCE, unsupported
+leaf comparisons and unchanged linear-resume restrictions are checked too.
+Existing scenes and Linux archive remain preserved; no game is executed.
+
+Semantic reference: [ares original WDC65816 comparison algorithms](https://github.com/ares-emulator/ares/blob/master/ares/component/processor/wdc65816/algorithms.cpp)
+and [WDC W65C816S datasheet](https://www.westerndesigncenter.com/wdc/documentation/w65c816s.pdf).
+Implementation and test programs are original C++.

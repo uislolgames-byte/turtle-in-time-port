@@ -100,6 +100,26 @@ int main() {
       if (generated.find("switch") != std::string::npos || generated.find("code[") != std::string::npos) return 1;
     }
   }
+  for (uint8_t op : {0xc9,0xe0,0xc0}) {
+    for (bool timed_compare : {false,true}) {
+      for (const auto& code : std::vector<std::vector<uint8_t>>{
+          {op}, {0x18,0xfb,0xc2,0x30,op,0}, {0xf0,1,op,0xea,0xdb},
+          {0x18,op,0,0xfb,0xdb}, {0x38,op,0,0xfb,0xdb},
+          {0x20,4,0x80,0xdb,op,0,0x60}}) {
+        try { static816::compile(code,false,timed_compare); return 1; } catch (const std::runtime_error&) {}
+      }
+      // A comparison invalidates old carry, but explicit CLC/SEC repairs the proof.
+      for (uint8_t reset_carry : {0x18,0x38}) {
+        const auto generated = static816::compile({op,0,reset_carry,0xfb,0xdb},false,timed_compare);
+        if (generated.find("switch") != std::string::npos || generated.find("code[") != std::string::npos) return 1;
+      }
+      auto ambiguous = recompiler_fixture("irq_native");
+      ambiguous[0x100] = op; ambiguous[0x101] = 0; ambiguous[0x102] = 0x40;
+      try { static816::compile(ambiguous,true,timed_compare); return 1; } catch (const std::runtime_error&) {}
+    }
+    auto image = scene; image[0] = op; image[1] = 0; image[2] = 0xdb;
+    try { static816::compile(image,false,true,true); return 1; } catch (const std::runtime_error&) {}
+  }
   const auto resumed = static816::compile(scene,false,true,true);
   if (resumed.find("bool resume_generated") == std::string::npos || resumed.find("goto L") == std::string::npos ||
       resumed.find("switch") != std::string::npos || resumed.find("code[") != std::string::npos || output.find("bool resume_generated") != std::string::npos) return 1;
