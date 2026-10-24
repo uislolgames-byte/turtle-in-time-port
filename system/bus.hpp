@@ -18,6 +18,7 @@ enum class Fault { address, unmapped, rom_bounds, read_only };
 struct VideoRegisters {
   uint8_t display = 0x80, mode = 0, bg1_map = 0, bg12_tiles = 0, main_screen = 0;
   uint8_t bg2_map = 0;
+  uint8_t object_select = 0;
   unsigned bg1_x = 0, bg1_y = 0, bg2_x = 0, bg2_y = 0;
 };
 class BusError : public std::runtime_error {
@@ -194,7 +195,7 @@ private:
     return io >= 0x4300 && io <= 0x4376 && (io & 15) <= 6;
   }
   static bool writable_io(uint32_t io) {
-    return (io >= 0x2102 && io <= 0x2104) || io == 0x2100 || io == 0x2105 || io == 0x2107 || io == 0x2108 || io == 0x210b ||
+    return (io >= 0x2101 && io <= 0x2104) || io == 0x2100 || io == 0x2105 || io == 0x2107 || io == 0x2108 || io == 0x210b ||
       (io >= 0x210d && io <= 0x2110) || io == 0x212c ||
       (io >= 0x2115 && io <= 0x2119) || io == 0x2121 || io == 0x2122 || (io >= 0x2180 && io <= 0x2183) || dma_register(io) || io == 0x4200 || io == 0x4207 || io == 0x4208 || io == 0x4209 || io == 0x420a || io == 0x420b || io == 0x420d;
   }
@@ -219,6 +220,7 @@ private:
     if (high == ((vram_control_ & 128) != 0)) increment_vram();
   }
   void write_io(uint32_t io, uint8_t value, uint32_t address) {
+    if (io == 0x2101) { video_.object_select = value; return; }
     if (io == 0x2102) { oam_.address_low(value); return; }
     if (io == 0x2103) { oam_.address_high(value); return; }
     if (io == 0x2104) { oam_.write(value); return; }

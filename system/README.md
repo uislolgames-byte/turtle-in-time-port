@@ -1304,5 +1304,24 @@ Semantics were checked against [ares OAM ports](https://github.com/ares-emulator
 and [address reset/rotation](https://github.com/ares-emulator/ares/blob/master/ares/sfc/ppu/object.cpp),
 with independently written code. This storage subset ignores active-display
 access redirection, scanline/frame address resets and sprite limits/evaluation.
-It adds no OBSEL sizing/base selection, OBJ pixel rendering or game execution;
+The later OBJ-only snapshot extension adds OBSEL and pixel rendering; game
+execution remains absent;
 M3/M4 remain open. The existing BG1/BG2 host snapshots are unaffected.
+
+
+## OBJ-only diagnostic snapshots
+
+`object_preview.hpp` adds `capture_obj_preview`, a host snapshot of OAM sprites
+using 4bpp VRAM and CGRAM. OBSEL ($2101) byte writes are supported in the bus and
+timed CPU runtime, with reset to zero; DMA cannot configure it. All eight
+progressive size pairs, both name tables, palette/flip bits, signed X, wrapped Y,
+transparent zero, OAM ordering/rotation, brightness, blank and backdrop are covered.
+BG1/BG2 captures preserve their prior contract; mixing OBJ with BG is rejected.
+See the [OBJ capture contract and tests](TILE_PREVIEW.md#captura-dedicada-de-sprites-obj).
+
+Direct independent pixel checks and two generated synthetic fixtures exercise
+CPU-driven controls and DMA uploads to VRAM/CGRAM/OAM. Generated execution remains
+static C++ operations, not an opcode interpreter; the interpreter exists only in
+the test oracle. The CI also validates and saves nine original 128x64 OBJ BMPs.
+This is not a scanline PPU: sprite evaluation/overflow limits, BG/OBJ composition,
+interlace, effects and native-window presentation remain absent. M3/M4 stay open.

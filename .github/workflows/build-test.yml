@@ -48,6 +48,9 @@ jobs:
       - name: Record layer captures
         shell: bash
         run: python -c "import base64,pathlib; [print('TMNT_LAYERS_'+p.stem+'='+base64.b64encode(p.read_bytes()).decode('ascii')) for p in sorted(pathlib.Path('build').glob('preview-layers-*.bmp'))]"
+      - name: Record object captures
+        shell: bash
+        run: python -c "import base64,pathlib; [print('TMNT_OBJ_'+p.stem+'='+base64.b64encode(p.read_bytes()).decode('ascii')) for p in sorted(pathlib.Path('build').glob('preview-obj-*.bmp'))]"
       - name: Upload synthetic preview
         uses: actions/upload-artifact@v7
         with:
@@ -60,6 +63,7 @@ jobs:
             build/preview-large-*.bmp
             build/preview-4bpp-*.bmp
             build/preview-layers-*.bmp
+            build/preview-obj-*.bmp
           if-no-files-found: error
       - name: Upload test report
         if: always()

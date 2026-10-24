@@ -274,4 +274,11 @@ OAM now has opt-in CPU address/data/read ports, paired main-table writes,
 mirrored high-table storage and bidirectional DMA. Four original synthetic
 fixtures check round-trip readback, CPU reads, pending even-byte writes, source
 faults and timing/NMI against an independent model. This stores sprite attributes;
-it does not render sprites. See the [OAM contract](../system/README.md#oam-storage-and-bidirectional-dma).
+the dedicated OBJ snapshot renderer is described below. See the [OAM contract](../system/README.md#oam-storage-and-bidirectional-dma).
+
+
+The OBJ-only snapshot extension adds timed OBSEL byte writes and two generated
+programs that upload original palette/tile/OAM data by DMA, then change sizes,
+rotation, brightness and enables. CPU, full memory, time and independent pixels
+are checked over budgets/origins and scheduled NMI boundaries; nine validated
+captures are saved by CI. BG1/BG2 captures remain separate. See the [OBJ contract](../system/TILE_PREVIEW.md#captura-dedicada-de-sprites-obj).

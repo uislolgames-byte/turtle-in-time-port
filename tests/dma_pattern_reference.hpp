@@ -12,6 +12,7 @@ struct DmaPatternReference {
   std::array<unsigned,256> palette{};
   std::array<unsigned,128> regs{};
   std::array<unsigned,4> scroll{};
+  unsigned object_select = 0, display = 128, main_screen = 0;
   unsigned buffer = 0, read_mdr = 0;
   unsigned wm = 0, vm = 0, control = 0, cg = 0, low = 0, shared = 0, horizontal = 0;
   bool high = false;
@@ -84,6 +85,9 @@ struct DmaPatternReference {
   }
   bool write(unsigned address, unsigned value) {
     value %= 256;
+    if (address == 0x2100) { display = value & 143; return true; }
+    if (address == 0x2101) { object_select = value; return true; }
+    if (address == 0x212c) { main_screen = value & 31; return true; }
     if (address == 0x2102) { oam.low(value); return true; }
     if (address == 0x2103) { oam.high(value); return true; }
     if (address == 0x2104) { oam.write(value); return true; }
@@ -115,6 +119,7 @@ struct DmaPatternReference {
   }
   void compare(const system816::Bus& b) const {
     oam.compare(b);
+    if (b.video_registers().object_select != object_select) throw std::runtime_error("OBSEL reference mismatch");
     if (b.dma_clocks() != clocks || b.dma_bytes() != bytes || b.wram_address() != wm || b.vram_address() != vm ||
         b.vram_control() != control || b.cgram_address() != cg || b.cgram_high_byte() != high)
       throw std::runtime_error("DMA pattern register/progress reference mismatch");

@@ -5,6 +5,33 @@
 #include <cstdint>
 #include <utility>
 inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
+  if (name == "bus_object_preview") return recompiler_fixture("object_preview");
+  if (name == "object_preview") {
+    std::vector<uint8_t> image(32768,0), code;
+    const auto write = [&](unsigned at, unsigned value) {
+      code.insert(code.end(),{0xa9,static_cast<uint8_t>(value),0x8d,static_cast<uint8_t>(at),static_cast<uint8_t>(at >> 8)});
+    };
+    const auto dma = [&](unsigned port, unsigned source, unsigned count, unsigned control) {
+      const unsigned regs[] = {control,port,source%256,source/256,0,count%256,count/256};
+      for (unsigned n = 0; n < 7; ++n) write(0x4300+n,regs[n]);
+      write(0x420b,1);
+    };
+    for (unsigned i = 0; i < 256; ++i) { const unsigned color = (i*997+0x1042)%32768; image[0x1000+2*i] = static_cast<uint8_t>(color); image[0x1001+2*i] = static_cast<uint8_t>(color >> 8); }
+    for (unsigned i = 0; i < 16384; ++i) image[0x2000+i] = static_cast<uint8_t>(i*37+i/32*19+i/256);
+    for (unsigned i = 0; i < 32; ++i) image[0x1600+i] = 0x55;
+    const unsigned sprites[4][4] = {{8,8,0,0},{12,12,1,0x2e},{252,250,255,0xc7},{60,4,15,0x42}};
+    for (unsigned n = 0; n < 4; ++n) for (unsigned k = 0; k < 4; ++k) image[0x1400+n*4+k] = static_cast<uint8_t>(sprites[n][k]);
+    image[0x1600] = 0x98;
+    write(0x2121,0); dma(0x22,0x9000,512,0);
+    write(0x2115,128); write(0x2116,0); write(0x2117,0); dma(0x18,0xa000,16384,1);
+    write(0x2102,0); write(0x2103,0); dma(4,0x9400,544,2);
+    write(0x2101,0); write(0x212c,16); write(0x2100,15);
+    write(0x2101,0xc0); write(0x2101,0x20);
+    write(0x2102,2); write(0x2103,128);
+    write(0x2100,7); write(0x2100,128); write(0x2100,15); write(0x212c,0); write(0x212c,16);
+    code.push_back(0xdb); for (unsigned i = 0; i < code.size(); ++i) image[i] = code[i];
+    image[0x7ffd] = 0x80; return image;
+  }
   if (name == "irq_horizontal") return recompiler_fixture("bus_irq_horizontal");
   if (name == "bus_horizontal_irq_fault") return recompiler_fixture("dma_cgram_fault");
   if (name == "bus_irq_horizontal" || name == "bus_irq_combined" || name == "bus_irq_combined_native") {

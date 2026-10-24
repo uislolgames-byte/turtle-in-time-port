@@ -230,8 +230,8 @@ e [offset de paleta e transparência](https://github.com/ares-emulator/ares/blob
 
 A API `capture_bg1_preview` mantém o contrato anterior, inclusive rejeitando
 TM com BG2 ou bit de tamanho BG2; chama o compositor apenas após validar esse
-contrato. A nova API aceita BGMODE bits 0/4/5 e TM bits 0/1. BG3/BG4, OBJ,
-subscreen, janelas e efeitos de cor permanecem rejeitados ou ausentes. Não há
+contrato. Essa API aceita BGMODE bits 0/4/5 e TM bits 0/1. BG3/BG4, OBJ,
+subscreen, janelas e efeitos de cor permanecem rejeitados nessa composição. Não há
 PPU por scanlines nem sincronização de vídeo implementada por esta composição.
 
 `system_video_layers` verifica 65536 históricos H/V entre camadas e aliases,
@@ -248,10 +248,68 @@ bg1-large e restored, nos limites 144, 146, 148, 152, 154, 162, 164 e 166.
 O programa altera somente os controles depois do DMA inicial, sem reescrever
 o conteúdo gráfico. Todos os dados e imagens são originais sintéticos.
 
+## Captura dedicada de sprites OBJ
+
+`capture_obj_preview` em `object_preview.hpp` desenha uma captura somente OBJ e
+backdrop, com recorte de 8..256 pixels por eixo. Aceita os Modes 0/1 (bits de
+tamanho BG são ignorados por OBJ) e TM=0 ou $10. As APIs BG1/BG2 anteriores
+conservam seus contratos e continuam rejeitando OBJ ativo; ainda não há mistura
+de sprites e cenários no mesmo compositor.
+
+OBSEL ($2101) passa a ser uma escrita CPU de byte opt-in, inclusive temporizada.
+Bits 0..2 selecionam a base VRAM em passos de 16384 bytes (espelhados em 64 KiB);
+bits 3..4 selecionam a distância da segunda tabela, em passos de 8192 bytes,
+a partir de uma unidade. O bit nameselect do atributo OAM escolhe essa tabela.
+Bits 5..7 selecionam os oito pares de tamanho progressivos: 8/16, 8/32, 8/64,
+16/32, 16/64, 32/64, 16×32/32×64 e 16×32/32×32. O bit de tamanho na tabela alta
+OAM escolhe pequeno/grande. OBSEL é somente CPU, não vira destino DMA; leitura
+ou palavra MMIO continua rejeitada antes de efeitos. Reset limpa OBSEL.
+
+A posição X de nove bits é tratada com sinal, com recorte horizontal; Y envolve
+em 256 linhas. Os caracteres são tiles 4bpp com incremento de coluna/linha em
+nibbles independentes de 16 tiles, incluindo wrap. H-flip inverte a largura.
+V-flip inverte cada metade quadrada dos tamanhos retangulares, conforme o
+endereçamento progressivo. O índice de cor zero é transparente. As oito paletas
+OBJ usam CGRAM 128..255, com brilho aplicado depois da escolha do pixel.
+
+O primeiro pixel opaco na ordem OAM, a partir de `oam_first_sprite()`, vence outro
+sprite. A rotação muda essa ordem com wrap no índice 127. Os bits de prioridade
+OBJ são reservados à mistura futura com BG; eles não substituem a ordem OAM na
+sobreposição OBJ/OBJ. TM desligado mostra backdrop; forced blank/brilho zero
+produzem preto. A captura só inspeciona dados e não consome portas ou clocks.
+
+Um teste direto verifica 1046 capturas/checagens, todos os 256 OBSEL e 256 bytes
+de atributo, grande/pequeno, os oito tamanhos, bases/distâncias/espelhamento,
+paletas, flips, recorte, Y com wrap, rotação, brilho/blank, backdrop, reset e
+rejeições. A referência independente percorre pixels e procura o primeiro sprite
+candidato em arrays privados; o renderizador percorre objetos e grava pixels
+opacos ainda não cobertos. Verificações de cor fixa mostram que um objeto com
+índice menor vence outro mesmo com prioridade OBJ maior, que a rotação troca o
+vencedor e que a transparência deixa o objeto seguinte aparecer.
+
+Duas fixtures C++ geradas usam somente conteúdo original sintético e configuram
+VRAM, CGRAM, OAM e controles pelo programa, com três transferências DMA. Fazem
+712 comparações de CPU/flags, memórias completas, portas, tempo/raster e pixels
+em 89 limites, duas flags e três origens temporizadas. Outras 257 fronteiras
+agendadas de NMI verificam a execução por instruções. Rastro final: 85 instruções,
+255 ciclos nominais, 141520 master clocks quando temporizado, sendo 139568 DMA
+para 17440 bytes; PC $80D3. As nove capturas de 128×64 também passam pela referência
+pixel a pixel antes de serem gravadas em BMP e incluídas nos artefatos do CI:
+small, rectangular, large, rotated, dim, blank, restored, backdrop e enabled.
+
+Referências primárias de semântica, com implementação própria: [endereçamento,
+flips e paleta OBJ](https://github.com/ares-emulator/ares/blob/master/ares/sfc/ppu/object.cpp),
+[tamanhos OAM](https://github.com/ares-emulator/ares/blob/master/ares/sfc/ppu/oam.cpp)
+e [OBSEL](https://github.com/ares-emulator/ares/blob/master/ares/sfc/ppu/io.cpp).
+Sem limites por scanline de 32 objetos/34 tiles, flags de overflow, avaliação por
+scanline, interlace, redirecionamento durante display, subscreen, janelas ou color
+math. É uma captura de diagnóstico pelo host, sem apresentação na janela nem
+execução do jogo. Não conclui M3/M4.
+
 ## Limite do avanço
 
 Esta é uma ferramenta de diagnóstico chamada pelo host depois da execução.
 A configuração agora pode vir do programa via MMIO, mas ainda faltam scanlines,
-demais modos de vídeo, BG3/BG4, sprites, efeitos de cor e janelas,
+demais modos de vídeo, BG3/BG4, mistura de sprites com BG, efeitos de cor e janelas,
 sincronização completa e apresentação pela interface. Não conclui os Marcos
 3 ou 4 e não significa que o jogo execute.
