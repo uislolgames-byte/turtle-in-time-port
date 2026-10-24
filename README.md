@@ -212,3 +212,20 @@ O orçamento continua absoluto; um limite igual não executa instrução nem con
 eventos. STP, erros e interrupções não podem ser retomados. Outros programas,
 chamadas, desvios e handlers continuam fora deste perfil. A entrada tradicional
 `run_generated` mantém o contrato anterior de começar no RESET.
+
+
+### Entrada serial de controle (diagnóstico)
+
+O barramento opt-in oferece dois controles padrão em $4016/$4017. O host fornece
+12 bits por porta na ordem B, Y, Select, Start, Up, Down, Left, Right, A, X, L, R.
+A transição 1→0 do bit 0 de $4016 captura os dois controles. Leituras deslocam
+cada porta separadamente; quatro bits de assinatura zero seguem os botões e,
+após 16 bits, a leitura permanece em 1. Strobe alto lê B ao vivo sem deslocar.
+Escritas repetidas no mesmo nível não recapturam; escrever $4017 é ignorado.
+
+As duas fixtures originais leem os controles pelo código recompilado, guardam os
+bits na WRAM e verificam estado, flags e tempo contra referência independente.
+As leituras/escritas dessas portas custam 12 master clocks de acesso a dados.
+Não há autojoypad, periféricos especiais, segundo fio serial, open bus completo
+ou ligação com teclado/gamepad físico na janela. Botões opostos são bits brutos
+de diagnóstico, sem modelo de trava mecânica. O jogo continua sem execução.

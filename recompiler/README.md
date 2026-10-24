@@ -56,7 +56,8 @@ O barramento opcional e `reset_cpu` estão descritos em [system/](../system/READ
   Transferências verificam todos os bytes antes de alterar o estado. Palavras
   cruzando limite de banco são rejeitadas. O barramento é um subconjunto SNES.
 - O limite é verificado antes de cada instrução, inclusive JSR, RTS e loops.
-  Uma chamada da função começa na entrada; não há retomada após parada parcial.
+  A entrada padrão `run_generated` começa no RESET, sem retomar parada parcial.
+  O perfil opcional [linear limitado](#bounded-linear-resumption) acrescenta uma entrada separada.
 - Um relógio lógico conta um tick por instrução contabilizada. Eventos sintéticos
   NMI/IRQ são verificados entre instruções; pedidos aceitos param com diagnóstico,
   por padrão. Com `--interrupts`, handlers lineares são recompilados e retornam
@@ -314,3 +315,12 @@ pixel oracle. Invalid boundaries, mode/registers, code/RESET bytes, prior failur
 budget regression and NMI around a resumed boundary are checked. The Windows
 scene session uses forward continuation on an isolated candidate copy; backward
 selection/reset reconstructs execution. Failed selection preserves the old session.
+
+
+Two additional standard-pad fixtures use CPU byte reads/writes at $4016/$4017,
+checking manual shared strobe, independent serial positions, held/captured masks,
+signature/tail, ignored writes and relatch against an independent queue model.
+They compare full CPU/WRAM/port/time/raster state with and without bus timing and
+exercise NMI around every instruction boundary. This uses the default RESET entry,
+not the linear resume profile (which intentionally rejects LDA absolute).
+See the [joypad contract](../system/JOYPAD.md).

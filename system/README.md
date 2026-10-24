@@ -49,7 +49,9 @@ hardware reset (no reset cycles or emulation of undefined register values).
 WRAM persists; `bus.clear_ram()` is the separate explicit operation to clear it.
 Reset also clears optional DMA registers/counters, MEMSEL and the WRAM-port address.
 The function returns false with a contract diagnostic for RESET other than
-$8000. Generated code remains fixed to bank-zero entry $8000; no resuming.
+$8000. The default generated entry remains fixed to bank-zero $8000. The optional
+[bounded linear resume profile](../recompiler/README.md#bounded-linear-resumption)
+is a separate entry and does not resume handlers or block moves.
 
 The bus must outlive the CPU state and all calls using it. State copies borrow
 the same bus, so they do not clone WRAM; independent executions need separate
@@ -243,7 +245,8 @@ The final instruction tick may latch an event even when it executes STP or
 reaches the instruction budget; no handler/boundary runs after STP. A zero budget
 does not deliver queued events, although entry/code validation still runs first.
 Reset clears the clock, queued requests and signal state while preserving WRAM.
-There is still no external mid-program resume after a stop or instruction limit.
+Programs compiled with interrupt handlers still have no external mid-program
+resume after a stop or instruction limit.
 
 ## Optional compiled interrupt handlers
 
@@ -287,7 +290,7 @@ and deferral, IRQ release/re-entry, priority, partial budgets, JSR/MVN continuit
 wrong vectors, stack corruption and atomic entry failures. The official
 [W65C816S datasheet](https://www.westerndesigncenter.com/wdc/documentation/w65c816s.pdf)
 documents the processor stack and RTI behavior. Full interrupt timing, nesting,
-ABORT/BRK/COP, arbitrary handlers and external resumable execution remain absent.
+ABORT/BRK/COP, arbitrary handlers and general external resumable execution remain absent.
 
 For hardware comparison only, bsnes documents the actual delayed interrupt
 polling in its [IRQ implementation](https://github.com/bsnes-emu/bsnes/blob/master/bsnes/sfc/cpu/irq.cpp).
@@ -1344,3 +1347,13 @@ pixels, full memory, controls and timing/NMI. The CI also saves eleven validated
 This remains a diagnostic snapshot, without per-scanline evaluation, complete PPU/APU synchronization or game execution.
 The Windows native window can now present a static original scene through its
 Synthetic scene button; see the root README for the separate presentation contract.
+
+
+## Manual serial joypads
+
+Two standard diagnostic pads now expose opt-in byte CPU ports $4016/$4017, a shared
+strobe and independent serial positions. The host supplies raw button masks;
+generated original programs latch/read both pads into WRAM with independent state,
+clock and NMI-boundary checks. Device reset preserves external held buttons while
+clearing the serial transaction. No autojoypad or native input binding is included.
+See the [manual joypad contract](JOYPAD.md).

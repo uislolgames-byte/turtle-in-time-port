@@ -9,6 +9,7 @@
 #include <limits>
 #include "timing.hpp"
 #include "oam.hpp"
+#include "joypad.hpp"
 #include "vblank_nmi.hpp"
 #include "vertical_irq.hpp"
 
@@ -47,13 +48,14 @@ public:
     const auto io = io_address(address);
     if (devices_io_ && io == 0x4212) return static_cast<uint8_t>(video_nmi_.blank_status());
     if (devices_io_ && dma_register(io)) return channel_[io-0x4300];
-    if (devices_io_ && (io == 0x2180 || io == 0x2138 || io == 0x2139 || io == 0x213a || io == 0x213b || io == 0x4210 || io == 0x4211))
+    if (devices_io_ && (io == 0x4016 || io == 0x4017 || io == 0x2180 || io == 0x2138 || io == 0x2139 || io == 0x213a || io == 0x213b || io == 0x4210 || io == 0x4211))
       throw BusError(Fault::unmapped, address, "Data-port read requires a mutable bus");
     const auto location = resolve(address);
     return location.ram ? ram_[location.offset] : rom_[location.offset];
   }
   uint8_t read8(uint32_t address) {
     const auto io = io_address(address);
+    if (devices_io_ && (io == 0x4016 || io == 0x4017)) return static_cast<uint8_t>(joypads_[io-0x4016].read() | (io == 0x4017 ? 0x1c : 0));
     if (devices_io_ && io == 0x2138) return oam_.read();
     if (devices_io_ && io == 0x4211) return static_cast<uint8_t>(vertical_irq_.read_status());
     if (devices_io_ && io == 0x4210) return static_cast<uint8_t>(video_nmi_.read_status());
@@ -97,12 +99,14 @@ public:
   }
   bool is_mmio(uint32_t address) const {
     const auto io = io_address(address);
-    return devices_io_ && ((io >= 0x2100 && io <= 0x21ff) || (io >= 0x4200 && io <= 0x437f));
+    return devices_io_ && ((io >= 0x2100 && io <= 0x21ff) || (io >= 0x4000 && io <= 0x437f));
   }
   void validate_word(uint32_t address) const {
     if (is_mmio(address) || (address < 0xffffff && is_mmio(address+1)))
       throw BusError(Fault::unmapped, address, "16-bit MMIO transfers unsupported");
   }
+  void set_joypad_buttons(unsigned port, unsigned mask) { joypads_.at(port).set_buttons(mask); }
+  const Joypad& joypad(unsigned port) const { return joypads_.at(port); }
   const VblankNmi& video_interrupts() const { return video_nmi_; }
   const VerticalIrq& raster_irq() const { return vertical_irq_; }
   const VerticalIrq& vertical_irq() const { return vertical_irq_; }
@@ -159,6 +163,7 @@ public:
   }
   void reset_devices() {
     oam_.reset();
+    for (auto& pad : joypads_) pad.reset();
     fast_rom_ = false; channel_.fill(0); wram_address_ = 0; dma_clocks_ = 0; dma_bytes_ = 0;
     vram_word_ = 0; vram_control_ = 0; vram_buffer_ = 0;
     cgram_address_ = 0; cgram_high_ = false; cgram_write_low_ = 0; cgram_read_mdr_ = 0;
@@ -173,6 +178,7 @@ public:
   void clear_ram() { ram_.fill(0); }
 private:
   Oam oam_;
+  std::array<Joypad,2> joypads_;
   VblankNmi video_nmi_;
   VerticalIrq vertical_irq_;
   static uint32_t io_address(uint32_t address) {
@@ -195,7 +201,7 @@ private:
     return io >= 0x4300 && io <= 0x4376 && (io & 15) <= 6;
   }
   static bool writable_io(uint32_t io) {
-    return (io >= 0x2101 && io <= 0x2104) || io == 0x2100 || io == 0x2105 || io == 0x2107 || io == 0x2108 || io == 0x210b ||
+    return io == 0x4016 || io == 0x4017 || (io >= 0x2101 && io <= 0x2104) || io == 0x2100 || io == 0x2105 || io == 0x2107 || io == 0x2108 || io == 0x210b ||
       (io >= 0x210d && io <= 0x2110) || io == 0x212c ||
       (io >= 0x2115 && io <= 0x2119) || io == 0x2121 || io == 0x2122 || (io >= 0x2180 && io <= 0x2183) || dma_register(io) || io == 0x4200 || io == 0x4207 || io == 0x4208 || io == 0x4209 || io == 0x420a || io == 0x420b || io == 0x420d;
   }
@@ -220,6 +226,8 @@ private:
     if (high == ((vram_control_ & 128) != 0)) increment_vram();
   }
   void write_io(uint32_t io, uint8_t value, uint32_t address) {
+    if (io == 0x4016) { for (auto& pad : joypads_) pad.latch((value & 1) != 0); return; }
+    if (io == 0x4017) return; // Hardware ignores writes to JOYSER1.
     if (io == 0x2101) { video_.object_select = value; return; }
     if (io == 0x2102) { oam_.address_low(value); return; }
     if (io == 0x2103) { oam_.address_high(value); return; }

@@ -4,8 +4,24 @@
 #include <vector>
 #include <cstdint>
 #include <utility>
+#include <algorithm>
 #include "../demo/synthetic_rom.hpp"
 inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
+  if (name == "joypad_cpu" || name == "bus_joypad_cpu") {
+    std::vector<uint8_t> image(32768,0), code;
+    const auto write = [&](unsigned at, unsigned value) { code.insert(code.end(),{0xa9,static_cast<uint8_t>(value),0x8d,static_cast<uint8_t>(at),static_cast<uint8_t>(at >> 8)}); };
+    const auto read = [&](unsigned port, unsigned ram) { code.insert(code.end(),{0xad,static_cast<uint8_t>(0x16+port),0x40,0x8d,static_cast<uint8_t>(ram),static_cast<uint8_t>(ram >> 8)}); };
+    write(0x4016,0xff); read(0,0x100); read(1,0x101); read(0,0x102);
+    write(0x4016,0xfe);
+    for (unsigned bit = 0; bit < 18; ++bit) {
+      read(0,0x200+bit*2); read(1,0x201+bit*2);
+      if (bit == 5) write(0x4016,0xfc); // Repeated low must not recapture/reset.
+      if (bit == 8) write(0x4017,1); // Write ignored, not a second strobe.
+    }
+    write(0x4016,1); write(0x4016,0);
+    for (unsigned bit = 0; bit < 3; ++bit) { read(0,0x300+bit*2); read(1,0x301+bit*2); }
+    code.push_back(0xdb); std::copy(code.begin(),code.end(),image.begin()); image[0x7ffd] = 0x80; return image;
+  }
   if (name == "scene_preview" || name == "bus_scene_preview" || name == "bus_scene_resume") return synthetic_demo::scene_rom();
   if (name == "object_preview" || name == "bus_object_preview") return synthetic_demo::object_rom();
   if (name == "irq_horizontal") return recompiler_fixture("bus_irq_horizontal");
