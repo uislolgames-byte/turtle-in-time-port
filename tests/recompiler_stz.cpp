@@ -56,6 +56,15 @@ static unsigned widths(const std::string& name) {
         ++cases;
       }
   }
+  if (timed) for (unsigned kind = 0; kind < 4; ++kind) {
+    auto bus = make_bus(name); State s; reset_cpu(s,*bus); bus->write8(0x1000,0xa5); s.a = 0xabff;
+    const auto max = std::numeric_limits<uint64_t>::max(); const bool exact = (kind%2) != 0;
+    if (kind < 2) s.master_clocks = max-(exact ? 32 : 31);
+    else s.cycle_clock.advance(max-(exact ? 4 : 3));
+    check(!run_generated(s,1) && s.steps == unsigned(exact) && s.stop == (exact ? Stop::limit : Stop::contract) &&
+      bus->read8(0x1000) == (exact ? 0 : 0xa5) && s.a == 0xabff && s.p == 0x34 && !s.pending_master_clocks,
+      "STZ RAM counter capacity changed data/registers"); ++cases;
+  }
   return cases;
 }
 static unsigned failures(const std::string& name) {
@@ -102,7 +111,7 @@ static unsigned ports() {
   auto strict = make_bus("bus_stz_ports",false); State s; reset_cpu(s,*strict);
   check(!run_generated(s,8) && s.stop == Stop::memory && !s.steps && !s.master_clocks,"STZ bypassed MMIO opt-in");
   for (bool exact : {false,true}) {
-    auto bus = make_bus("bus_stz_ports"); reset_cpu(s,*bus); bus->write8(0x4200,0x80);
+    auto bus = make_bus("bus_stz_ports"); reset_cpu(s,*bus);
     const auto max = std::numeric_limits<uint64_t>::max(); s.master_clocks = max-(exact ? 30 : 29);
     check(!run_generated(s,1) && s.steps == unsigned(exact) && s.stop == (exact ? Stop::limit : Stop::contract) &&
       !s.pending_master_clocks,"STZ capacity guard"); ++cases;
