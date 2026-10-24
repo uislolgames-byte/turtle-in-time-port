@@ -189,3 +189,14 @@ escala e, no Windows, abre/fecha/reabre a janela e verifica os pixels via GDI.
 `tmnt_native.exe --self-test-window` executa essa verificação automatizada.
 Para compilar sem os testes e sem Python: `cmake -S . -B build-demo -DBUILD_TESTING=OFF`
 e `cmake --build build-demo --config Release --target tmnt_native` (Windows).
+
+
+A janela da cena também oferece **Previous**, **Next** e **Reset** para percorrer
+os onze pontos de captura (prioridade, camadas, modos, tamanho, brilho e blank).
+Cada troca refaz a execução recompilada pelo RESET até o ponto selecionado,
+sem tentar desfazer escritas DMA ou retomar uma CPU pausada. Reset retorna à cena inicial de
+prioridade alta (3/11), inclusive depois do blank. Os botões de limite ficam
+desativados. Fechar e reabrir cria outra sessão independente. Não há execução
+contínua, controles de personagem ou áudio; estes são controles do diagnóstico.
+O CI verifica todos os estados com referência independente e, no Windows,
+aciona os botões, confere os pixels GDI, limites, reset e reabertura.
