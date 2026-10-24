@@ -18,7 +18,13 @@ struct Mode {
 struct Instruction { unsigned pc, op, value, length; Mode mode; int leaf; };
 
 // Closed, flat synthetic code at $8000. Analyze only proven entry points.
-inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = false, bool bus_timing = false, bool linear_resume = false) {
+inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = false, bool bus_timing = false, bool linear_resume = false, const std::string& entry = "run_generated") {
+  // Restrict exported entry names to a non-reserved ASCII run_* identifier.
+  if (entry.size() < 5 || entry.size() > 64 || entry.compare(0,4,"run_") != 0 || entry.find("__") != std::string::npos)
+    throw std::runtime_error("entry must be a non-reserved ASCII run_* identifier of 5..64 characters");
+  for (char c : entry) if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'))
+    throw std::runtime_error("invalid generated entry identifier");
+  if (linear_resume && entry != "run_generated") throw std::runtime_error("custom entry does not support --linear-resume");
   if (code.empty() || code.size() > 32768) throw std::runtime_error("code size must be 1..32768");
   if (interrupts && (code.size() != 32768 || code[0x7ffc] != 0 || code[0x7ffd] != 0x80))
     throw std::runtime_error("--interrupts requires a 32 KiB synthetic image with RESET $8000");
@@ -244,7 +250,7 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
     out << "}\n";
   }
   if (linear_resume) out << "static bool execute_generated(State& s,unsigned limit,bool resume){\n";
-  else out << "bool run_generated(State& s,unsigned limit){\n";
+  else out << "bool " << entry << "(State& s,unsigned limit){\n";
   out << "if(" << (linear_resume ? "(!resume&&s.pc!=32768)" : "s.pc!=32768")
       << "||!s.e||(s.p&48)!=48||s.p>255||s.s!=511||s.a>65535||s.x>255||s.y>255||s.db>255||(!s.bus&&s.db)||s.interrupt.active){s.stop=Stop::contract;return false;}\n";
   if (linear_resume)

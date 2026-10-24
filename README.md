@@ -227,5 +227,23 @@ As duas fixtures originais leem os controles pelo código recompilado, guardam o
 bits na WRAM e verificam estado, flags e tempo contra referência independente.
 As leituras/escritas dessas portas custam 12 master clocks de acesso a dados.
 Não há autojoypad, periféricos especiais, segundo fio serial, open bus completo
-ou ligação com teclado/gamepad físico na janela. Botões opostos são bits brutos
+ou ligação com gamepad físico. A demonstração de teclado é descrita abaixo.
+Botões opostos são bits brutos
 de diagnóstico, sem modelo de trava mecânica. O jogo continua sem execução.
+
+
+### Demonstração de entrada visível no Windows
+
+O botão **Input demo** abre uma segunda demonstração original. Segure **Z (B)**
+para apagar a imagem e **X (Y)** para reduzir o brilho; B tem prioridade sobre Y.
+Soltar restaura a combinação restante. Os botões da janela alternam esses mesmos
+estados e **Reset** solta tudo. Perder o foco libera as teclas mantidas; as opções
+alternadas pelos botões permanecem até desmarcá-las ou reiniciar. Z/X funcionam
+também com foco nos botões filhos. Repetição automática de tecla não reexecuta a CPU.
+
+O teclado fornece bits ao controle serial. O programa original recompilado captura
+$4016, lê B/Y, grava-os na WRAM e escolhe INIDISP por desvios compilados. O host
+não escolhe o brilho diretamente. Cada mudança efetiva refaz essa demonstração
+pelo RESET; não é uma simulação contínua por quadros. A janela de onze estados,
+o carregador e Probe CPU continuam separados. Não há controle físico conectado,
+áudio, personagem ou execução do jogo. Veja o [contrato](demo/INPUT_SCENE.md).

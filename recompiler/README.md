@@ -324,3 +324,15 @@ They compare full CPU/WRAM/port/time/raster state with and without bus timing an
 exercise NMI around every instruction boundary. This uses the default RESET entry,
 not the linear resume profile (which intentionally rejects LDA absolute).
 See the [joypad contract](../system/JOYPAD.md).
+
+
+## Distinct generated entries
+
+`--entry run_name` optionally names the default (non-resumable) entry, allowing
+multiple original programs to link together without namespace macros or symbol
+collisions. Names must be 5..64 ASCII identifier characters, start with `run_`,
+and contain no double underscore. Invalid names are rejected before opening the
+output file. This option cannot rename a linear-resume program; its entry pair
+remains unchanged. Without the option generated output preserves the default name.
+The input-controlled scene uses `--bus-timing --entry run_control_generated` and
+existing LDA absolute/BEQ/BRA/STA operations; it does not broaden the resume profile.

@@ -42,10 +42,24 @@ add_custom_command(OUTPUT "${demo_cpp}" "${demo_bin}"
   VERBATIM)
 add_library(tmnt_demo STATIC demo/scene.cpp "${demo_cpp}")
 target_include_directories(tmnt_demo PRIVATE recompiler)
+set(input_bin "${CMAKE_CURRENT_BINARY_DIR}/synthetic_input.bin")
+set(input_cpp "${CMAKE_CURRENT_BINARY_DIR}/synthetic_input.cpp")
+add_custom_command(OUTPUT "${input_cpp}" "${input_bin}"
+  COMMAND "$<TARGET_FILE:tmnt_demo_rom>" "${input_bin}" input
+  COMMAND "$<TARGET_FILE:tmnt_recompile>" "${input_bin}" "${input_cpp}" --bus-timing --entry run_control_generated
+  DEPENDS tmnt_demo_rom tmnt_recompile demo/synthetic_rom.hpp
+  VERBATIM)
+add_library(tmnt_input_demo STATIC demo/input_scene.cpp "${input_cpp}")
+target_include_directories(tmnt_input_demo PRIVATE recompiler)
 if(TARGET tmnt_native)
-  target_link_libraries(tmnt_native PRIVATE tmnt_demo)
+  target_link_libraries(tmnt_native PRIVATE tmnt_demo tmnt_input_demo)
 endif()
 if(BUILD_TESTING)
+  add_executable(tmnt_input_demo_tests tests/input_scene.cpp)
+  target_include_directories(tmnt_input_demo_tests PRIVATE recompiler)
+  target_link_libraries(tmnt_input_demo_tests PRIVATE tmnt_demo tmnt_input_demo)
+  add_test(NAME input_controlled_scene COMMAND tmnt_input_demo_tests)
+  set_tests_properties(input_controlled_scene PROPERTIES TIMEOUT 30)
   add_executable(tmnt_demo_tests tests/synthetic_demo.cpp)
   target_link_libraries(tmnt_demo_tests PRIVATE tmnt_demo)
   add_test(NAME synthetic_demo COMMAND tmnt_demo_tests)
@@ -53,6 +67,8 @@ if(BUILD_TESTING)
   if(TARGET tmnt_native)
     add_test(NAME native_synthetic_window COMMAND tmnt_native --self-test-window)
     set_tests_properties(native_synthetic_window PROPERTIES TIMEOUT 40)
+    add_test(NAME native_input_window COMMAND tmnt_native --self-test-input-window)
+    set_tests_properties(native_input_window PROPERTIES TIMEOUT 40)
   endif()
 endif()
 if(MSVC)
@@ -285,7 +301,7 @@ if(BUILD_TESTING)
   add_custom_target(check
     COMMAND "${CMAKE_CTEST_COMMAND}" -C "$<CONFIG>" --output-on-failure --output-junit ctest-results.xml
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-    DEPENDS tmnt_demo_tests ${TMNT_CHECK_TARGETS} tmnt_cpuprobe tmnt_probe_branch_tests tmnt_probe_logic_tests tmnt_probe_chain_tests tmnt_probe_arithmetic_tests tmnt_probe_memory_tests
+    DEPENDS tmnt_input_demo_tests tmnt_demo_tests ${TMNT_CHECK_TARGETS} tmnt_cpuprobe tmnt_probe_branch_tests tmnt_probe_logic_tests tmnt_probe_chain_tests tmnt_probe_arithmetic_tests tmnt_probe_memory_tests
     USES_TERMINAL)
   if(TARGET tmnt_native)
     add_dependencies(check tmnt_native)

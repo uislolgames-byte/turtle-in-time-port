@@ -83,5 +83,11 @@ int main() {
   const auto resumed = static816::compile(scene,false,true,true);
   if (resumed.find("bool resume_generated") == std::string::npos || resumed.find("goto L") == std::string::npos ||
       resumed.find("switch") != std::string::npos || resumed.find("code[") != std::string::npos || output.find("bool resume_generated") != std::string::npos) return 1;
+  for (const auto& name : std::vector<std::string>{"", "run_", "run__bad", "main", "run_bad-name", "run_x();", std::string(65,'x')}) {
+    try { static816::compile({0xdb},false,false,false,name); return 1; } catch (const std::runtime_error&) {}
+  }
+  try { static816::compile(scene,false,true,true,"run_control_generated"); return 1; } catch (const std::runtime_error&) {}
+  const auto named = static816::compile({0xdb},false,false,false,"run_control_generated");
+  if (named.find("bool run_control_generated(") == std::string::npos || named.find("bool run_generated(") != std::string::npos) return 1;
   std::cout << "Static compiler rejection tests passed\n";
 }

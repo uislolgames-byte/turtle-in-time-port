@@ -26,7 +26,9 @@ Device/CPU reset clears strobe, captured serial data and positions while preserv
 externally held buttons, RAM and other video memories. The host can release buttons
 with mask zero; ordinary RAM/video clears do not change controller state. There is
 no auto-poll ($4200 bit 0 remains rejected), $4218..$421f result registers, busy flag,
-multitap, mouse, light gun, serial second line or native keyboard/controller binding.
+multitap, mouse, light gun, serial second line or physical-controller binding.
+The separate native input diagnostic maps Z/X to host button masks; see the
+[input demo contract](../demo/INPUT_SCENE.md).
 
 An independent queue-based reference checks all 4096 masks paired with complements,
 strobes, changes mid-read, tails, mirrors, reset and access rejection. Two generated

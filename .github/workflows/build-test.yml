@@ -59,6 +59,9 @@ jobs:
       - name: Record scene captures
         shell: bash
         run: python -c "import base64,pathlib; [print('TMNT_SCENE_'+p.stem+'='+base64.b64encode(p.read_bytes()).decode('ascii')) for p in sorted(pathlib.Path('build').glob('preview-scene-*.bmp'))]"
+      - name: Record input-controlled captures
+        shell: bash
+        run: python -c "import base64,pathlib; [print('TMNT_INPUT_'+p.stem+'='+base64.b64encode(p.read_bytes()).decode('ascii')) for p in sorted(pathlib.Path('build').glob('preview-input-*.bmp'))]"
       - name: Upload synthetic preview
         uses: actions/upload-artifact@v7
         with:
@@ -73,6 +76,7 @@ jobs:
             build/preview-layers-*.bmp
             build/preview-obj-*.bmp
             build/preview-scene-*.bmp
+            build/preview-input-*.bmp
           if-no-files-found: error
       - name: Upload test report
         if: always()
@@ -98,6 +102,7 @@ jobs:
             build/tmnt_callgraph
             build/tmnt_cfg
             build/tmnt_recompile
+            build/tmnt_input_demo_tests
             build/tmnt_system_bus_tests
             build/tmnt_system_events_tests
             build/tmnt_system_timing_tests

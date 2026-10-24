@@ -1355,5 +1355,7 @@ Two standard diagnostic pads now expose opt-in byte CPU ports $4016/$4017, a sha
 strobe and independent serial positions. The host supplies raw button masks;
 generated original programs latch/read both pads into WRAM with independent state,
 clock and NMI-boundary checks. Device reset preserves external held buttons while
-clearing the serial transaction. No autojoypad or native input binding is included.
+clearing the serial transaction. No autojoypad or physical-controller binding is included. The separate Windows
+input diagnostic now maps Z/X to pad masks and runs a compiled program to control
+blank/brightness; see [the diagnostic contract](../demo/INPUT_SCENE.md).
 See the [manual joypad contract](JOYPAD.md).

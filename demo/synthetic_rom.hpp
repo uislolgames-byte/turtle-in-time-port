@@ -51,4 +51,17 @@ inline std::vector<uint8_t> scene_rom() {
     write(0x2100,7); write(0x2100,128); write(0x2100,15);
     code.push_back(0xdb); for (unsigned i = 0; i < code.size(); ++i) image[i] = code[i]; return image;
 }
+// Separate input-controlled original program; legacy scene ROM remains unchanged.
+inline std::vector<uint8_t> input_scene_rom() {
+  auto image = scene_rom(); std::vector<uint8_t> code(image.begin(),image.begin()+395);
+  const auto write = [&](unsigned at, unsigned value) { code.insert(code.end(),{0xa9,static_cast<uint8_t>(value),0x8d,static_cast<uint8_t>(at),static_cast<uint8_t>(at >> 8)}); };
+  write(0x4016,1); write(0x4016,0);
+  for (unsigned address : {0x100u,0x101u}) code.insert(code.end(),{0xad,0x16,0x40,0x8d,static_cast<uint8_t>(address),static_cast<uint8_t>(address >> 8)});
+  // B takes priority over Y: blank, dim, or full brightness.
+  code.insert(code.end(),{0xad,0,1,0xf0,4,0xa9,0x80,0x80,11,
+                          0xad,1,1,0xf0,4,0xa9,7,0x80,2,0xa9,15,0x8d,0,0x21,0xdb});
+  for (unsigned i = 0; i < code.size(); ++i) image[i] = code[i];
+  return image;
+}
+
 }
