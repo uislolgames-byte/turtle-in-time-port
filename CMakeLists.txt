@@ -31,6 +31,30 @@ endif()
 
 add_executable(tmnt_cpuprobe src/cpuprobe.cpp)
 add_executable(tmnt_recompile src/recompile.cpp)
+# The original synthetic scene is generated entirely in C++, also without tests/Python.
+add_executable(tmnt_demo_rom demo/generate_rom.cpp)
+set(demo_bin "${CMAKE_CURRENT_BINARY_DIR}/synthetic_scene.bin")
+set(demo_cpp "${CMAKE_CURRENT_BINARY_DIR}/synthetic_scene.cpp")
+add_custom_command(OUTPUT "${demo_cpp}" "${demo_bin}"
+  COMMAND "$<TARGET_FILE:tmnt_demo_rom>" "${demo_bin}"
+  COMMAND "$<TARGET_FILE:tmnt_recompile>" "${demo_bin}" "${demo_cpp}" --bus-timing
+  DEPENDS tmnt_demo_rom tmnt_recompile demo/synthetic_rom.hpp
+  VERBATIM)
+add_library(tmnt_demo STATIC demo/scene.cpp "${demo_cpp}")
+target_include_directories(tmnt_demo PRIVATE recompiler)
+if(TARGET tmnt_native)
+  target_link_libraries(tmnt_native PRIVATE tmnt_demo)
+endif()
+if(BUILD_TESTING)
+  add_executable(tmnt_demo_tests tests/synthetic_demo.cpp)
+  target_link_libraries(tmnt_demo_tests PRIVATE tmnt_demo)
+  add_test(NAME synthetic_demo COMMAND tmnt_demo_tests)
+  set_tests_properties(synthetic_demo PROPERTIES TIMEOUT 20)
+  if(TARGET tmnt_native)
+    add_test(NAME native_synthetic_window COMMAND tmnt_native --self-test-window)
+    set_tests_properties(native_synthetic_window PROPERTIES TIMEOUT 40)
+  endif()
+endif()
 if(MSVC)
   target_compile_options(tmnt_cpuprobe PRIVATE /W4)
 else()
@@ -258,7 +282,7 @@ if(BUILD_TESTING)
   add_custom_target(check
     COMMAND "${CMAKE_CTEST_COMMAND}" -C "$<CONFIG>" --output-on-failure --output-junit ctest-results.xml
     WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
-    DEPENDS ${TMNT_CHECK_TARGETS} tmnt_cpuprobe tmnt_probe_branch_tests tmnt_probe_logic_tests tmnt_probe_chain_tests tmnt_probe_arithmetic_tests tmnt_probe_memory_tests
+    DEPENDS tmnt_demo_tests ${TMNT_CHECK_TARGETS} tmnt_cpuprobe tmnt_probe_branch_tests tmnt_probe_logic_tests tmnt_probe_chain_tests tmnt_probe_arithmetic_tests tmnt_probe_memory_tests
     USES_TERMINAL)
   if(TARGET tmnt_native)
     add_dependencies(check tmnt_native)
@@ -284,7 +308,7 @@ if(BUILD_TESTING)
     add_custom_command(OUTPUT "${fixture_cpp}" "${fixture_bin}"
       COMMAND "$<TARGET_FILE:tmnt_recompiler_fixtures>" "${fixture}" "${fixture_bin}"
       COMMAND "$<TARGET_FILE:tmnt_recompile>" "${fixture_bin}" "${fixture_cpp}" ${fixture_options}
-      DEPENDS tmnt_recompiler_fixtures tmnt_recompile tests/recompiler_fixtures.hpp
+      DEPENDS tmnt_recompiler_fixtures tmnt_recompile tests/recompiler_fixtures.hpp demo/synthetic_rom.hpp
       VERBATIM)
     if(fixture MATCHES "^(bus_)?(object|scene)_preview$")
       set(fixture_test tests/recompiler_object_preview.cpp)

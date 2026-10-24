@@ -1341,5 +1341,6 @@ addressing and a front-to-back priority decision tree. A direct priority/opacity
 matrix and geometry checks plus two generated synthetic CPU/DMA fixtures verify
 pixels, full memory, controls and timing/NMI. The CI also saves eleven validated
 128x64 scene captures. See the [scene contract](TILE_PREVIEW.md#composição-bg1bg2obj).
-This remains a diagnostic snapshot, without per-scanline evaluation, presentation
-in the native window, complete PPU/APU synchronization or game execution.
+This remains a diagnostic snapshot, without per-scanline evaluation, complete PPU/APU synchronization or game execution.
+The Windows native window can now present a static original scene through its
+Synthetic scene button; see the root README for the separate presentation contract.

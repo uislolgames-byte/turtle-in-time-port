@@ -171,3 +171,21 @@ ou ciclos nominais, com `State::master_clock`. Os eventos sao observados nas
 fronteiras das instrucoes/bytes, respeitando FastROM e a temporizacao dos handlers.
 A validacao acrescenta 4.400 comparacoes e 858 rastros de fronteiras. Ainda falta
 um agendador compartilhado com DMA, refresh, video e audio.
+
+
+### Cena sintética na janela Windows
+
+O botão **Synthetic scene** de `tmnt_native.exe` abre uma janela independente
+com uma captura diagnóstica original de 128×64 pixels (BG1/BG2/sprites).
+O programa sintético é gerado e recompilado estaticamente em C++ durante o build;
+ao abrir a janela ele executa 158 instruções no runtime e produz os pixels pela
+memória de vídeo. Não usa ROM externa nem imagem pronta. Reabrir começa do RESET.
+A janela usa escala inteira e mantém a proporção; áreas menores que 128×64 ficam
+sem imagem. Open ROM/Probe CPU continuam disponíveis separadamente.
+
+Isso apresenta uma captura estática, sem animação, áudio ou execução do jogo.
+O CI compara pixels com referência independente, testa conversão/orientação e
+escala e, no Windows, abre/fecha/reabre a janela e verifica os pixels via GDI.
+`tmnt_native.exe --self-test-window` executa essa verificação automatizada.
+Para compilar sem os testes e sem Python: `cmake -S . -B build-demo -DBUILD_TESTING=OFF`
+e `cmake --build build-demo --config Release --target tmnt_native` (Windows).
