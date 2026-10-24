@@ -71,7 +71,7 @@ int main() {
   for (const auto flags : std::vector<std::pair<bool,bool>>{{false,false},{true,false},{true,true}}) {
     try { static816::compile(scene,flags.first,flags.second,true); return 1; } catch (const std::runtime_error&) {}
   }
-  for (const auto& name : {"bus_loop","bus_call_native","bus_move_forward","bus_memory","bus_stz_widths","bus_stxy_widths","bus_ldxy_widths"}) {
+  for (const auto& name : {"bus_loop","bus_call_native","bus_move_forward","bus_memory","bus_stz_widths","bus_stxy_widths","bus_ldxy_widths","bus_register_ops","bus_register_loop"}) {
     try { static816::compile(recompiler_fixture(name),false,true,true); return 1; } catch (const std::runtime_error&) {}
   }
   for (unsigned variant = 0; variant < 3; ++variant) {
@@ -79,6 +79,11 @@ int main() {
     if (variant == 0) bad.resize(1000);
     else bad[0x7ffc+variant-1] ^= 1;
     try { static816::compile(bad,false,true,true); return 1; } catch (const std::runtime_error&) {}
+  }
+  for (unsigned op : {0xc8u,0x88u,0xaau,0xa8u,0x8au,0x98u,0x9bu,0xbbu}) {
+    try { static816::compile({uint8_t(op),0xfb,0xdb}); return 1; } catch (const std::runtime_error&) {}
+    std::vector<uint8_t> implied(32768,0); implied[0] = uint8_t(op); implied[1] = 0xdb; implied[0x7ffd] = 0x80;
+    try { static816::compile(implied,false,true,true); return 1; } catch (const std::runtime_error&) {}
   }
   const auto resumed = static816::compile(scene,false,true,true);
   if (resumed.find("bool resume_generated") == std::string::npos || resumed.find("goto L") == std::string::npos ||

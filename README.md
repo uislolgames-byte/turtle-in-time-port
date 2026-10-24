@@ -288,3 +288,13 @@ byte já suportadas. Usam a largura dos índices, atualizam zero/negativo e pres
 o acumulador. A validação Windows cobre modos mistos, bancos, FastROM, falhas,
 leitura serial e handlers de interrupção. A branch Linux arquivada é preservada;
 o jogo ainda não roda. [Contrato e testes](recompiler/README.md#absolute-ldxldy-aeac).
+
+
+### Mover dados entre registradores e controlar laços com Y
+
+O C++ recompilado aceita TAX/TAY/TXA/TYA/TXY/TYX e INY/DEY. As transferências
+respeitam a largura do destino e o byte alto do acumulador; o contador Y funciona
+em 8/16 bits com wrap e flags de zero/negativo. Os testes Windows incluem modos
+mistos, rotina, laço, limites de tempo e interrupções. As cenas anteriores e a
+branch Linux arquivada são preservadas; o jogo ainda não roda.
+[Contrato e testes](recompiler/README.md#register-transfers-and-y-counters).

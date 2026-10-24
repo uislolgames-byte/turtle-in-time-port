@@ -139,6 +139,14 @@ static Reference reference(const std::vector<uint8_t>& image, std::vector<Event>
       case 0xa0: r.y = value; nz(value,x); break;
       case 0xe8: case 0xca: { const unsigned modulus = x ? 256 : 65536;
         r.x = (r.x + (op == 0xe8 ? 1 : modulus-1)) % modulus; nz(r.x,x); break; }
+      case 0xc8: case 0x88: { const unsigned mod = x ? 256 : 65536;
+        r.y = (r.y+(op == 0xc8 ? 1 : mod-1))%mod; nz(r.y,x); break; }
+      case 0xaa: case 0xa8: { const unsigned data = r.a%(x ? 256 : 65536);
+        if (op == 0xaa) r.x = data; else r.y = data; nz(data,x); break; }
+      case 0x8a: case 0x98: { const unsigned data = (op == 0x8a ? r.x : r.y)%(m ? 256 : 65536);
+        r.a = m ? (r.a/256)*256+data : data; nz(data,m); break; }
+      case 0x9b: case 0xbb: { const unsigned data = (op == 0x9b ? r.x : r.y)%(x ? 256 : 65536);
+        if (op == 0x9b) r.y = data; else r.x = data; nz(data,x); break; }
       case 0x8d: write((r.db << 16)+value,r.a); if (!m) write((r.db << 16)+value+1,r.a/256); break;
       case 0x8e: write((r.db << 16)+value,r.x); if (!x) write((r.db << 16)+value+1,r.x/256); break;
       case 0x8c: write((r.db << 16)+value,r.y); if (!x) write((r.db << 16)+value+1,r.y/256); break;

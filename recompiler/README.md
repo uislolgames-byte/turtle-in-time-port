@@ -37,7 +37,7 @@ O barramento opcional e `reset_cpu` estão descritos em [system/](../system/READ
   cargas de 8 bits), X/Y inicialmente de 8 bits, P de 8 bits. Demais flags e RAM
   inicial podem ser fornecidas pelo chamador. Não é um reset fiel de hardware.
 - CLC/SEC, CLI/SEI, XCE com carry estaticamente conhecido, REP/SEP, NOP, STP,
-  LDA/LDX/LDY imediato, INX/DEX, LDA/LDX/LDY/STA/STZ/STX/STY absoluto, BRA e os oito desvios condicionais.
+  LDA/LDX/LDY imediato, INX/DEX/INY/DEY, TAX/TAY/TXA/TYA/TXY/TYX, LDA/LDX/LDY/STA/STZ/STX/STY absoluto, BRA e os oito desvios condicionais.
 - MVN/MVP no fluxo principal, com barramento conectado: um byte por repetição,
   A de 16 bits como contador, larguras de índice independentes de M e DBR atualizado.
   Há limites e verificação NMI/IRQ entre os bytes. Veja o contrato em
@@ -427,3 +427,33 @@ on Linux and does not execute the game.
 Semantic reference: [WDC W65C816S datasheet](https://www.westerndesigncenter.com/wdc/documentation/w65c816s.pdf),
 LDX/LDY operation/opcode and absolute-address timing tables. Implementation and
 test programs are original C++.
+
+
+## Register transfers and Y counters
+
+TAX/TAY/TXA/TYA/TXY/TYX and INY/DEY now emit literal C++ operations. Transfers
+use the destination width: TAX/TAY can copy the full 16-bit accumulator (including
+B) to X16 even when M8; TXA/TYA preserve B in M8 and replace the full accumulator
+in M16. TXY/TYX and INY/DEY use X width. Increment/decrement wrap at 8/16 bits.
+All eight operations update only N/Z, preserve carry and modes, and cost two
+nominal cycles; optional bus timing counts one code fetch plus one internal cycle.
+Main code, existing straight-line leaves and restricted handlers support them.
+The separate linear-resume profile still rejects these instructions.
+
+Eight generated Windows fixtures add a register sequence across emulation, all
+four native M/X combinations and return to emulation, a leaf routine, a Y-driven
+loop, and NMI/IRQ/RTI handlers with/without timing. CPU, flags, stack, cycles,
+master clocks and RAM are compared at instruction budgets to a shared independent
+byte interpreter. That interpreter was moved from the existing equivalence test
+without changing its legacy callers; optional master timing is restricted to the
+register/mode/branch/leaf programs. Full upper WRAM is also checked at final
+budgets, with handwritten final-state/stack/cycle results as a second oracle.
+Counter-capacity and NMI boundary cases cover the eight implied operations.
+Generated-code checks preserve unknown carry through transfers, and reject each
+new opcode in the opt-in linear-resume profile. Existing diagnostic scenes and
+input programs are unchanged. Validation remains Windows-only; Linux stays frozen
+at its preserved snapshot, and the game still does not run.
+
+Semantic references: [WDC W65C816S datasheet](https://www.westerndesigncenter.com/wdc/documentation/w65c816s.pdf),
+implied instructions and transfer/status tables; [ares CPU transfer semantics](https://github.com/ares-emulator/ares/blob/master/ares/component/processor/wdc65816/instructions-other.cpp).
+The implementation and test programs are original C++.

@@ -47,7 +47,7 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
     const unsigned pos = pc - 0x8000, op = code[pos];
     unsigned length = 1;
     switch (op) {
-      case 0xea: case 0x58: case 0x78: case 0x18: case 0x38: case 0xfb: case 0xdb: case 0x60: case 0xe8: case 0xca: break;
+      case 0xea: case 0x58: case 0x78: case 0x18: case 0x38: case 0xfb: case 0xdb: case 0x60: case 0xe8: case 0xca: case 0xc8: case 0x88: case 0xaa: case 0xa8: case 0x8a: case 0x98: case 0x9b: case 0xbb: break;
       case 0xc2: case 0xe2: case 0x80: length = 2; break;
       case 0xa9: length = mode.m ? 2 : 3; break;
       case 0xa2: case 0xa0: length = mode.x ? 2 : 3; break;
@@ -130,7 +130,7 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
           const unsigned pos = pc - 0x8000, op = code[pos];
           unsigned length = 1;
           switch (op) {
-            case 0xea: case 0x58: case 0x78: case 0xe8: case 0xca: case 0x40: break;
+            case 0xea: case 0x58: case 0x78: case 0xe8: case 0xca: case 0xc8: case 0x88: case 0xaa: case 0xa8: case 0x8a: case 0x98: case 0x9b: case 0xbb: case 0x40: break;
             case 0xa9: length = mode.m ? 2 : 3; break;
             case 0xa2: case 0xa0: length = mode.x ? 2 : 3; break;
             case 0xad: case 0x8d: case 0x9c: case 0x8e: case 0x8c: case 0xae: case 0xac: length = 3; break;
@@ -202,6 +202,10 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
     if (op == 0xa9) out << "s.a=" << (m ? "(s.a&65280)|" : "") << v << ";nz(s,s.a," << m << ");\n";
     if (op == 0xa2 || op == 0xa0) out << "s." << (op==0xa2?'x':'y') << "=" << v << ";nz(s," << v << "," << x << ");\n";
     if (op == 0xe8 || op == 0xca) out << "s.x=(s.x+" << (op==0xe8?1:65535) << ")&" << (x?255:65535) << ";nz(s,s.x," << x << ");\n";
+    if (op == 0xc8 || op == 0x88) out << "s.y=(s.y+" << (op==0xc8?1:65535) << ")&" << (x?255:65535) << ";nz(s,s.y," << x << ");\n";
+    if (op == 0xaa || op == 0xa8) out << "s." << (op==0xaa?'x':'y') << "=s.a&" << (x?255:65535) << ";nz(s,s." << (op==0xaa?'x':'y') << "," << x << ");\n";
+    if (op == 0x8a || op == 0x98) out << "s.a=" << (m?"(s.a&65280)|":"") << "(s." << (op==0x8a?'x':'y') << "&" << (m?255:65535) << ");nz(s,s.a," << m << ");\n";
+    if (op == 0x9b || op == 0xbb) out << "s." << (op==0x9b?'y':'x') << "=s." << (op==0x9b?'x':'y') << "&" << (x?255:65535) << ";nz(s,s." << (op==0x9b?'y':'x') << "," << x << ");\n";
     if (op == 0x18) out << "s.p&=254;\n";
     if (op == 0x38) out << "s.p|=1;\n";
     if (op == 0x58) out << "s.p&=~4u;\n";
