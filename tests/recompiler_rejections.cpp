@@ -120,6 +120,21 @@ int main() {
     auto image = scene; image[0] = op; image[1] = 0; image[2] = 0xdb;
     try { static816::compile(image,false,true,true); return 1; } catch (const std::runtime_error&) {}
   }
+  for (uint8_t op : {0x0a,0x4a,0x2a,0x6a}) {
+    for (bool timed_shift : {false,true}) {
+      for (const auto& code : std::vector<std::vector<uint8_t>>{
+          {0x18,op,0xfb,0xdb}, {0x38,op,0xfb,0xdb}, {0x20,4,0x80,0xdb,op,0x60},
+          {uint8_t(op+4),0,0x10,0xdb}, {uint8_t(op-4),0,0xdb}}) {
+        try { static816::compile(code,false,timed_shift); return 1; } catch (const std::runtime_error&) {}
+      }
+      for (uint8_t reset_carry : {0x18,0x38}) {
+        const auto generated = static816::compile({op,reset_carry,0xfb,0xdb},false,timed_shift);
+        if (generated.find("switch") != std::string::npos || generated.find("code[") != std::string::npos) return 1;
+      }
+    }
+    auto image = scene; image[0] = op; image[1] = 0xdb;
+    try { static816::compile(image,false,true,true); return 1; } catch (const std::runtime_error&) {}
+  }
   const auto resumed = static816::compile(scene,false,true,true);
   if (resumed.find("bool resume_generated") == std::string::npos || resumed.find("goto L") == std::string::npos ||
       resumed.find("switch") != std::string::npos || resumed.find("code[") != std::string::npos || output.find("bool resume_generated") != std::string::npos) return 1;

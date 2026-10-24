@@ -1,4 +1,5 @@
 #include "runtime.hpp"
+#include "recompiler_shift_reference.hpp"
 #include "recompiler_compare_reference.hpp"
 #include "recompiler_fixtures.hpp"
 #include <algorithm>
@@ -135,6 +136,10 @@ static Reference reference(const std::vector<uint8_t>& image, std::vector<Event>
       case 0xfb: { const bool old = r.e; r.e = (r.p & 1) != 0; r.p = (r.p & ~1u) | unsigned(old);
         if (r.e) { r.p |= 48; r.x %= 256; r.y %= 256; r.s = 256+r.s%256; } break; }
       case 0xc2: r.p &= ~value; if (r.e) r.p |= 48; break;
+      case 0x0a: case 0x4a: case 0x2a: case 0x6a: {
+        const auto shifted = reference_shift(r.a,r.p,m,op);
+        r.a = shifted.first; r.p = shifted.second; break;
+      }
       case 0xa9: r.a = m ? r.a/256*256+value : value; nz(value,m); break;
       case 0x29: case 0x09: case 0x49: {
         unsigned result = 0;

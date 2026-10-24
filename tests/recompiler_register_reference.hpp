@@ -1,5 +1,6 @@
 #pragma once
 #include "runtime.hpp"
+#include "recompiler_shift_reference.hpp"
 #include "recompiler_compare_reference.hpp"
 #include <vector>
 #include <stdexcept>
@@ -41,6 +42,10 @@ static recompiled::State reference(const std::vector<uint8_t>& code, recompiled:
       }
       case 0xc2: s.p &= ~operand; if (s.e) s.p |= 48; break;
       case 0xe2: s.p |= operand; if (s.p & 16) { s.x %= 256; s.y %= 256; } break;
+      case 0x0a: case 0x4a: case 0x2a: case 0x6a: {
+        const auto shifted = reference_shift(s.a,s.p,m,op);
+        s.a = shifted.first; s.p = shifted.second; break;
+      }
       case 0xa9: s.a = m ? (s.a/256)*256 + operand : operand; value = operand; bits = m ? 8 : 16; update_nz = true; break;
       case 0x29: case 0x09: case 0x49: {
         unsigned result = 0;
@@ -124,7 +129,7 @@ static recompiled::State reference(const std::vector<uint8_t>& code, recompiled:
     if (timed) {
       unsigned master = 0;
       switch (op) {
-        case 0x18: case 0x38: case 0xfb: case 0xea: case 0x58: case 0x78:
+        case 0x0a: case 0x4a: case 0x2a: case 0x6a: case 0x18: case 0x38: case 0xfb: case 0xea: case 0x58: case 0x78:
         case 0xe8: case 0xca: case 0xc8: case 0x88: case 0xaa: case 0xa8:
         case 0x8a: case 0x98: case 0x9b: case 0xbb: master = 14; break;
         case 0xc2: case 0xe2: master = 22; break;

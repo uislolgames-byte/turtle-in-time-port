@@ -8,6 +8,33 @@
 #include <initializer_list>
 #include "../demo/synthetic_rom.hpp"
 inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
+  if (name == "shift_widths" || name == "bus_shift_widths") {
+    std::vector<uint8_t> code;
+    const auto emit = [&](std::initializer_list<uint8_t> bytes) { code.insert(code.end(),bytes); };
+    const auto block = [&]() { for (unsigned i = 0; i < 3; ++i) emit({0x0a,0x2a,0x4a,0x6a}); };
+    block(); emit({0x18,0xfb,0xc2,0x30,0xa9,0x01,0x80}); block();
+    emit({0xe2,0x20}); block(); emit({0xe2,0x10}); block();
+    emit({0xc2,0x20}); block(); emit({0x38,0xfb}); block(); emit({0xdb}); return code;
+  }
+  if (name == "shift_vectors" || name == "bus_shift_vectors") {
+    std::vector<uint8_t> code;
+    for (bool narrow : {true,false}) {
+      if (!narrow) code.insert(code.end(),{0x18,0xfb,0xc2,0x30});
+      const std::vector<unsigned> values{0,1,narrow ? 0x7fu : 0x7fffu,narrow ? 0x80u : 0x8000u,narrow ? 0xffu : 0xffffu};
+      for (unsigned op : {0x0au,0x4au,0x2au,0x6au}) for (unsigned a : values) for (bool carry : {false,true}) {
+        code.push_back(0xa9); code.push_back(uint8_t(a)); if (!narrow) code.push_back(uint8_t(a >> 8));
+        code.push_back(carry ? 0x38 : 0x18); code.push_back(uint8_t(op));
+      }
+    }
+    code.push_back(0xdb); return code;
+  }
+  if (name == "shift_loop" || name == "bus_shift_loop") return {0xa9,0x80,0x4a,0x4a,0xd0,0xfd,0xdb};
+  if (name == "irq_shift_emulation" || name == "irq_shift_native" || name == "bus_irq_shift_emulation" || name == "bus_irq_shift_native") {
+    auto image = recompiler_fixture(name.find("native") != std::string::npos ? "irq_native" : "irq_emulation");
+    const std::vector<uint8_t> handler{0x0a,0x2a,0x4a,0x6a,0x6a,0x4a,0x2a,0x0a,0x40};
+    for (unsigned at : {0x100u,0x120u}) std::copy(handler.begin(),handler.end(),image.begin()+at);
+    return image;
+  }
   if (name == "compare_widths" || name == "bus_compare_widths") {
     std::vector<uint8_t> code;
     const auto emit = [&](std::initializer_list<uint8_t> bytes) { code.insert(code.end(),bytes); };

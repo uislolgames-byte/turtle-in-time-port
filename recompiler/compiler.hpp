@@ -47,7 +47,7 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
     const unsigned pos = pc - 0x8000, op = code[pos];
     unsigned length = 1;
     switch (op) {
-      case 0xea: case 0x58: case 0x78: case 0x18: case 0x38: case 0xfb: case 0xdb: case 0x60: case 0xe8: case 0xca: case 0xc8: case 0x88: case 0xaa: case 0xa8: case 0x8a: case 0x98: case 0x9b: case 0xbb: break;
+      case 0x0a: case 0x4a: case 0x2a: case 0x6a: case 0xea: case 0x58: case 0x78: case 0x18: case 0x38: case 0xfb: case 0xdb: case 0x60: case 0xe8: case 0xca: case 0xc8: case 0x88: case 0xaa: case 0xa8: case 0x8a: case 0x98: case 0x9b: case 0xbb: break;
       case 0xc2: case 0xe2: case 0x80: length = 2; break;
       case 0xc9: case 0xa9: case 0x29: case 0x09: case 0x49: length = mode.m ? 2 : 3; break;
       case 0xe0: case 0xc0: case 0xa2: case 0xa0: length = mode.x ? 2 : 3; break;
@@ -63,9 +63,10 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
       owners[pc+i] = pc;
     }
     nodes.emplace(pc, Instruction{pc,op,value,length,mode,leaf});
+    const bool shift = op == 0x0a || op == 0x4a || op == 0x2a || op == 0x6a;
     const bool comparison = op == 0xc9 || op == 0xe0 || op == 0xc0;
     const bool control_mode = op == 0x18 || op == 0x38 || op == 0xfb || op == 0xc2 || op == 0xe2;
-    if (leaf >= 0 && (control_mode || comparison || op == 0x20 || op == 0xdb || op == 0x80 || op == 0x44 || op == 0x54 || branch(op)))
+    if (leaf >= 0 && (control_mode || comparison || shift || op == 0x20 || op == 0xdb || op == 0x80 || op == 0x44 || op == 0x54 || branch(op)))
       throw std::runtime_error("leaf subroutine must be straight-line and preserve mode/carry");
     if (op == 0x60) {
       if (leaf < 0) throw std::runtime_error("RTS outside leaf subroutine");
@@ -74,7 +75,7 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
     if (op == 0xdb) continue;
     if (op == 0x18) mode.c = 0;
     if (op == 0x38) mode.c = 1;
-    if (comparison) mode.c = -1; // Comparisons replace carry with a data-dependent result.
+    if (comparison || shift) mode.c = -1; // Data-dependent carry must not reuse an earlier proof.
     if (op == 0xfb) {
       if (mode.c < 0) throw std::runtime_error("unknown carry for XCE");
       const bool old_e = mode.e; mode.e = mode.c != 0; mode.c = old_e;
@@ -132,7 +133,7 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
           const unsigned pos = pc - 0x8000, op = code[pos];
           unsigned length = 1;
           switch (op) {
-            case 0xea: case 0x58: case 0x78: case 0xe8: case 0xca: case 0xc8: case 0x88: case 0xaa: case 0xa8: case 0x8a: case 0x98: case 0x9b: case 0xbb: case 0x40: break;
+            case 0x0a: case 0x4a: case 0x2a: case 0x6a: case 0xea: case 0x58: case 0x78: case 0xe8: case 0xca: case 0xc8: case 0x88: case 0xaa: case 0xa8: case 0x8a: case 0x98: case 0x9b: case 0xbb: case 0x40: break;
             case 0xc9: case 0xa9: case 0x29: case 0x09: case 0x49: length = mode.m ? 2 : 3; break;
             case 0xe0: case 0xc0: case 0xa2: case 0xa0: length = mode.x ? 2 : 3; break;
             case 0xad: case 0x8d: case 0x9c: case 0x8e: case 0x8c: case 0xae: case 0xac: length = 3; break;
@@ -206,6 +207,13 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
       out << "{unsigned value=s." << (op == 0xc9 ? 'a' : op == 0xe0 ? 'x' : 'y') << "&" << (narrow ? 255 : 65535)
           << ";s.p=(s.p&254)|unsigned(value>=" << v << ");nz(s,(value+65536-" << v << ")&"
           << (narrow ? 255 : 65535) << "," << narrow << ");}\n";
+    }
+    if (op == 0x0a || op == 0x4a || op == 0x2a || op == 0x6a) {
+      const bool left = op == 0x0a || op == 0x2a, rotate = op == 0x2a || op == 0x6a;
+      out << "{unsigned value=s.a&" << (m ? 255 : 65535) << ";unsigned result=(value" << (left ? "<<1" : ">>1") << ")";
+      if (rotate) out << "|((s.p&1)" << (left ? "" : (m ? "<<7" : "<<15")) << ")";
+      out << ";s.p=(s.p&254)|((value>>" << (left ? (m ? 7 : 15) : 0) << ")&1);s.a="
+          << (m ? "(s.a&65280)|" : "") << "(result&" << (m ? 255 : 65535) << ");nz(s,s.a," << m << ");}\n";
     }
     if (op == 0xa9) out << "s.a=" << (m ? "(s.a&65280)|" : "") << v << ";nz(s,s.a," << m << ");\n";
     if (op == 0x29 || op == 0x09 || op == 0x49)

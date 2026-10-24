@@ -513,3 +513,34 @@ Existing scenes and Linux archive remain preserved; no game is executed.
 Semantic reference: [ares original WDC65816 comparison algorithms](https://github.com/ares-emulator/ares/blob/master/ares/component/processor/wdc65816/algorithms.cpp)
 and [WDC W65C816S datasheet](https://www.westerndesigncenter.com/wdc/documentation/w65c816s.pdf).
 Implementation and test programs are original C++.
+
+
+## Accumulator shifts and rotations
+
+ASL A ($0A), LSR A ($4A), ROL A ($2A), and ROR A ($6A) now emit literal C++
+operations. M chooses 8/16-bit accumulator width independently of X. M8 preserves
+B; shifts insert zero and rotations insert incoming C before replacing it with
+the outgoing bit. Only C/N/Z change; overflow, decimal, modes and index registers
+are preserved. Each accumulator instruction is one byte and two nominal cycles
+in both widths; optional bank-zero timing is one fetch plus one internal cycle
+(14 master clocks). Decimal mode does not change these operations.
+
+Data-dependent carry invalidates the earlier static proof, so XCE requires a new
+explicit carry definition. The current carry-preserving leaf contract rejects
+these operations. Main code and restricted linear handlers support them; their
+one-byte layout allows the same handler bytes across M8/M16 entry modes. Memory
+addressing forms and the separate linear-resume profile remain unsupported.
+
+Ten Windows fixtures cover emulation/all native M/X combinations, a shift-driven
+loop, isolated boundary values with both incoming carries, every initial low byte
+with nonzero B and both carries, cycle/master capacity boundaries and NMI events.
+The independent oracle moves boolean bit cells rather than shifting integers;
+CPU/flags, complete lower RAM, final upper WRAM, stack and clocks are checked at
+budgets. Fixed hand-calculated traces validate the vector program and loop.
+NMI/IRQ/RTI fixtures exercise all four operations in M8/M16-compatible handlers.
+Existing scenes/input remain unchanged, Linux stays archived, and the game is
+not executed.
+
+Semantic reference: [ares WDC65816 shift/rotate algorithms](https://github.com/ares-emulator/ares/blob/master/ares/component/processor/wdc65816/algorithms.cpp)
+and [WDC W65C816S datasheet](https://www.westerndesigncenter.com/wdc/documentation/w65c816s.pdf).
+Implementation and test programs are original C++.
