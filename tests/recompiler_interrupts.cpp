@@ -23,6 +23,7 @@ struct Reference {
 // Independent byte interpreter with direct reference arrays (no runtime helpers).
 static Reference reference(const std::vector<uint8_t>& image, std::vector<Event> events, unsigned p, unsigned limit, bool cycle_events, bool master_events = false) {
   Reference r; r.p = p;
+  if (image.at(0x100) == 0x9c) std::fill(r.ram.begin()+0x1000,r.ram.begin()+0x1008,0xa5);
   std::stable_sort(events.begin(), events.end(), [](const Event& a, const Event& b) { return a.tick < b.tick; });
   size_t delivered = 0;
   const auto poll = [&]() {
@@ -98,7 +99,7 @@ static Reference reference(const std::vector<uint8_t>& image, std::vector<Event>
     if (op == 0xc2 || op == 0xdb) cycles = 3;
     if (op == 0xa9) cycles = m ? 2 : 3;
     if (op == 0xa2 || op == 0xa0) cycles = x ? 2 : 3;
-    if (op == 0xad || op == 0x8d) cycles = m ? 4 : 5;
+    if (op == 0xad || op == 0x8d || op == 0x9c) cycles = m ? 4 : 5;
     if (op == 0x20 || op == 0x60) cycles = 6;
     if (op == 0x54) cycles = 7;
     if (op == 0x40) cycles = r.e ? 6 : 7;
@@ -106,7 +107,7 @@ static Reference reference(const std::vector<uint8_t>& image, std::vector<Event>
     if (op == 0xc2) length = 2;
     if (op == 0xa9) length = m ? 2 : 3;
     if (op == 0xa2 || op == 0xa0) length = x ? 2 : 3;
-    if (op == 0xad || op == 0x8d || op == 0x20 || op == 0x54) length = 3;
+    if (op == 0xad || op == 0x8d || op == 0x9c || op == 0x20 || op == 0x54) length = 3;
     unsigned value = length > 1 ? image.at(r.pc-0x8000+1) : 0;
     if (length == 3) value += 256u * image.at(r.pc-0x8000+2);
     unsigned next = r.pc + length;
@@ -116,12 +117,12 @@ static Reference reference(const std::vector<uint8_t>& image, std::vector<Event>
     if (op == 0xc2) master = 22;
     if (op == 0xdb) master = 20;
     if (op == 0xa9 || op == 0xa2 || op == 0xa0) master = length == 2 ? 16 : 24;
-    if (op == 0xad || op == 0x8d) master = m ? 32 : 40;
+    if (op == 0xad || op == 0x8d || op == 0x9c) master = m ? 32 : 40;
     if (op == 0x20) master = 46;
     if (op == 0x60) master = 42;
     if (op == 0x54) master = 52;
     if (op == 0x40) master = r.e ? 44 : 52;
-    if ((op == 0xad || op == 0x8d) && value >= 0x2100 && value < 0x4380) master = 30;
+    if ((op == 0xad || op == 0x8d || op == 0x9c) && value >= 0x2100 && value < 0x4380) master = 30;
     const auto dma_before = r.dma_clocks;
     switch (op) {
       case 0x18: r.p &= ~1u; break;
@@ -136,6 +137,7 @@ static Reference reference(const std::vector<uint8_t>& image, std::vector<Event>
       case 0xe8: case 0xca: { const unsigned modulus = x ? 256 : 65536;
         r.x = (r.x + (op == 0xe8 ? 1 : modulus-1)) % modulus; nz(r.x,x); break; }
       case 0x8d: write((r.db << 16)+value,r.a); if (!m) write((r.db << 16)+value+1,r.a/256); break;
+      case 0x9c: write((r.db << 16)+value,0); if (!m) write((r.db << 16)+value+1,0); break;
       case 0xad: value = read((r.db << 16)+value) + (m ? 0 : 256*read((r.db << 16)+value+1));
         r.a = m ? r.a/256*256+value : value; nz(value,m); break;
       case 0x20: push((next-1)/256); push((next-1)%256); next = value; break;
@@ -385,6 +387,7 @@ int main(int argc, char** argv) {
           const unsigned limit = choice == 21 ? 40 : choice;
           bus->clear_ram(); State actual; reset_cpu(actual,*bus);
           actual.a = 0x1200; actual.x = 255; actual.y = 128; actual.p = flags;
+          if (name.find("stz") != std::string::npos) for (unsigned i = 0x1000; i < 0x1008; ++i) bus->write8(i,0xa5);
           for (const auto& event : scenario) (master_events ? actual.master_clock : cycle_events ? actual.cycle_clock : actual.clock).schedule(event.tick,event.signal);
           const auto expected = reference(image,scenario,flags,limit,cycle_events,master_events);
           const bool stopped = run_generated(actual,limit);

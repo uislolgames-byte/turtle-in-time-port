@@ -37,7 +37,7 @@ O barramento opcional e `reset_cpu` estão descritos em [system/](../system/READ
   cargas de 8 bits), X/Y inicialmente de 8 bits, P de 8 bits. Demais flags e RAM
   inicial podem ser fornecidas pelo chamador. Não é um reset fiel de hardware.
 - CLC/SEC, CLI/SEI, XCE com carry estaticamente conhecido, REP/SEP, NOP, STP,
-  LDA/LDX/LDY imediato, INX/DEX, LDA/STA absoluto, BRA e os oito desvios condicionais.
+  LDA/LDX/LDY imediato, INX/DEX, LDA/STA/STZ absoluto, BRA e os oito desvios condicionais.
 - MVN/MVP no fluxo principal, com barramento conectado: um byte por repetição,
   A de 16 bits como contador, larguras de índice independentes de M e DBR atualizado.
   Há limites e verificação NMI/IRQ entre os bytes. Veja o contrato em
@@ -336,3 +336,33 @@ output file. This option cannot rename a linear-resume program; its entry pair
 remains unchanged. Without the option generated output preserves the default name.
 The input-controlled scene uses `--bus-timing --entry run_control_generated` and
 existing LDA absolute/BEQ/BRA/STA operations; it does not broaden the resume profile.
+
+
+## Absolute STZ ($9C)
+
+The C++ translator emits a literal zero store for absolute STZ. The effective
+address uses DBR and the operand; M selects one or two bytes independently of X.
+A (including its high byte), X/Y and status flags are preserved. This form costs
+four nominal cycles in M8 and five in M16. Optional bus timing counts the three
+code fetches and one/two actual data writes using the existing address speeds.
+It is supported in main code, existing straight-line leaf routines and restricted
+linear interrupt handlers. Other STZ addressing modes remain rejected. The
+separate opt-in linear-resume profile still accepts only LDA immediate/STA/STP.
+
+STZ reuses the existing checked store path: word MMIO and bank-crossing words
+remain unsupported, invalid transfers fail before either byte is written, byte
+MMIO still requires opt-in, and counters/events are checked before effects. A
+zero write to MDMAEN selects no DMA channels. No additional hardware ports or
+unbounded execution paths are introduced.
+
+Ten generated fixtures cover all four M/X width combinations, flags/register
+preservation, standalone RAM and mapped WRAM banks/mirrors, a leaf call, complete
+RAM comparisons at instruction budgets, access faults, serial/video/control MMIO,
+clock capacity and interruption boundaries. Four fixtures run STZ inside NMI/IRQ
+handlers in emulation/native modes, with/without bus timing, against the existing
+independent byte interpreter, seeded with nonzero target bytes. Existing synthetic
+scene/input programs and images are unchanged.
+
+Semantic reference: [WDC W65C816S datasheet](https://www.westerndesigncenter.com/wdc/documentation/w65c816s.pdf),
+opcode matrix and instruction timing tables (absolute STZ). The implementation
+and test programs are original C++.

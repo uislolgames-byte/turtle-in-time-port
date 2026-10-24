@@ -247,3 +247,13 @@ não escolhe o brilho diretamente. Cada mudança efetiva refaz essa demonstraç�
 pelo RESET; não é uma simulação contínua por quadros. A janela de onze estados,
 o carregador e Probe CPU continuam separados. Não há controle físico conectado,
 áudio, personagem ou execução do jogo. Veja o [contrato](demo/INPUT_SCENE.md).
+
+
+### Zerar dados pelo C++ recompilado
+
+O recompilador aceita STZ absoluto ($9C): zera um ou dois bytes conforme M,
+preservando acumulador e flags, inclusive em rotinas folha e handlers restritos.
+A validação Windows/Linux inclui bancos de memória, limites, portas já suportadas,
+tempo e interrupções. Outros endereçamentos STZ e retomada geral continuam fora
+do subconjunto. As demonstrações gráficas existentes são preservadas; isso ainda
+não executa o jogo. [Contrato e testes](recompiler/README.md#absolute-stz-9c).

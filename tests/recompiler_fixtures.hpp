@@ -7,6 +7,24 @@
 #include <algorithm>
 #include "../demo/synthetic_rom.hpp"
 inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
+  if (name == "stz_widths" || name == "bus_stz_widths") return {
+    0x9c,0,0x10,0x18,0xfb,0xc2,0x20,0x9c,2,0x10,0xc2,0x10,
+    0x9c,4,0x10,0xe2,0x20,0x9c,6,0x10,0x20,0x18,0x80,0xdb,0x9c,8,0x10,0x60};
+  if (name == "stz_fault" || name == "bus_stz_fault" || name == "bus_stz_boundary") return {
+    0x18,0xfb,0xc2,0x20,0x9c,0xff,uint8_t(name == "bus_stz_boundary" ? 0xff : 0x1f),0xdb};
+  if (name == "bus_stz_ports") return {0x9c,0,0x42,0x9c,0x16,0x40,0x9c,0x0b,0x42,0x9c,0x0d,0x42,0x9c,0,0x21,0xdb};
+  if (name == "irq_stz_emulation" || name == "irq_stz_native" || name == "bus_irq_stz_emulation" || name == "bus_irq_stz_native") {
+    const bool native = name.find("native") != std::string::npos;
+    auto image = recompiler_fixture(native ? "irq_native" : "irq_emulation");
+    // Main and both linear handlers clear WRAM without changing A or flags.
+    const std::vector<uint8_t> main = native ? std::vector<uint8_t>{0x18,0xfb,0xc2,0x30,0x9c,0,0x10,0x9c,2,0x10,0xdb}
+      : std::vector<uint8_t>{0x9c,0,0x10,0x9c,2,0x10,0xdb};
+    std::copy(main.begin(),main.end(),image.begin());
+    for (unsigned at : {0x100u,0x120u}) {
+      image[at] = 0x9c; image[at+1] = uint8_t(at == 0x100 ? 4 : 6); image[at+2] = 0x10; image[at+3] = 0x40;
+    }
+    return image;
+  }
   if (name == "joypad_cpu" || name == "bus_joypad_cpu") {
     std::vector<uint8_t> image(32768,0), code;
     const auto write = [&](unsigned at, unsigned value) { code.insert(code.end(),{0xa9,static_cast<uint8_t>(value),0x8d,static_cast<uint8_t>(at),static_cast<uint8_t>(at >> 8)}); };
