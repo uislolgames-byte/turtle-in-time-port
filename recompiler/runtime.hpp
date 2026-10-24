@@ -437,4 +437,6 @@ inline bool return_interrupt(State& s) {
   }
 }
 bool run_generated(State& s, unsigned limit);
+// Defined only by the explicit bounded --linear-resume generated profile.
+bool resume_generated(State& s, unsigned limit);
 }

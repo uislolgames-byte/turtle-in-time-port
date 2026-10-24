@@ -15,7 +15,7 @@ public:
   ~SceneSession();
   SceneSession(const SceneSession&) = delete;
   SceneSession& operator=(const SceneSession&) = delete;
-  // Every selection replays the generated program from RESET to a bounded checkpoint.
+  // Forward selection resumes a validated linear pause; backwards selection replays RESET.
   // Invalid selections or failed execution leave the previous state/frame intact.
   void select(unsigned stage);
   void reset();

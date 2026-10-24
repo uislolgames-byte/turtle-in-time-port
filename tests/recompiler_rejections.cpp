@@ -67,5 +67,21 @@ int main() {
     try { static816::compile(invalid_call,false,true); return 1; }
     catch (const std::runtime_error&) {}
   }
+  const auto scene = recompiler_fixture("bus_scene_resume");
+  for (const auto flags : std::vector<std::pair<bool,bool>>{{false,false},{true,false},{true,true}}) {
+    try { static816::compile(scene,flags.first,flags.second,true); return 1; } catch (const std::runtime_error&) {}
+  }
+  for (const auto& name : {"bus_loop","bus_call_native","bus_move_forward","bus_memory"}) {
+    try { static816::compile(recompiler_fixture(name),false,true,true); return 1; } catch (const std::runtime_error&) {}
+  }
+  for (unsigned variant = 0; variant < 3; ++variant) {
+    auto bad = scene;
+    if (variant == 0) bad.resize(1000);
+    else bad[0x7ffc+variant-1] ^= 1;
+    try { static816::compile(bad,false,true,true); return 1; } catch (const std::runtime_error&) {}
+  }
+  const auto resumed = static816::compile(scene,false,true,true);
+  if (resumed.find("bool resume_generated") == std::string::npos || resumed.find("goto L") == std::string::npos ||
+      resumed.find("switch") != std::string::npos || resumed.find("code[") != std::string::npos || output.find("bool resume_generated") != std::string::npos) return 1;
   std::cout << "Static compiler rejection tests passed\n";
 }

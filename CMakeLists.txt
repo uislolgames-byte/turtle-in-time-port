@@ -37,7 +37,7 @@ set(demo_bin "${CMAKE_CURRENT_BINARY_DIR}/synthetic_scene.bin")
 set(demo_cpp "${CMAKE_CURRENT_BINARY_DIR}/synthetic_scene.cpp")
 add_custom_command(OUTPUT "${demo_cpp}" "${demo_bin}"
   COMMAND "$<TARGET_FILE:tmnt_demo_rom>" "${demo_bin}"
-  COMMAND "$<TARGET_FILE:tmnt_recompile>" "${demo_bin}" "${demo_cpp}" --bus-timing
+  COMMAND "$<TARGET_FILE:tmnt_recompile>" "${demo_bin}" "${demo_cpp}" --bus-timing --linear-resume
   DEPENDS tmnt_demo_rom tmnt_recompile demo/synthetic_rom.hpp
   VERBATIM)
 add_library(tmnt_demo STATIC demo/scene.cpp "${demo_cpp}")
@@ -292,11 +292,13 @@ if(BUILD_TESTING)
   add_executable(tmnt_recompiler_rejections tests/recompiler_rejections.cpp)
   add_test(NAME recompiler_rejections COMMAND tmnt_recompiler_rejections)
   add_dependencies(check tmnt_recompiler_rejections)
-  foreach(fixture widths mixed calls emulation_calls corrupt_return loop branches memory system move_forward move_backward move_byte move_mixed move_rom move_full irq_emulation irq_native irq_move irq_leaf irq_corrupt dma_wram dma_fault timing_emulation timing_native memsel bus_memory bus_loop bus_fault bus_branch_emulation bus_branch_native bus_move_forward bus_move_backward bus_move_byte bus_move_mixed bus_move_rom bus_move_full bus_move_fastrom bus_move_fault bus_call_native bus_call_emulation bus_call_corrupt bus_irq_emulation bus_irq_native bus_irq_move bus_irq_leaf bus_irq_corrupt bus_master_events bus_dma_wram bus_dma_fault bus_irq_dma_emulation bus_irq_dma_native mask_flags irq_mask_emulation irq_mask_native bus_irq_mask_emulation bus_irq_mask_native dma_channels dma_channels_fault bus_dma_channels bus_dma_channels_fault vram_cpu bus_vram_cpu dma_vram dma_vram_fault bus_dma_vram bus_dma_vram_fault vram_read_low vram_read_high bus_vram_read_low bus_vram_read_high cgram_cpu bus_cgram_cpu dma_cgram dma_cgram_fault bus_dma_cgram bus_dma_cgram_fault tile_preview bus_tile_preview video_registers bus_video_registers video_scroll bus_video_scroll video_maps bus_video_maps video_large bus_video_large video_4bpp bus_video_4bpp video_layers bus_video_layers bus_raster bus_raster_loop bus_raster_fault bus_video_nmi bus_video_nmi_fault bus_irq_video_emulation bus_irq_video_native video_poll bus_video_poll bus_irq_vertical_emulation bus_irq_vertical_native bus_video_irq_fault irq_vertical_emulation bus_irq_horizontal bus_irq_combined bus_irq_combined_native irq_horizontal bus_horizontal_irq_fault dma_pattern_matrix bus_dma_pattern_matrix dma_pattern_fault bus_dma_pattern_fault vram_read_remap1_low vram_read_remap1_high vram_read_remap2_low vram_read_remap2_high vram_read_remap3_low vram_read_remap3_high bus_vram_read_remap1_low bus_vram_read_remap1_high bus_vram_read_remap2_low bus_vram_read_remap2_high bus_vram_read_remap3_low bus_vram_read_remap3_high dma_reverse_vram bus_dma_reverse_vram dma_reverse_cgram bus_dma_reverse_cgram dma_reverse_fault bus_dma_reverse_fault dma_oam_roundtrip bus_dma_oam_roundtrip dma_oam_fault bus_dma_oam_fault object_preview bus_object_preview scene_preview bus_scene_preview)
+  foreach(fixture widths mixed calls emulation_calls corrupt_return loop branches memory system move_forward move_backward move_byte move_mixed move_rom move_full irq_emulation irq_native irq_move irq_leaf irq_corrupt dma_wram dma_fault timing_emulation timing_native memsel bus_memory bus_loop bus_fault bus_branch_emulation bus_branch_native bus_move_forward bus_move_backward bus_move_byte bus_move_mixed bus_move_rom bus_move_full bus_move_fastrom bus_move_fault bus_call_native bus_call_emulation bus_call_corrupt bus_irq_emulation bus_irq_native bus_irq_move bus_irq_leaf bus_irq_corrupt bus_master_events bus_dma_wram bus_dma_fault bus_irq_dma_emulation bus_irq_dma_native mask_flags irq_mask_emulation irq_mask_native bus_irq_mask_emulation bus_irq_mask_native dma_channels dma_channels_fault bus_dma_channels bus_dma_channels_fault vram_cpu bus_vram_cpu dma_vram dma_vram_fault bus_dma_vram bus_dma_vram_fault vram_read_low vram_read_high bus_vram_read_low bus_vram_read_high cgram_cpu bus_cgram_cpu dma_cgram dma_cgram_fault bus_dma_cgram bus_dma_cgram_fault tile_preview bus_tile_preview video_registers bus_video_registers video_scroll bus_video_scroll video_maps bus_video_maps video_large bus_video_large video_4bpp bus_video_4bpp video_layers bus_video_layers bus_raster bus_raster_loop bus_raster_fault bus_video_nmi bus_video_nmi_fault bus_irq_video_emulation bus_irq_video_native video_poll bus_video_poll bus_irq_vertical_emulation bus_irq_vertical_native bus_video_irq_fault irq_vertical_emulation bus_irq_horizontal bus_irq_combined bus_irq_combined_native irq_horizontal bus_horizontal_irq_fault dma_pattern_matrix bus_dma_pattern_matrix dma_pattern_fault bus_dma_pattern_fault vram_read_remap1_low vram_read_remap1_high vram_read_remap2_low vram_read_remap2_high vram_read_remap3_low vram_read_remap3_high bus_vram_read_remap1_low bus_vram_read_remap1_high bus_vram_read_remap2_low bus_vram_read_remap2_high bus_vram_read_remap3_low bus_vram_read_remap3_high dma_reverse_vram bus_dma_reverse_vram dma_reverse_cgram bus_dma_reverse_cgram dma_reverse_fault bus_dma_reverse_fault dma_oam_roundtrip bus_dma_oam_roundtrip dma_oam_fault bus_dma_oam_fault object_preview bus_object_preview scene_preview bus_scene_preview bus_scene_resume)
     set(fixture_bin "${CMAKE_CURRENT_BINARY_DIR}/recompiler_${fixture}.bin")
     set(fixture_cpp "${CMAKE_CURRENT_BINARY_DIR}/recompiler_${fixture}.cpp")
     set(fixture_options)
-    if(fixture STREQUAL "bus_irq_leaf")
+    if(fixture STREQUAL "bus_scene_resume")
+      set(fixture_options --bus-timing --linear-resume)
+    elseif(fixture STREQUAL "bus_irq_leaf")
       set(fixture_options --bus-timing --interrupts)
     elseif(fixture MATCHES "^bus_irq_")
       set(fixture_options --interrupts --bus-timing)
@@ -310,7 +312,9 @@ if(BUILD_TESTING)
       COMMAND "$<TARGET_FILE:tmnt_recompile>" "${fixture_bin}" "${fixture_cpp}" ${fixture_options}
       DEPENDS tmnt_recompiler_fixtures tmnt_recompile tests/recompiler_fixtures.hpp demo/synthetic_rom.hpp
       VERBATIM)
-    if(fixture MATCHES "^(bus_)?(object|scene)_preview$")
+    if(fixture STREQUAL "bus_scene_resume")
+      set(fixture_test tests/recompiler_resume.cpp)
+    elseif(fixture MATCHES "^(bus_)?(object|scene)_preview$")
       set(fixture_test tests/recompiler_object_preview.cpp)
     elseif(fixture MATCHES "^(bus_)?dma_(pattern_|reverse_|oam_)")
       set(fixture_test tests/recompiler_dma_patterns.cpp)

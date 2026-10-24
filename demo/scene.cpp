@@ -16,14 +16,16 @@ struct SceneSession::Impl {
   Impl() : bus(scene_rom(),true) {
     if (!recompiled::reset_cpu(cpu,bus)) throw std::runtime_error("Synthetic RESET failed");
   }
+  Impl(const Impl& other) : bus(other.bus), cpu(other.cpu) { cpu.bus = &bus; }
 };
 SceneSession::SceneSession() { reset(); }
 SceneSession::~SceneSession() = default;
 void SceneSession::select(unsigned stage) {
   const auto limit = limits.at(stage); // Validate before any mutation.
   if (stage == stage_) return;
-  auto next = std::make_unique<Impl>();
-  const bool stopped = recompiled::run_generated(next->cpu,limit);
+  const bool forward = state_ && stage > stage_;
+  auto next = forward ? std::make_unique<Impl>(*state_) : std::make_unique<Impl>();
+  const bool stopped = forward ? recompiled::resume_generated(next->cpu,limit) : recompiled::run_generated(next->cpu,limit);
   if (stopped || next->cpu.stop != recompiled::Stop::limit || next->cpu.steps != limit || !next->cpu.diagnostic.empty())
     throw std::runtime_error("Synthetic scene program failed: "+next->cpu.diagnostic);
   auto frame = system816::capture_scene_preview(next->bus,16,8);

@@ -18,10 +18,12 @@ struct Mode {
 struct Instruction { unsigned pc, op, value, length; Mode mode; int leaf; };
 
 // Closed, flat synthetic code at $8000. Analyze only proven entry points.
-inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = false, bool bus_timing = false) {
+inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = false, bool bus_timing = false, bool linear_resume = false) {
   if (code.empty() || code.size() > 32768) throw std::runtime_error("code size must be 1..32768");
   if (interrupts && (code.size() != 32768 || code[0x7ffc] != 0 || code[0x7ffd] != 0x80))
     throw std::runtime_error("--interrupts requires a 32 KiB synthetic image with RESET $8000");
+  if (linear_resume && (interrupts || !bus_timing || code.size() != 32768 || code[0x7ffc] != 0 || code[0x7ffd] != 0x80))
+    throw std::runtime_error("--linear-resume requires --bus-timing, no handlers, and a 32 KiB image with RESET $8000");
   std::map<unsigned, Instruction> nodes;
   std::map<unsigned, unsigned> owners;
   std::map<unsigned, Mode> leaves;
@@ -88,11 +90,21 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
     }
     work.emplace_back(pc+length,mode,leaf);
   }
+  if (linear_resume) {
+    unsigned next = 0x8000;
+    for (const auto& entry : nodes) {
+      const auto& n = entry.second;
+      if (n.pc != next || n.leaf != -1 || !n.mode.e || !n.mode.m || !n.mode.x || (n.op != 0xa9 && n.op != 0x8d && n.op != 0xdb))
+        throw std::runtime_error("--linear-resume supports only linear emulation-mode LDA immediate, STA absolute and STP");
+      next += n.length;
+    }
+  }
   const auto mode_id = [](const Mode& m) { return (m.e ? 4u : 0u) | (m.m ? 2u : 0u) | (m.x ? 1u : 0u); };
   std::map<unsigned, Mode> handler_modes;
   std::map<unsigned, std::array<unsigned,2>> targets;
   std::map<std::pair<unsigned,unsigned>, std::vector<Instruction>> handlers;
   std::map<unsigned, unsigned> vector_bytes;
+  if (linear_resume) { vector_bytes[0xfffc] = 0; vector_bytes[0xfffd] = 0x80; }
   if (interrupts) {
     const auto main_owners = owners;
     for (const auto& node : nodes) handler_modes[mode_id(node.second.mode)] = node.second.mode;
@@ -231,8 +243,12 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
     for (const auto& entry : nodes) if (entry.second.leaf == int(leaf.first)) emit(entry.second);
     out << "}\n";
   }
-  out << "bool run_generated(State& s,unsigned limit){\n"
-      << "if(s.pc!=32768||!s.e||(s.p&48)!=48||s.p>255||s.s!=511||s.a>65535||s.x>255||s.y>255||s.db>255||(!s.bus&&s.db)||s.interrupt.active){s.stop=Stop::contract;return false;}\n";
+  if (linear_resume) out << "static bool execute_generated(State& s,unsigned limit,bool resume){\n";
+  else out << "bool run_generated(State& s,unsigned limit){\n";
+  out << "if(" << (linear_resume ? "(!resume&&s.pc!=32768)" : "s.pc!=32768")
+      << "||!s.e||(s.p&48)!=48||s.p>255||s.s!=511||s.a>65535||s.x>255||s.y>255||s.db>255||(!s.bus&&s.db)||s.interrupt.active){s.stop=Stop::contract;return false;}\n";
+  if (linear_resume)
+    out << "if(resume&&(s.stop!=Stop::limit||limit<s.steps||s.db!=0||s.pending_master_clocks||!s.diagnostic.empty())){s.stop=Stop::contract;s.diagnostic=\"Resume requires a paused linear boundary\";return false;}\n";
   if (bus_timing) out << "if(!s.bus){s.stop=Stop::contract;s.diagnostic=\"CPU bus timing requires a memory bus\";return false;}\n";
   if (interrupts) out << "if(!s.bus){s.stop=Stop::contract;s.diagnostic=\"Compiled interrupts require a memory bus\";return false;}\n";
   out << "if(s.bus){\n";
@@ -240,9 +256,24 @@ inline std::string compile(const std::vector<uint8_t>& code, bool interrupts = f
     out << "if(!code_byte(s," << byte.first << "," << unsigned(code[byte.first-0x8000]) << "))return false;\n";
   for (const auto& byte : vector_bytes)
     out << "if(!code_byte(s," << byte.first << "," << byte.second << "))return false;\n";
-  out << "}\ngoto L32768;\n";
+  out << "}\n";
+  if (linear_resume) {
+    out << "if(resume){\n";
+    unsigned steps = 0, cycles = 0;
+    for (const auto& entry : nodes) {
+      out << "if(s.pc==" << entry.first << "&&s.steps==" << steps << "&&s.clock.now()==" << steps
+          << "&&s.cycle_clock.now()==" << cycles << ")goto L" << entry.first << ";\n";
+      ++steps; cycles += entry.second.op == 0xa9 ? 2 : entry.second.op == 0x8d ? 4 : 3;
+    }
+    out << "s.stop=Stop::contract;s.diagnostic=\"Invalid linear resume PC/step/cycle boundary\";return false;}\n";
+  }
+  out << "goto L32768;\n";
   for (const auto& entry : nodes) if (entry.second.leaf < 0) emit(entry.second);
-  out << "}\n}\n";
+  out << "}\n";
+  if (linear_resume)
+    out << "bool run_generated(State& s,unsigned limit){return execute_generated(s,limit,false); }\n"
+        << "bool resume_generated(State& s,unsigned limit){return execute_generated(s,limit,true); }\n";
+  out << "}\n";
   return out.str();
 }
 }

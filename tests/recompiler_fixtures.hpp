@@ -6,7 +6,7 @@
 #include <utility>
 #include "../demo/synthetic_rom.hpp"
 inline std::vector<uint8_t> recompiler_fixture(const std::string& name) {
-  if (name == "scene_preview" || name == "bus_scene_preview") return synthetic_demo::scene_rom();
+  if (name == "scene_preview" || name == "bus_scene_preview" || name == "bus_scene_resume") return synthetic_demo::scene_rom();
   if (name == "object_preview" || name == "bus_object_preview") return synthetic_demo::object_rom();
   if (name == "irq_horizontal") return recompiler_fixture("bus_irq_horizontal");
   if (name == "bus_horizontal_irq_fault") return recompiler_fixture("dma_cgram_fault");

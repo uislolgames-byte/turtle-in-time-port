@@ -290,3 +290,27 @@ They verify full CPU/memory/device/time state and independently composed pixels
 across budgets/origins/NMI boundaries. Eleven validated scene captures are stored
 by CI. Legacy BG/OBJ fixtures and their capture contracts remain intact. See the
 [scene contract](../system/TILE_PREVIEW.md#composição-bg1bg2obj).
+
+
+## Bounded linear resumption
+
+`--bus-timing --linear-resume` additionally emits `resume_generated(State&, limit)`.
+This opt-in profile requires a 32 KiB synthetic image with RESET $8000 and only
+straight-line emulation-mode byte LDA immediate, STA absolute and STP. It rejects
+interrupt handlers, calls, branches, block moves and mode changes at generation.
+The traditional entry is unchanged; resume accepts only `Stop::limit`, known
+PC/step/logical-clock/nominal-cycle boundaries, DBR zero, valid emulation registers,
+no partial timing reservation or active interrupt, and an unchanged compiled
+code/RESET identity. Limits are absolute; decreasing the budget is rejected.
+Equal budget leaves events/time untouched. Pending events are polled at the next
+instruction as before; interrupt/fault/STP states require reset, not resume.
+Dispatch uses generated boundary checks and direct labels, never opcode decoding.
+This is a bounded diagnostic continuation contract, not general save-state loading
+or proof against arbitrary mutation of caller-owned RAM/device/register data.
+
+A dedicated generated scene test compares all pause/suffix splits and one-step
+resumptions at three master-clock origins against the independent full-state/time/
+pixel oracle. Invalid boundaries, mode/registers, code/RESET bytes, prior failures,
+budget regression and NMI around a resumed boundary are checked. The Windows
+scene session uses forward continuation on an isolated candidate copy; backward
+selection/reset reconstructs execution. Failed selection preserves the old session.

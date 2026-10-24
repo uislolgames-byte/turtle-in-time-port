@@ -193,10 +193,22 @@ e `cmake --build build-demo --config Release --target tmnt_native` (Windows).
 
 A janela da cena também oferece **Previous**, **Next** e **Reset** para percorrer
 os onze pontos de captura (prioridade, camadas, modos, tamanho, brilho e blank).
-Cada troca refaz a execução recompilada pelo RESET até o ponto selecionado,
-sem tentar desfazer escritas DMA ou retomar uma CPU pausada. Reset retorna à cena inicial de
+Avançar retoma a CPU recompilada e o barramento no ponto pausado, pelo perfil
+linear limitado descrito abaixo. Voltar refaz a execução pelo RESET, sem tentar
+desfazer escritas DMA. Reset retorna à cena inicial de
 prioridade alta (3/11), inclusive depois do blank. Os botões de limite ficam
 desativados. Fechar e reabrir cria outra sessão independente. Não há execução
 contínua, controles de personagem ou áudio; estes são controles do diagnóstico.
 O CI verifica todos os estados com referência independente e, no Windows,
 aciona os botões, confere os pixels GDI, limites, reset e reabertura.
+
+
+A retomada usa a opção explícita `--bus-timing --linear-resume` do gerador.
+Esse perfil aceita somente uma ROM sintética de 32 KiB com RESET $8000 e fluxo
+linear em emulação, com LDA imediato de 8 bits, STA absoluto e STP. A retomada
+verifica a identidade do código/RESET, o PC em fronteira conhecida, passos e
+ciclos nominais correspondentes, modo, registradores e parada por limite.
+O orçamento continua absoluto; um limite igual não executa instrução nem consome
+eventos. STP, erros e interrupções não podem ser retomados. Outros programas,
+chamadas, desvios e handlers continuam fora deste perfil. A entrada tradicional
+`run_generated` mantém o contrato anterior de começar no RESET.
